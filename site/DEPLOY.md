@@ -36,6 +36,10 @@ git push origin master
 - **File too large for Git:** GitHub blocks files larger than **100 MB**. Keep each installer under that limit.
 - **Authentication:** Use HTTPS with a Personal Access Token, or SSH keys, when `git push` asks for credentials.
 
+## Enterprise trust (SmartScreen / company policy)
+
+Unsigned `.exe` files are **often blocked** in production. For workplace distribution, **sign** builds using **`docs/WINDOWS_CODE_SIGNING.md`**, then set `authenticodeSigned: true` in `site/config.js` and publish the signed files. The website cannot remove SmartScreen; signing can.
+
 ## Optional: GitHub Releases
 
 You can still create a **Release** on GitHub and attach the same `.exe` / `.zip` for users who prefer that. The website does **not** depend on Releases as long as `site/downloads/` is populated and deployed.
