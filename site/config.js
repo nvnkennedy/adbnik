@@ -1,6 +1,6 @@
-﻿window.DeviceDeckConfig = {
-  // Direct download URLs (user never needs to browse source pages).
-  setupUrl: "https://github.com/nvnkennedy/Device_Deck/releases/latest/download/DeviceDeck_Setup_0.1.0.exe",
-  portableUrl: "https://github.com/nvnkennedy/Device_Deck/releases/latest/download/DeviceDeck_Portable_0.1.0.zip",
-  currentVersion: "v0.1.0"
+﻿// Paths are relative to the site root on GitHub Pages — files are served from site/downloads/.
+window.DeviceDeckConfig = {
+  setupUrl: "downloads/DeviceDeck_Setup_0.1.0.exe",
+  portableUrl: "downloads/DeviceDeck_Portable_0.1.0.zip",
+  currentVersion: "0.1.0"
 };

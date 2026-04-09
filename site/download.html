@@ -1,2 +1,76 @@
 ﻿<!doctype html>
-<html><head><meta http-equiv="refresh" content="0; url=index.html" /></head><body></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Download DeviceDeck for Windows</title>
+  <meta name="description" content="Download DeviceDeck for Windows — installer or portable ZIP. Terminal (ADB, SSH, serial), explorer, scrcpy." />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="logo" href="index.html">DeviceDeck</a>
+      <span class="tagline">ADB · SSH · serial · files · screen — for Windows</span>
+    </div>
+  </div>
+  <nav class="mainnav" aria-label="Primary">
+    <div class="mainnav-inner">
+      <a href="index.html">Home</a>
+      <a href="index.html#features">Features</a>
+      <a class="active" href="download.html">Download</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero download-hero">
+      <h1>Download DeviceDeck</h1>
+      <p class="version-pill" id="release-status">Loading version…</p>
+      <p class="lead" style="margin: 0 auto; max-width: 42rem;">
+        Click a button below — your browser will download the file directly from this site.
+        No GitHub account or release page required.
+      </p>
+    </section>
+
+    <section class="download-cards" aria-label="Download options">
+      <article class="download-card">
+        <h2>Installer</h2>
+        <p class="hint">Recommended for most users — standard Windows setup.</p>
+        <a id="download-setup" class="btn btn-lg" href="#" download>Download .exe installer</a>
+      </article>
+      <article class="download-card">
+        <h2>Portable</h2>
+        <p class="hint">Extract and run — no installation.</p>
+        <a id="download-portable" class="btn btn-lg secondary" href="#" download>Download .zip</a>
+      </article>
+    </section>
+
+    <div class="info-box">
+      <h2>Before you install</h2>
+      <ul>
+        <li>Windows 10 or later (64-bit).</li>
+        <li>
+          <strong>Android / ADB / screen:</strong> install <strong>Android SDK Platform Tools</strong> (ADB) and <strong>scrcpy</strong>; add both to your PATH.
+          Enable USB debugging on phones/tablets you attach.
+        </li>
+        <li>
+          <strong>SSH terminal:</strong> install Windows OpenSSH Client or ensure <code>ssh.exe</code> is on your PATH (DeviceDeck invokes it for SSH tabs).
+        </li>
+        <li>
+          <strong>Serial terminal:</strong> connect your COM device; choose port and baud in DeviceDeck (no extra install for serial in the packaged build).
+        </li>
+      </ul>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p><strong>DeviceDeck</strong> — <a href="index.html">Home</a></p>
+    <p class="small">© <span id="y"></span></p>
+  </footer>
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
+  <script src="config.js"></script>
+  <script src="assets/site.js"></script>
+</body>
+</html>

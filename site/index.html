@@ -3,38 +3,87 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DeviceDeck Downloads</title>
-  <meta name="description" content="Download DeviceDeck installer or portable ZIP." />
+  <title>DeviceDeck — ADB, SSH, serial, and Android tools for Windows</title>
+  <meta name="description" content="DeviceDeck: tabbed terminal for ADB shell, SSH, and serial/COM; Android file explorer; scrcpy screen control — one Windows app." />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>DeviceDeck</h1>
-      <p class="small center">Official download page</p>
-    </header>
-
-    <section class="card hero">
-      <h2>Production Download</h2>
-      <p>Windows Android debugging workspace with ADB terminal, file explorer, and screen control.</p>
-      <p class="small">Click below to download directly.</p>
-      <div class="actions">
-        <a id="download-setup" class="btn" href="#">Download Installer (.exe)</a>
-        <a id="download-portable" class="btn secondary" href="#">Download Portable (.zip)</a>
-      </div>
-      <p id="release-status" class="small"></p>
-    </section>
-
-    <section class="card">
-      <h2>Quick Info</h2>
-      <ul>
-        <li>Recommended: installer `.exe` for most users.</li>
-        <li>Portable `.zip`: no installation, run from extracted folder.</li>
-        <li>Requires ADB and scrcpy installed separately.</li>
-      </ul>
-    </section>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="logo" href="index.html">DeviceDeck</a>
+      <span class="tagline">ADB · SSH · serial · files · screen — for Windows</span>
+    </div>
   </div>
-  <script src="config.js"></script>
-  <script src="assets/site.js"></script>
+  <nav class="mainnav" aria-label="Primary">
+    <div class="mainnav-inner">
+      <a class="active" href="index.html">Home</a>
+      <a href="index.html#features">Features</a>
+      <a href="download.html">Download</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>One workspace for ADB, SSH, serial, files, and screen</h1>
+      <p class="lead">
+        DeviceDeck is a MobaXterm-style desktop workspace for Windows: a tabbed terminal for
+        <strong>ADB shell</strong>, <strong>SSH</strong> (OpenSSH), and <strong>serial/COM</strong> sessions,
+        plus local CMD/PowerShell — alongside an Android file explorer and scrcpy-based screen control.
+      </p>
+      <div class="actions">
+        <a class="btn btn-lg" href="download.html">Download</a>
+        <a class="btn btn-lg secondary" href="index.html#features">See features</a>
+      </div>
+    </section>
+
+    <section id="features" class="block">
+      <h2>Features</h2>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <h3>ADB &amp; Android shell</h3>
+          <p>Pick a device, open an interactive ADB shell tab, and use bookmarks and shortcuts for common tasks (root, remount, reboot, and more).</p>
+        </article>
+        <article class="feature-card">
+          <h3>SSH terminal</h3>
+          <p>Open SSH sessions from scratch or reuse SFTP fields from the file explorer. Uses the system <strong>OpenSSH client</strong> (<code>ssh</code> on your PATH).</p>
+        </article>
+        <article class="feature-card">
+          <h3>Serial / COM console</h3>
+          <p>Attach to COM ports at your chosen baud rate for boards and firmware logs — serial tabs alongside ADB and SSH in the same workspace.</p>
+        </article>
+        <article class="feature-card">
+          <h3>File explorer</h3>
+          <p>Browse Android device storage and transfer files; SFTP-oriented fields pair with SSH workflows when you work with remote hosts.</p>
+        </article>
+        <article class="feature-card">
+          <h3>Screen mirroring</h3>
+          <p>Launch <strong>scrcpy</strong> from the app when you need to see and control the device display on your PC.</p>
+        </article>
+      </div>
+      <p class="small" style="margin-top: 16px;">
+        <strong>Android features</strong> need <strong>ADB</strong> and <strong>scrcpy</strong> on your PATH.
+        <strong>SSH</strong> needs the OpenSSH client (<code>ssh</code>).
+        <strong>Serial</strong> uses COM hardware; the packaged app includes serial terminal support — set port and baud in the app or preferences.
+      </p>
+    </section>
+
+    <section class="block">
+      <h2>Get DeviceDeck</h2>
+      <p style="color: var(--muted); margin: 0 0 16px;">
+        Choose the Windows installer for a standard setup, or the portable ZIP if you prefer an extracted folder with no installer.
+      </p>
+      <div class="actions">
+        <a class="btn" href="download.html">Go to download page</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p><strong>DeviceDeck</strong> — unofficial convenience tool; not affiliated with Google or Android.</p>
+    <p class="small">© <span id="y"></span> · <a href="download.html">Download</a></p>
+  </footer>
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
 </body>
 </html>
