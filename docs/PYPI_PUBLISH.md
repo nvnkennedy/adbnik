@@ -28,12 +28,15 @@ Used by `.github/workflows/publish-pypi.yml` when you run it manually or on rele
    python -m build
    ```
 
-4. Upload **manually**:
+4. Upload **manually** (use a **current** Twine, e.g. `pip install -U twine`, to avoid metadata errors):
 
    ```bash
-   pip install twine
+   pip install -U twine build
+   python -m twine check dist/*
    python -m twine upload dist/*
    ```
+
+   If you see `InvalidDistribution ... license-expression` / `license-file`, either **upgrade Twine** (5.1+) or rebuild with the repo’s pinned setuptools (`setuptools<77` in `pyproject.toml`).
 
    Or trigger **Actions → Publish to PyPI** workflow (after `PYPI_API_TOKEN` is set).
 
