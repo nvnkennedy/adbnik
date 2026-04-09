@@ -1,5 +1,5 @@
 ﻿window.DeviceDeckConfig = {
-  owner: "YOUR_USER",
-  repo: "YOUR_REPO",
+  owner: "nvnkennedy",
+  repo: "Device_Deck",
   defaultVersion: "v0.1.0"
 };

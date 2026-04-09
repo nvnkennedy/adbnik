@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DeviceDeck</title>
+  <title>DeviceDeck Downloads</title>
+  <meta name="description" content="Download DeviceDeck installer or portable ZIP." />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
@@ -11,32 +12,30 @@
     <header>
       <h1>DeviceDeck</h1>
       <nav>
-        <a href="index.html">Home</a>
-        <a href="download.html">Download</a>
-        <a href="docs.html">Docs</a>
-        <a href="changelog.html">Changelog</a>
         <a href="#" data-repo-link>GitHub</a>
+        <a id="download-release" href="#">Releases</a>
       </nav>
     </header>
 
-    <section class="card">
-      <h2>Android Debugging Workspace</h2>
-      <p>DeviceDeck is a desktop tool for ADB shell sessions, file operations, and screen control with scrcpy.</p>
-      <p><span class="tag">Production-ready</span> packaging with Windows installer and portable builds.</p>
-      <a class="btn" href="download.html">Get DeviceDeck</a>
-      <a class="btn secondary" href="docs.html">Read Docs</a>
+    <section class="card hero">
+      <h2>Production Download</h2>
+      <p>Windows Android debugging workspace with ADB terminal, file explorer, and screen control.</p>
+      <p class="small">Latest release assets are fetched directly from GitHub Releases.</p>
+      <div class="actions">
+        <a id="download-setup" class="btn" href="#">Download Installer (.exe)</a>
+        <a id="download-portable" class="btn secondary" href="#">Download Portable (.zip)</a>
+      </div>
+      <p id="release-status" class="small"></p>
     </section>
 
     <section class="card">
-      <h2>Highlights</h2>
+      <h2>Quick Info</h2>
       <ul>
-        <li>Terminal sessions: ADB, SSH, serial, and local shell.</li>
-        <li>WinSCP-style local/remote file explorer workflows.</li>
-        <li>Screen mirror controls with scrcpy integration.</li>
+        <li>Recommended: installer `.exe` for most users.</li>
+        <li>Portable `.zip`: no installation, run from extracted folder.</li>
+        <li>Requires ADB and scrcpy installed separately.</li>
       </ul>
     </section>
-
-    <p class="small">For enterprise or long-term usage, pin versions via GitHub Releases.</p>
   </div>
   <script src="config.js"></script>
   <script src="assets/site.js"></script>
