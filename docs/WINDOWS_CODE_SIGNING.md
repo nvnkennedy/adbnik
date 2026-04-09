@@ -16,6 +16,8 @@ This design is **strict on purpose** (reduce drive-by malware), not because smal
 
 If you cannot buy a certificate, **[SignPath Foundation](https://signpath.org/)** offers **free code signing for qualifying open-source projects**. Signing happens in their infrastructure; binaries are verified against your public repository.
 
+**Step-by-step (account, GitHub App, secrets, Actions):** see **[SIGNPATH_SETUP.md](./SIGNPATH_SETUP.md)** in this repo — only you can complete the SignPath registration.
+
 **What you do (high level — details are on their site):**
 
 1. **Apply** at [signpath.org](https://signpath.org/) and create a project linked to your **public** GitHub repository.
