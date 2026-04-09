@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+# Cap setuptools so wheels use Metadata 2.1/2.2 without PEP 639 fields that older Twine rejects
+# ("license-expression" / "license-file"). Use Twine 5.1+ if you prefer latest setuptools.
+requires = ["setuptools>=61,<77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +9,7 @@ name = "devicedeck"
 version = "0.1.0"
 description = "Desktop workspace for Android debugging: ADB files, terminal sessions, and scrcpy screen control."
 readme = "README.md"
-license = "MIT"
+license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [{ name = "DeviceDeck contributors" }]
 keywords = ["android", "adb", "scrcpy", "pyqt5", "sftp", "desktop"]
