@@ -19,6 +19,7 @@ header { border-bottom: 1px solid #26324b; margin-bottom: 24px; }
 nav a { color: var(--muted); margin-right: 14px; text-decoration: none; }
 nav a:hover { color: var(--text); }
 h1, h2 { margin-top: 0; }
+.center { text-align: center; }
 .card {
   background: var(--card);
   border: 1px solid #26324b;
