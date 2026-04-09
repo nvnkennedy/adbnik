@@ -76,7 +76,7 @@ Minimal pattern (adapt step IDs and paths to your workflow):
     output-artifact-directory: signed
 ```
 
-Then upload `signed/` contents to **GitHub Release** or copy the **signed** `DeviceDeck_Setup_*.exe` / ZIP into `site/downloads/` and set `authenticodeSigned: true` in `site/config.js` when that file is what users download.
+Then upload `signed/` contents to a **GitHub Release** if you distribute optional Windows installers. Most users install with **`pip install devicedeck`** from PyPI.
 
 ## 6. If something fails
 

@@ -23,7 +23,7 @@ If you cannot buy a certificate, **[SignPath Foundation](https://signpath.org/)*
 1. **Apply** at [signpath.org](https://signpath.org/) and create a project linked to your **public** GitHub repository.
 2. **Define** which build artifacts may be signed (policy) so only builds produced from your repo get signed.
 3. **Upload** a release build through their UI, or connect **GitHub Actions** with their documented integration so CI submits the built `.exe` / installer for signing.
-4. **Publish** the **signed** files to `site/downloads/` and set `authenticodeSigned: true` in `site/config.js` when that build is live.
+4. **Publish** the **signed** files (e.g. attach to a GitHub Release). Primary user distribution is **PyPI** (`pip install devicedeck`), not checked-in installers.
 
 If SignPath declines or your project does not qualify yet, the fallback remains: **community unsigned builds** and users using **More info → Run anyway** on their own PCs, or **purchasing** a certificate later.
 
@@ -84,12 +84,10 @@ Timestamping (`/tr`) keeps signatures valid after the certificate expires.
 
 You can sign inside Inno Setup via **Tools → Configure Sign Tools**, or rely on signing the generated `DeviceDeck_Setup_*.exe` **after** `ISCC` (simpler for automation). If you sign inside Inno, enable **Signed uninstaller** for a fully signed experience.
 
-## After signing: website and releases
+## After signing: releases
 
-1. Copy the **signed** files into `site/downloads/` and update `site/config.js`.
-2. Set **`authenticodeSigned: true`** in `site/config.js` only when the published files are actually signed.
-3. Run `scripts/compute_release_hashes.ps1` and paste SHA-256 values into `config.js` so IT teams can verify files.
-4. Upload the same signed assets to GitHub Releases if you use them.
+1. Attach **signed** artifacts to a **GitHub Release** (optional) or distribute through your own channel.
+2. Primary app delivery for users is **`pip install devicedeck`** on PyPI — unsigned/signed Windows bundles are optional extras for people without Python.
 
 ## References
 

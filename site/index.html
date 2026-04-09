@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DeviceDeck — ADB, SSH, serial, and Android tools for Windows</title>
-  <meta name="description" content="DeviceDeck: one Windows desktop app for tabbed ADB, SSH, and serial terminals, device file access, and USB screen mirroring — built to stay in one workspace." />
+  <title>DeviceDeck — ADB, SSH, serial, and Android tools</title>
+  <meta name="description" content="DeviceDeck: install with pip from PyPI. Tabbed ADB, SSH, and serial terminals, device files, and USB screen forwarding." />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
   <div class="topbar">
     <div class="topbar-inner">
       <a class="logo" href="index.html">DeviceDeck</a>
-      <span class="tagline">ADB · SSH · serial · files · screen — for Windows</span>
+      <span class="tagline">ADB · SSH · serial · files · screen</span>
     </div>
   </div>
   <nav class="mainnav" aria-label="Primary">
@@ -19,7 +19,7 @@
       <a class="active" href="index.html">Home</a>
       <a href="index.html#why">Why DeviceDeck</a>
       <a href="index.html#features">Features</a>
-      <a href="download.html">Download</a>
+      <a href="install.html">Install</a>
     </div>
   </nav>
 
@@ -27,14 +27,14 @@
     <section class="hero">
       <h1>One workspace for ADB, SSH, serial, files, and screen</h1>
       <p class="lead">
-        DeviceDeck is a single desktop app for Windows that keeps <strong>Android debugging</strong>,
+        DeviceDeck is a single desktop app that keeps <strong>Android debugging</strong>,
         <strong>SSH</strong>, <strong>serial/COM</strong>, and <strong>local shells</strong> in one tabbed terminal,
         next to on-device file browsing and USB screen forwarding — so you spend less time switching windows
         and retyping connection details.
       </p>
       <div class="actions">
-        <a class="btn btn-lg" href="download.html">Download</a>
-        <a class="btn btn-lg secondary" href="index.html#why">Why DeviceDeck</a>
+        <a class="btn btn-lg" href="install.html">Install with pip</a>
+        <a class="btn btn-lg secondary" href="https://pypi.org/project/devicedeck/">View on PyPI</a>
       </div>
     </section>
 
@@ -57,7 +57,7 @@
           <strong>Focused scope:</strong> DeviceDeck does not try to be a full remote-desktop suite — it focuses on terminal, device files, and display forwarding for developers and integrators who already use standard command-line components on their machine.
         </li>
         <li>
-          <strong>Portable option:</strong> Run from a folder without a full install when you need a movable copy.
+          <strong>Standard install:</strong> <code>pip install devicedeck</code> from <a href="https://pypi.org/project/devicedeck/">PyPI</a> — the <code>devicedeck</code> command is placed in your environment’s Scripts folder on Windows (or equivalent on other OSes).
         </li>
       </ul>
     </section>
@@ -96,17 +96,18 @@
     <section class="block">
       <h2>Get DeviceDeck</h2>
       <p style="color: var(--muted); margin: 0 0 16px;">
-        Choose the Windows installer for a standard setup, or the portable ZIP if you prefer an extracted folder with no installer.
+        Install from PyPI (package name <strong>devicedeck</strong>), then run <code>devicedeck</code>.
       </p>
       <div class="actions">
-        <a class="btn" href="download.html">Go to download page</a>
+        <a class="btn" href="install.html">Install instructions</a>
+        <a class="btn secondary" href="https://pypi.org/project/devicedeck/">PyPI</a>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
     <p><strong>DeviceDeck</strong> — unofficial convenience tool; not affiliated with Google or Android.</p>
-    <p class="small">© <span id="y"></span> · <a href="download.html">Download</a></p>
+    <p class="small">© <span id="y"></span> · <a href="install.html">Install</a> · <a href="https://pypi.org/project/devicedeck/">PyPI</a></p>
   </footer>
   <script>
     document.getElementById("y").textContent = new Date().getFullYear();

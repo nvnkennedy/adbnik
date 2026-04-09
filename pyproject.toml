@@ -37,10 +37,11 @@ build = ["pyinstaller>=6.0,<7.0"]
 [project.scripts]
 devicedeck = "devicedeck.app:main"
 
-# After publishing, set your repo (optional but recommended for PyPI):
-# [project.urls]
-# Homepage = "https://github.com/<you>/devicedeck"
-# Repository = "https://github.com/<you>/devicedeck"
+[project.urls]
+Homepage = "https://nvnkennedy.github.io/Device_Deck/"
+Repository = "https://github.com/nvnkennedy/Device_Deck"
+Documentation = "https://github.com/nvnkennedy/Device_Deck#readme"
+"PyPI" = "https://pypi.org/project/devicedeck/"
 
 [tool.setuptools.packages.find]
 where = ["."]
