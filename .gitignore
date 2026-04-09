@@ -34,3 +34,7 @@ htmlcov/
 # Local env / secrets
 .env
 .env.*
+
+# Website: do not commit Windows installers (distribution is PyPI + pip)
+site/downloads/*.exe
+site/downloads/*.zip

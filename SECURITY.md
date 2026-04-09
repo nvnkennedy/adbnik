@@ -1,8 +1,10 @@
 ﻿# Security Policy
 
-## Windows installers and trust
+## Distribution and trust
 
-Public releases distributed as `.exe` should ideally be **Authenticode-signed** so SmartScreen and corporate policies treat them as legitimate. **Open-source projects can apply for free signing** through [SignPath Foundation](https://signpath.org/) (no certificate purchase). If you buy your own certificate, use **`docs/WINDOWS_CODE_SIGNING.md`** and **`scripts/sign_windows_artifacts.ps1`**.
+**Primary delivery is PyPI** (`pip install devicedeck`) — standard Python package signing chain.
+
+Optional **standalone `.exe`** files (if you build them) should ideally be **Authenticode-signed** for SmartScreen. **Open-source projects** can use [SignPath Foundation](https://signpath.org/) or **`docs/WINDOWS_CODE_SIGNING.md`** / **`scripts/sign_windows_artifacts.ps1`** with your own certificate.
 
 ## Supported Versions
 
