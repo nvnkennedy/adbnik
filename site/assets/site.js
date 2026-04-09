@@ -4,7 +4,19 @@
   const portableLink = document.getElementById("download-portable");
   const releaseStatus = document.getElementById("release-status");
 
-  if (setupLink) setupLink.href = cfg.setupUrl || "#";
-  if (portableLink) portableLink.href = cfg.portableUrl || "#";
-  if (releaseStatus) releaseStatus.textContent = `Current version: ${cfg.currentVersion || "latest"}`;
+  const ver = cfg.currentVersion || "latest";
+  if (releaseStatus) {
+    releaseStatus.textContent = "Version " + ver;
+  }
+
+  function applyLink(el, url, filename) {
+    if (!el || !url) return;
+    el.href = url;
+    if (filename) {
+      el.setAttribute("download", filename);
+    }
+  }
+
+  applyLink(setupLink, cfg.setupUrl, "DeviceDeck_Setup_" + ver + ".exe");
+  applyLink(portableLink, cfg.portableUrl, "DeviceDeck_Portable_" + ver + ".zip");
 })();
