@@ -2,9 +2,30 @@
 
 Unsigned `.exe` files are commonly flagged by **Microsoft SmartScreen** and are **often blocked in enterprise environments** (Software Restriction Policies, Defender Application Control, or “only signed installers” rules). Website text cannot remove those protections; **Authenticode signing** is how legitimate Windows software establishes trust.
 
+## Why it feels unfair (and why Windows does this)
+
+**Microsoft does not hand out free “trusted publisher” certificates to every developer.** If they did, malware authors could sign fake apps and look as legitimate as real software. So **trust** is delegated to **certificate authorities (CAs)** that **verify identity** (individual or company) before issuing a cert. That verification costs money, which is why retail code-signing certs are paid products.
+
+**SignTool** (from the Windows SDK) is free, but it only **applies** a signature. It does **not** include a certificate. **Self-signing** with a homemade certificate does **not** satisfy SmartScreen for the general public.
+
+This design is **strict on purpose** (reduce drive-by malware), not because small projects are unwanted. The practical **free** path for open source is **third-party OSS programs** (below) that pay for or donate CA-backed signing after checking your source.
+
+**No one else can “flip a switch” in your repo** to make Windows trust your EXE: signing requires either **your certificate**, **your approval** on a service like SignPath, or **your** CI secrets. This document and the website can only explain the path.
+
 ## No budget? Free signing for open-source projects
 
-If you cannot buy a certificate, **[SignPath Foundation](https://signpath.org/)** offers **free code signing for qualifying open-source projects**. Signing happens in their infrastructure; binaries are verified against your public repository. Apply through their site and follow their CI integration docs. This is the most practical path to **trusted Windows binaries without a personal certificate purchase**.
+If you cannot buy a certificate, **[SignPath Foundation](https://signpath.org/)** offers **free code signing for qualifying open-source projects**. Signing happens in their infrastructure; binaries are verified against your public repository.
+
+**What you do (high level — details are on their site):**
+
+1. **Apply** at [signpath.org](https://signpath.org/) and create a project linked to your **public** GitHub repository.
+2. **Define** which build artifacts may be signed (policy) so only builds produced from your repo get signed.
+3. **Upload** a release build through their UI, or connect **GitHub Actions** with their documented integration so CI submits the built `.exe` / installer for signing.
+4. **Publish** the **signed** files to `site/downloads/` and set `authenticodeSigned: true` in `site/config.js` when that build is live.
+
+If SignPath declines or your project does not qualify yet, the fallback remains: **community unsigned builds** and users using **More info → Run anyway** on their own PCs, or **purchasing** a certificate later.
+
+This is the most practical path to **CA-trusted Windows binaries without buying a personal certificate**.
 
 ---
 
