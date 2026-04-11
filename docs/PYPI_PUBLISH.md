@@ -1,14 +1,14 @@
-# Publish DeviceDeck to PyPI
+# Publish Adbnik to PyPI
 
-End users install with **`pip install adbsshdeck`**. This document is for **maintainers** who upload new releases.
+End users install with **`pip install adbnik`**. This document is for **maintainers** who upload new releases.
 
-**PyPI project name:** `adbsshdeck` (the Python **import** package remains `devicedeck`).
+**PyPI project name:** `adbnik` (the Python **import** package is also `adbnik`).
 
 ## One-time: PyPI account
 
 1. Create an account on [pypi.org](https://pypi.org) (and [test.pypi.org](https://test.pypi.org) if you want a dry run).
 2. Enable **2FA** on your account (required for uploads).
-3. Under **Account settings → API tokens**, create a token scoped to the **adbsshdeck** project (or whole account for first upload).
+3. Under **Account settings → API tokens**, create a token scoped to the **adbnik** project (or whole account for first upload).
 
 ## One-time: GitHub Actions secret (optional automation)
 
@@ -21,7 +21,7 @@ Used by `.github/workflows/publish-pypi.yml` when you run it manually or on rele
 
 ## Every release
 
-1. Bump version in **`pyproject.toml`** and **`devicedeck/__init__.py`** (`__version__`).
+1. Bump version in **`pyproject.toml`** and **`adbnik/__init__.py`** (`__version__`).
 2. Update **`CHANGELOG.md`** if you maintain one.
 3. Build:
 
@@ -42,7 +42,7 @@ Used by `.github/workflows/publish-pypi.yml` when you run it manually or on rele
 
    Or trigger **Actions → Publish to PyPI** workflow (after `PYPI_API_TOKEN` is set).
 
-5. Confirm: [pypi.org/project/adbsshdeck](https://pypi.org/project/adbsshdeck/)
+5. Confirm: [pypi.org/project/adbnik](https://pypi.org/project/adbnik/)
 
 ## TestPyPI (optional)
 
@@ -53,9 +53,13 @@ python -m twine upload --repository testpypi dist/*
 Install from TestPyPI:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ adbsshdeck
+pip install --index-url https://test.pypi.org/simple/ adbnik
 ```
 
 ## Website
 
-After publishing, users get the new version with `pip install -U adbsshdeck`. The GitHub Pages site (`site/install.html`) does not need a version bump in HTML — it points to PyPI generically.
+After publishing, users get the new version with `pip install -U adbnik`. The GitHub Pages site (`site/install.html`) does not need a version bump in HTML — it points to PyPI generically.
+
+## Retiring old PyPI projects
+
+PyPI does not delete projects. **Yank** old releases on deprecated package names and point users to **`adbnik`** in the project description.

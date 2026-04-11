@@ -5,7 +5,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: DeviceDeck version
+      label: Adbnik version
       placeholder: 0.1.0
     validations:
       required: true

@@ -354,7 +354,7 @@ class SessionWidget(QWidget):
 
     def _build_log_path(self) -> Path:
         safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in self.session_label)[:48] or "session"
-        d = Path(tempfile.gettempdir()) / "devicedeck_terminal_logs"
+        d = Path(tempfile.gettempdir()) / "adbnik_terminal_logs"
         d.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         return d / f"{ts}_{safe}.log"

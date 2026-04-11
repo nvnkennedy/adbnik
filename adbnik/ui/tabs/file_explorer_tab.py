@@ -78,7 +78,7 @@ _MAX_INLINE_EDITOR_BYTES = 8 * 1024 * 1024
 _MAX_FIND_FOLDER_HISTORY = 24
 
 # Remote table → local table drag (pull); custom MIME, not file:// URLs.
-MIME_REMOTE_PULL = "application/x-devicedeck-remote-pull"
+MIME_REMOTE_PULL = "application/x-adbnik-remote-pull"
 
 
 def _push_find_folder_history(cfg: Optional[AppConfig], side: str, folder: str) -> None:
@@ -117,7 +117,7 @@ def _icon_for_remote_name(name: str, is_dir: bool, icon_provider: QFileIconProvi
         return _remote_ext_icon_cache[cache_key]
     td = Path(tempfile.gettempdir())
     # Extensionless names: use .txt so Windows shows a normal document association instead of a blank shell.
-    probe = td / (f"_device_deck_icon{ext}" if ext else "_device_deck_generic.txt")
+    probe = td / (f"_adbnik_icon{ext}" if ext else "_adbnik_generic.txt")
     ic: QIcon
     try:
         if probe.exists():
@@ -2628,7 +2628,7 @@ class ExplorerSessionPage(QWidget):
         serial = _first_serial_token(self.get_device_serial()) or _first_serial_token(self._session_adb_serial) or "default"
         key = f"{self.kind}|{serial}|{remote_path}"
         h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
-        root = Path(tempfile.gettempdir()) / "device_deck_open_cache" / h
+        root = Path(tempfile.gettempdir()) / "adbnik_open_cache" / h
         root.mkdir(parents=True, exist_ok=True)
         return str(root / posixpath.basename(remote_path))
 

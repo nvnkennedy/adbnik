@@ -1,11 +1,11 @@
-# Sign DeviceDeck.exe and the Inno Setup output with Authenticode (after building).
+# Sign Adbnik.exe and the Inno Setup output with Authenticode (after building).
 # Requires: Windows SDK signtool, a .pfx code-signing certificate.
 # Usage (repo root):
 #   powershell -ExecutionPolicy Bypass -File scripts\sign_windows_artifacts.ps1 -PfxPath C:\path\cert.pfx
-# Optional env: DEVICE_DECK_PFX, DEVICE_DECK_PFX_PASSWORD (plain text — prefer interactive -PfxPassword in CI secrets)
+# Optional env: ADBNIK_PFX, ADBNIK_PFX_PASSWORD (plain text — prefer interactive -PfxPassword in CI secrets)
 
 param(
-    [string] $PfxPath = $env:DEVICE_DECK_PFX,
+    [string] $PfxPath = $env:ADBNIK_PFX,
     [SecureString] $PfxPassword,
     [string] $TimestampUrl = "http://timestamp.digicert.com",
     [string] $Root = ""
@@ -39,12 +39,12 @@ if (-not $SignTool) {
 }
 
 if (-not $PfxPath -or -not (Test-Path -LiteralPath $PfxPath)) {
-    Write-Error "Provide -PfxPath to your .pfx or set DEVICE_DECK_PFX."
+    Write-Error "Provide -PfxPath to your .pfx or set ADBNIK_PFX."
 }
 
 if (-not $PfxPassword) {
-    if ($env:DEVICE_DECK_PFX_PASSWORD) {
-        $PfxPassword = ConvertTo-SecureString $env:DEVICE_DECK_PFX_PASSWORD -AsPlainText -Force
+    if ($env:ADBNIK_PFX_PASSWORD) {
+        $PfxPassword = ConvertTo-SecureString $env:ADBNIK_PFX_PASSWORD -AsPlainText -Force
     } else {
         $PfxPassword = Read-Host "PFX password" -AsSecureString
     }
@@ -64,7 +64,7 @@ $SignArgs = @(
     "/p", $Plain
 )
 
-$Exe = Join-Path $Root "dist\DeviceDeck\DeviceDeck.exe"
+$Exe = Join-Path $Root "dist\Adbnik\Adbnik.exe"
 if (Test-Path $Exe) {
     Write-Host "Signing: $Exe"
     & $SignTool @SignArgs $Exe
@@ -72,13 +72,13 @@ if (Test-Path $Exe) {
     Write-Warning "Skip: not found: $Exe"
 }
 
-$Installer = Get-ChildItem -Path (Join-Path $Root "dist_installer") -Filter "DeviceDeck_Setup_*.exe" -ErrorAction SilentlyContinue |
+$Installer = Get-ChildItem -Path (Join-Path $Root "dist_installer") -Filter "Adbnik_Setup_*.exe" -ErrorAction SilentlyContinue |
     Select-Object -First 1
 if ($Installer) {
     Write-Host "Signing: $($Installer.FullName)"
     & $SignTool @SignArgs $Installer.FullName
 } else {
-    Write-Warning "Skip: no DeviceDeck_Setup_*.exe under dist_installer\"
+    Write-Warning "Skip: no Adbnik_Setup_*.exe under dist_installer\"
 }
 
-Write-Host "Done. Rebuild the portable ZIP if it must embed the signed DeviceDeck.exe, then publish."
+Write-Host "Done. Rebuild the portable ZIP if it must embed the signed Adbnik.exe, then publish."

@@ -1,27 +1,22 @@
-# Build a standalone GUI folder: dist\DeviceDeck\DeviceDeck.exe
-# Requires Python 3.9+ on PATH. Run from repo root:
-#   powershell -ExecutionPolicy Bypass -File scripts\build_windows_exe.ps1
-
+# Build a standalone GUI folder: dist\Adbnik\Adbnik.exe
 $ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Root = Resolve-Path (Join-Path $Root "..")
+
 Set-Location $Root
+Write-Host "Generating app icon (assets\adbnik.ico)..."
+python scripts/export_app_icon.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Installing package + PyInstaller (build extra)..."
-python -m pip install -e ".[build]"
+Write-Host "PyInstaller (dist\Adbnik)..."
+python -m PyInstaller --noconfirm "$Root\adbnik.spec"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Generating app icon (assets\devicedeck.ico)..."
-$env:QT_QPA_PLATFORM = "offscreen"
-python "$Root\scripts\export_app_icon.py"
-
-Write-Host "Running PyInstaller..."
-python -m PyInstaller --noconfirm "$Root\DeviceDeck.spec"
-
-$Exe = Join-Path $Root "dist\DeviceDeck\DeviceDeck.exe"
+$Exe = Join-Path $Root "dist\Adbnik\Adbnik.exe"
 if (Test-Path $Exe) {
-    Write-Host ""
     Write-Host "OK: $Exe"
-    Write-Host "Zip the whole folder dist\DeviceDeck and ship it (adb/scrcpy stay separate tools on PATH or set in Preferences)."
 } else {
-    Write-Host "Build finished but exe not found at expected path."
+    Write-Error "Expected exe not found: $Exe"
     exit 1
 }
+Write-Host "Zip the whole folder dist\Adbnik and ship it (adb/scrcpy stay separate tools on PATH or set in Preferences)."

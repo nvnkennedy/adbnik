@@ -641,7 +641,7 @@ Pull, push, drag-and-drop, find files, and external editors with sync where supp
 </ul>
 
 <p style="color:{muted};font-size:12px;margin-bottom:0;">Configuration is stored in your user profile
-(<code>.devicedeck.json</code>). Bookmarks never store passwords.</p>
+(<code>.adbnik.json</code>). Bookmarks never store passwords.</p>
 </body></html>
 """
         )
@@ -663,7 +663,7 @@ Pull, push, drag-and-drop, find files, and external editors with sync where supp
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save application log",
-            "devicedeck_log.txt",
+            "adbnik_log.txt",
             "Text files (*.txt);;All files (*.*)",
         )
         if not path:
