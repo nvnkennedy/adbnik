@@ -1,5 +1,8 @@
 # Adbnik
 
+> **Branch `main`** holds the **minimal PyPI source tree** (package, tests, metadata).  
+> **Installers, PyInstaller, GitHub Pages, and maintainer docs** live on branch **`naveen`**.
+
 **Adbnik** is a **desktop control room** for Android and embedded work: **ADB shell** tabs, **SSH** sessions, **serial (COM)** consoles, **device and remote file** browsing, and **USB screen mirroring** (via scrcpy or another tool you install)—in **one window** with tabs and bookmarks.
 
 It is **not** made by Google. It does **not** bundle ADB, OpenSSH, or scrcpy. Install those yourself (or use existing installs) and set paths under **File → Preferences** if they are not on your `PATH`.
@@ -84,6 +87,7 @@ List interpreters: `py -0p`.
 ```bat
 git clone https://github.com/nvnkennedy/adbnik.git
 cd adbnik
+git checkout main
 py -m venv .venv
 .venv\Scripts\activate
 py -m pip install -e ".[dev]"
@@ -91,7 +95,7 @@ py -m pytest tests -q
 py -m adbnik
 ```
 
-Windows **.exe** packaging: `adbnik.spec`, `scripts/build_windows_exe.ps1`, installers under `installer/`.
+Windows **.exe** builds, installers, and the project **website** are maintained on branch **`naveen`** (see that branch’s `scripts/`, `installer/`, and `site/`).
 
 ---
 
@@ -102,8 +106,6 @@ Windows **.exe** packaging: `adbnik.spec`, `scripts/build_windows_exe.ps1`, inst
 | **Repository** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
 | **PyPI** | [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) |
 | **Site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) |
-
-Maintainer upload steps: [docs/PYPI_PUBLISH.md](docs/PYPI_PUBLISH.md).
 
 ---
 
