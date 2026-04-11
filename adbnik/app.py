@@ -16,7 +16,7 @@ def _set_windows_app_user_model_id() -> None:
     try:
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DeviceDeck.DeviceDeck.Application.1")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Adbnik.Adbnik.Application.1")
     except Exception:
         pass
 

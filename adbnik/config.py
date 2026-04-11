@@ -6,13 +6,18 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-# Primary settings file; legacy `~/.adb_explorer_pro.json` is still read and removed after first save.
-CONFIG_PATH = Path.home() / ".devicedeck.json"
+# Primary settings file; legacy paths are read once and removed after save when possible.
+CONFIG_PATH = Path.home() / ".adbnik.json"
+_LEGACY_DEVICEDECK_CONFIG = Path.home() / ".devicedeck.json"
 _LEGACY_CONFIG_PATH = Path.home() / ".adb_explorer_pro.json"
 
 
 def has_existing_config_file() -> bool:
-    return CONFIG_PATH.exists() or _LEGACY_CONFIG_PATH.exists()
+    return (
+        CONFIG_PATH.exists()
+        or _LEGACY_DEVICEDECK_CONFIG.exists()
+        or _LEGACY_CONFIG_PATH.exists()
+    )
 
 
 def _sanitize_bookmark(bookmark: Dict[str, Any]) -> Dict[str, Any]:
@@ -51,6 +56,8 @@ class AppConfig:
     def load(cls) -> "AppConfig":
         if CONFIG_PATH.exists():
             read_path = CONFIG_PATH
+        elif _LEGACY_DEVICEDECK_CONFIG.exists():
+            read_path = _LEGACY_DEVICEDECK_CONFIG
         elif _LEGACY_CONFIG_PATH.exists():
             read_path = _LEGACY_CONFIG_PATH
         else:
@@ -88,7 +95,7 @@ class AppConfig:
                     defaults[key] = [str(x).strip() for x in lst if str(x).strip()][:40]
             return cls(**defaults)
         except Exception as exc:
-            print(f"[DeviceDeck] Could not load config '{read_path}': {exc}")
+            print(f"[Adbnik] Could not load config '{read_path}': {exc}")
             return cls()
 
     def save(self) -> None:
@@ -126,5 +133,10 @@ class AppConfig:
         try:
             if _LEGACY_CONFIG_PATH.is_file():
                 _LEGACY_CONFIG_PATH.unlink()
+        except OSError:
+            pass
+        try:
+            if _LEGACY_DEVICEDECK_CONFIG.is_file():
+                _LEGACY_DEVICEDECK_CONFIG.unlink()
         except OSError:
             pass

@@ -1,21 +1,10 @@
-# DeviceDeck release notes (maintainers)
+# Adbnik release notes (maintainers)
 
-## End-user install
-
-Users install from **PyPI**:
+## End users
 
 ```bash
-pip install adbsshdeck
-adbsshdeck
+pip install adbnik
+adbnik
 ```
 
-Marketing site: [GitHub Pages](https://nvnkennedy.github.io/Device_Deck/) → **Install** page.
-
-## This repository
-
-- **Source code** and **site/** only — no large binaries in git.
-- **Publishing:** see **`docs/PYPI_PUBLISH.md`** and **`RELEASE_CHECKLIST.md`**.
-
-## Optional Windows bundles
-
-PyInstaller builds may be produced locally and attached to **GitHub Releases** only; they are not required for normal distribution.
+See `CHANGELOG.md` for version history.

@@ -1,4 +1,4 @@
-# SignPath setup for Device_Deck (you complete these steps)
+# SignPath setup for Adbnik (you complete these steps)
 
 **Nobody can register SignPath on your behalf.** It needs **your** email, identity checks, and **your** click to accept their terms. This file is the checklist to finish after you start at [signpath.org](https://signpath.org/).
 
@@ -7,14 +7,14 @@
 1. Open **[SignPath Foundation](https://signpath.org/)** (or the product flow they link for OSS).
 2. **Create an account** with an email you control.
 3. **Apply** for a **free open-source** project and connect it to **this repository**:  
-   `https://github.com/nvnkennedy/Device_Deck`  
+   `https://github.com/nvnkennedy/adbnik`  
    (Use your fork URL if the canonical repo name differs.)
 
 Wait for their approval email before expecting signing to work.
 
 ## 2. Install the SignPath GitHub App
 
-SignPath requires the **[SignPath GitHub App](https://github.com/apps/signpath)** installed on the **user or organization** that owns `Device_Deck`, with access to that repository.
+SignPath requires the **[SignPath GitHub App](https://github.com/apps/signpath)** installed on the **user or organization** that owns the **adbnik** repo, with access to that repository.
 
 Official doc: [Trusted build systems — GitHub](https://docs.signpath.io/trusted-build-systems/github).
 
@@ -22,7 +22,7 @@ Official doc: [Trusted build systems — GitHub](https://docs.signpath.io/truste
 
 After login at SignPath:
 
-1. Add the **trusted build system** **GitHub.com** to your SignPath organization and **link** it to your Device_Deck **SignPath project** (see their UI wizard).
+1. Add the **trusted build system** **GitHub.com** to your SignPath organization and **link** it to your **Adbnik** **SignPath project** (see their UI wizard).
 2. Note these values (names vary by how you configured them):
    - **Organization ID**
    - **Project slug**
@@ -62,7 +62,7 @@ Minimal pattern (adapt step IDs and paths to your workflow):
   uses: actions/upload-artifact@v4
   with:
     name: unsigned-portable
-    path: DeviceDeck_Portable_v0.1.0.zip   # must match your built file name
+    path: Adbnik_Portable_v0.2.0.zip   # must match your built file name
 
 - name: Request SignPath signing
   uses: signpath/github-action-submit-signing-request@v2
@@ -76,7 +76,7 @@ Minimal pattern (adapt step IDs and paths to your workflow):
     output-artifact-directory: signed
 ```
 
-Then upload `signed/` contents to a **GitHub Release** if you distribute optional Windows installers. Most users install with **`pip install adbsshdeck`** from PyPI.
+Then upload `signed/` contents to a **GitHub Release** if you distribute optional Windows installers. Most users install with **`pip install adbnik`** from PyPI.
 
 ## 6. If something fails
 

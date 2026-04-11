@@ -23,7 +23,7 @@ If you cannot buy a certificate, **[SignPath Foundation](https://signpath.org/)*
 1. **Apply** at [signpath.org](https://signpath.org/) and create a project linked to your **public** GitHub repository.
 2. **Define** which build artifacts may be signed (policy) so only builds produced from your repo get signed.
 3. **Upload** a release build through their UI, or connect **GitHub Actions** with their documented integration so CI submits the built `.exe` / installer for signing.
-4. **Publish** the **signed** files (e.g. attach to a GitHub Release). Primary user distribution is **PyPI** (`pip install adbsshdeck`), not checked-in installers.
+4. **Publish** the **signed** files (e.g. attach to a GitHub Release). Primary user distribution is **PyPI** (`pip install adbnik`), not checked-in installers.
 
 If SignPath declines or your project does not qualify yet, the fallback remains: **community unsigned builds** and users using **More info → Run anyway** on their own PCs, or **purchasing** a certificate later.
 
@@ -39,7 +39,7 @@ This section applies if you purchase your own certificate instead.
 
 1. A **code signing certificate** from a publicly trusted Certificate Authority (DigiCert, Sectigo, SSL.com, etc.).
 2. **Windows SDK** (includes `signtool.exe`) or Visual Studio “Desktop development with C++” workload.
-3. Optional: **Inno Setup** if you build the installer with `DeviceDeck.iss`.
+3. Optional: **Inno Setup** if you build the installer with `adbnik.iss`.
 
 Certificate types:
 
@@ -54,9 +54,9 @@ If you use **SignPath**, follow their project setup instead of the steps below.
 
 Build the app and installer first (`scripts/build_windows_exe.ps1`, then compile the Inno Setup script). Then sign **in this order**:
 
-1. `dist\DeviceDeck\DeviceDeck.exe` (main executable)
+1. `dist\Adbnik\Adbnik.exe` (main executable)
 2. Re-create the portable ZIP if it must contain the signed EXE
-3. `dist_installer\DeviceDeck_Setup_<version>.exe` (installer)
+3. `dist_installer\Adbnik_Setup_<version>.exe` (installer)
 
 Use the helper script (from repo root):
 
@@ -66,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File scripts\sign_windows_artifacts.ps1 `
   -PfxPassword (Read-Host -AsSecureString)
 ```
 
-Or set environment variables `DEVICE_DECK_PFX` and `DEVICE_DECK_PFX_PASSWORD` (avoid committing secrets).
+Or set environment variables `ADBNIK_PFX` and `ADBNIK_PFX_PASSWORD` (avoid committing secrets).
 
 ### Manual `signtool` example
 
@@ -74,20 +74,20 @@ Find `signtool` under `C:\Program Files (x86)\Windows Kits\10\bin\<version>\x64\
 
 ```powershell
 $st = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
-& $st sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f your.pfx /p "password" "dist\DeviceDeck\DeviceDeck.exe"
-& $st sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f your.pfx /p "password" "dist_installer\DeviceDeck_Setup_0.1.0.exe"
+& $st sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f your.pfx /p "password" "dist\Adbnik\Adbnik.exe"
+& $st sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f your.pfx /p "password" "dist_installer\Adbnik_Setup_0.2.0.exe"
 ```
 
 Timestamping (`/tr`) keeps signatures valid after the certificate expires.
 
 ## Inno Setup integration
 
-You can sign inside Inno Setup via **Tools → Configure Sign Tools**, or rely on signing the generated `DeviceDeck_Setup_*.exe` **after** `ISCC` (simpler for automation). If you sign inside Inno, enable **Signed uninstaller** for a fully signed experience.
+You can sign inside Inno Setup via **Tools → Configure Sign Tools**, or rely on signing the generated `Adbnik_Setup_*.exe` **after** `ISCC` (simpler for automation). If you sign inside Inno, enable **Signed uninstaller** for a fully signed experience.
 
 ## After signing: releases
 
 1. Attach **signed** artifacts to a **GitHub Release** (optional) or distribute through your own channel.
-2. Primary app delivery for users is **`pip install adbsshdeck`** on PyPI — unsigned/signed Windows bundles are optional extras for people without Python.
+2. Primary app delivery for users is **`pip install adbnik`** on PyPI — unsigned/signed Windows bundles are optional extras for people without Python.
 
 ## References
 

@@ -1,4 +1,4 @@
-"""Shown once on a fresh install before ~/.devicedeck.json exists."""
+"""Shown once on a fresh install before ~/.adbnik.json exists."""
 
 from pathlib import Path
 
@@ -26,7 +26,7 @@ class FirstRunDialog(QDialog):
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
         self._config = config
-        self.setWindowTitle("Welcome — set up DeviceDeck")
+        self.setWindowTitle("Welcome — set up Adbnik")
         self.setModal(True)
         app = QApplication.instance()
         if app is not None:

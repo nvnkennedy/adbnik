@@ -1,5 +1,4 @@
-from devicedeck.app import main
-
+from adbnik.app import main
 
 if __name__ == "__main__":
     main()

@@ -1,16 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec — run from the project root:
 #   pip install -e ".[build]"
-#   pyinstaller DeviceDeck.spec
+#   pyinstaller adbnik.spec
 #
-# Output: dist/DeviceDeck/DeviceDeck.exe (folder bundle — reliable for PyQt5).
+# Output: dist/Adbnik/Adbnik.exe (folder bundle — reliable for PyQt5).
 # PyQt5 is picked up via PyInstaller hooks (avoid collect_all — it pulls all of Qt/QML).
 
 import os
 
 _spec_dir = os.path.dirname(os.path.abspath(SPEC))
 _main = os.path.join(_spec_dir, "main.py")
-_icon = os.path.join(_spec_dir, "assets", "devicedeck.ico")
+_icon = os.path.join(_spec_dir, "assets", "adbnik.ico")
 
 a = Analysis(
     [_main],
@@ -35,7 +35,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="DeviceDeck",
+    name="Adbnik",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -56,5 +56,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="DeviceDeck",
+    name="Adbnik",
 )

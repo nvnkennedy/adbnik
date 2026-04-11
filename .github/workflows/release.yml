@@ -36,12 +36,12 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File scripts/build_windows_exe.ps1
       - name: Package portable zip
         run: |
-          powershell -Command "Compress-Archive -Path dist/DeviceDeck/* -DestinationPath DeviceDeck_Portable_${{ github.ref_name }}.zip -Force"
+          powershell -Command "Compress-Archive -Path dist/Adbnik/* -DestinationPath Adbnik_Portable_${{ github.ref_name }}.zip -Force"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: portable-bundle
-          path: DeviceDeck_Portable_${{ github.ref_name }}.zip
+          path: Adbnik_Portable_${{ github.ref_name }}.zip
 
   release:
     needs: build-portable
@@ -53,5 +53,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: DeviceDeck_Portable_${{ github.ref_name }}.zip
+          files: Adbnik_Portable_${{ github.ref_name }}.zip
           generate_release_notes: true
