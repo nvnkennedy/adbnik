@@ -29,7 +29,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .. import APP_TITLE
+from .. import APP_TITLE, __version__
 from ..config import AppConfig
 from ..services.adb_devices import list_adb_devices
 from ..services.commands import run_adb
@@ -59,6 +59,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(720, 480)
         self._build_ui()
         self._apply_theme()
+        self._setup_version_status()
         if hasattr(self, "_action_dark"):
             self._action_dark.setChecked(bool(getattr(self.config, "dark_theme", False)))
         self.append_log("Application started.")
@@ -109,6 +110,27 @@ class MainWindow(QMainWindow):
     def _apply_theme(self) -> None:
         dark = bool(getattr(self.config, "dark_theme", False))
         self.setStyleSheet(get_stylesheet(dark=dark))
+        self._refresh_version_label_style()
+
+    def _setup_version_status(self) -> None:
+        self._version_label = QLabel(f"v{__version__}")
+        self._version_label.setObjectName("VersionStatusLabel")
+        self.statusBar().setSizeGripEnabled(False)
+        self.statusBar().addPermanentWidget(self._version_label)
+        self._refresh_version_label_style()
+
+    def _refresh_version_label_style(self) -> None:
+        if not hasattr(self, "_version_label"):
+            return
+        dark = bool(getattr(self.config, "dark_theme", False))
+        if dark:
+            self._version_label.setStyleSheet(
+                "color: #94a3b8; font-size: 11px; padding: 2px 12px; font-weight: 500;"
+            )
+        else:
+            self._version_label.setStyleSheet(
+                "color: #64748b; font-size: 11px; padding: 2px 12px; font-weight: 500;"
+            )
 
     def _toggle_dark_theme(self) -> None:
         self.config.dark_theme = self._action_dark.isChecked()
@@ -595,7 +617,7 @@ class MainWindow(QMainWindow):
 
     def _menu_help_about(self) -> None:
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"About {APP_TITLE}")
+        dlg.setWindowTitle(f"About {APP_TITLE} — v{__version__}")
         dlg.setModal(True)
         dlg.setWindowIcon(self.windowIcon())
         dlg.resize(560, 480)
@@ -605,6 +627,7 @@ class MainWindow(QMainWindow):
         body.setOpenExternalLinks(True)
         py_ver = html.escape(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
         plat = html.escape(platform.platform())
+        ver_esc = html.escape(__version__)
         dark = bool(getattr(self.config, "dark_theme", False))
         fg = "#e6edf3" if dark else "#0f172a"
         sub = "#94a3b8" if dark else "#334155"
@@ -614,6 +637,7 @@ class MainWindow(QMainWindow):
 <!DOCTYPE html>
 <html><body style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;color:{fg};line-height:1.45;">
 <h2 style="margin-top:0;">{html.escape(APP_TITLE)}</h2>
+<p style="color:{sub}; margin-bottom:8px;"><b>Version</b> {ver_esc}</p>
 <p style="color:{sub};">A desktop workspace for Android debugging, remote files, and screen control — built with
 PyQt5 and Python {py_ver} on {plat}.</p>
 
