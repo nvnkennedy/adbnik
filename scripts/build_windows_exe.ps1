@@ -4,6 +4,8 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Root = Resolve-Path (Join-Path $Root "..")
 
 Set-Location $Root
+# Headless Windows / CI: Qt needs an offscreen platform for icon export
+$env:QT_QPA_PLATFORM = "offscreen"
 Write-Host "Generating app icon (assets\adbnik.ico)..."
 python scripts/export_app_icon.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
