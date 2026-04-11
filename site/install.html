@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Install Adbnik — PyPI (adbnik)</title>
+  <meta name="description" content="Install Adbnik with pip: package adbnik. ADB, SSH, serial, files, and USB screen control." />
+  <link rel="canonical" href="https://nvnkennedy.github.io/adbnik/install.html" />
+  <link rel="icon" href="https://nvnkennedy.github.io/adbnik/branding/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="256x256" href="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <link rel="apple-touch-icon" href="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Adbnik" />
+  <meta property="og:title" content="Install Adbnik — PyPI (adbnik)" />
+  <meta property="og:description" content="Install Adbnik with pip: package adbnik. ADB, SSH, serial, files, and USB screen control." />
+  <meta property="og:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <meta property="og:url" content="https://nvnkennedy.github.io/adbnik/install.html" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Install Adbnik — PyPI (adbnik)" />
+  <meta name="twitter:description" content="Install Adbnik with pip: package adbnik. ADB, SSH, serial, files, and USB screen control." />
+  <meta name="twitter:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="logo logo-mark" href="index.html"><img src="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" width="32" height="32" alt="" /> <span>Adbnik</span></a>
+      <span class="tagline">ADB · SSH · serial · files · screen</span>
+    </div>
+  </div>
+  <nav class="mainnav" aria-label="Primary">
+    <div class="mainnav-inner">
+      <a href="index.html">Home</a>
+      <a href="index.html#why">Why Adbnik</a>
+      <a href="index.html#features">Features</a>
+      <a class="active" href="install.html">Install</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero download-hero">
+      <h1>Install from PyPI</h1>
+      <p class="version-pill">PyPI package: <strong>adbnik</strong></p>
+      <p class="lead" style="margin: 0 auto; max-width: 46rem;">
+        <strong>Adbnik</strong> is published on PyPI as <strong>adbnik</strong>.
+        Install with <strong>pip</strong>; the <code>adbnik</code> command is added to your environment (including <code>Scripts</code> on Windows).
+      </p>
+    </section>
+
+    <div class="info-box" style="margin-bottom: 24px;">
+      <h2>Quick install</h2>
+      <p style="color: var(--muted); margin: 0 0 12px;">Requires <strong>Python 3.9+</strong>. Use a virtual environment if you like.</p>
+      <pre class="install-snippet"><code>python -m pip install --upgrade pip
+python -m pip install adbnik</code></pre>
+      <p style="color: var(--muted); margin: 12px 0 0;">Then run:</p>
+      <pre class="install-snippet"><code>adbnik</code></pre>
+      <p class="small" style="margin-top: 12px;">Equivalent: <code>python -m adbnik</code>.</p>
+    </div>
+
+    <div class="info-box" style="margin-bottom: 24px;">
+      <h2>PyPI project page</h2>
+      <p style="color: var(--muted); margin: 0 0 12px;">Version history and metadata:</p>
+      <p style="margin: 0;">
+        <a class="btn" href="https://pypi.org/project/adbnik/">pypi.org/project/adbnik</a>
+      </p>
+    </div>
+
+    <div class="info-box">
+      <h2>Before you run</h2>
+      <ul>
+        <li><strong>Android / ADB / screen:</strong> install platform-tools (ADB) and your USB display-forwarding utility; add to PATH, or set paths in <strong>File → Preferences</strong>.</li>
+        <li><strong>SSH:</strong> an <code>ssh</code> client on PATH for SSH tabs.</li>
+        <li><strong>Serial:</strong> COM hardware; set port and baud in the app.</li>
+      </ul>
+    </div>
+
+    <div class="info-box" style="margin-top: 24px;">
+      <h2>Source code</h2>
+      <p style="color: var(--muted); margin: 0;">
+        <a href="https://github.com/nvnkennedy/adbnik">github.com/nvnkennedy/adbnik</a>
+        — development, issues, and optional PyInstaller builds for maintainers (see README).
+      </p>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p><strong>Adbnik</strong> — <a href="index.html">Home</a></p>
+    <p class="small">© <span id="y"></span></p>
+  </footer>
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
