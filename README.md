@@ -1,8 +1,5 @@
 # Adbnik
 
-> **Branch `main`** holds the **minimal PyPI source tree** (package, tests, metadata).  
-> **Installers, PyInstaller, GitHub Pages, and maintainer docs** live on branch **`naveen`**.
-
 **Adbnik** is a **desktop control room** for Android and embedded work: **ADB shell** tabs, **SSH** sessions, **serial (COM)** consoles, **device and remote file** browsing, and **USB screen mirroring** (via scrcpy or another tool you install)—in **one window** with tabs and bookmarks.
 
 It is **not** made by Google. It does **not** bundle ADB, OpenSSH, or scrcpy. Install those yourself (or use existing installs) and set paths under **File → Preferences** if they are not on your `PATH`.
@@ -43,12 +40,12 @@ py -m pip install adbnik
 py -m adbnik
 ```
 
-**If you use a specific Python (example: `C:\Python\python.exe`):**
+**If you use a specific Python installation, use that interpreter for both `pip` and `adbnik`:**
 
 ```bat
-C:\Python\python.exe -m pip install --upgrade pip
-C:\Python\python.exe -m pip install adbnik
-C:\Python\python.exe -m adbnik
+"C:\Path\To\Python\python.exe" -m pip install --upgrade pip
+"C:\Path\To\Python\python.exe" -m pip install adbnik
+"C:\Path\To\Python\python.exe" -m adbnik
 ```
 
 Always prefer **`python -m adbnik`** if double-clicking **`adbnik.exe`** ever fails.
@@ -57,37 +54,38 @@ Always prefer **`python -m adbnik`** if double-clicking **`adbnik.exe`** ever fa
 
 ## First run
 
-1. Start the app with **`py -m adbnik`** (or your `python -m adbnik`).
+1. Start the app with **`py -m adbnik`** (or **`python -m adbnik`** from the environment where you installed the package).
 2. Set **ADB** / **scrcpy** paths in **File → Preferences** if not on `PATH`.
 3. Open **ADB**, **SSH**, **Serial**, **Files**, or **Screen** from the UI.
 
-Settings: **`%USERPROFILE%\.adbnik.json`**. An older **`.devicedeck.json`** is migrated when you save.
+**Settings** are stored in a **`.adbnik.json`** file under your user profile. If you previously used an older config named **`.devicedeck.json`**, it is migrated when you save preferences.
 
 ---
 
 ## Fix: `ModuleNotFoundError: No module named 'adbnik'`
 
-The **`adbnik` package** is missing in the Python that runs your launcher (usually **mixed pip / mixed Python**).
+The package is not installed for the same Python that runs your command or shortcut (often **mixed `pip` / mixed Python**). Reinstall using **that** interpreter:
 
 ```bat
-C:\Python\python.exe -m pip uninstall adbnik -y
-C:\Python\python.exe -m pip install --force-reinstall adbnik
-C:\Python\python.exe -c "import adbnik; print(adbnik.__file__)"
-C:\Python\python.exe -m adbnik
+"C:\Path\To\Python\python.exe" -m pip uninstall adbnik -y
+"C:\Path\To\Python\python.exe" -m pip install --force-reinstall adbnik
+"C:\Path\To\Python\python.exe" -c "import adbnik; print(adbnik.__file__)"
+"C:\Path\To\Python\python.exe" -m adbnik
 ```
 
-Use **`your\python.exe -m pip`** every time—not a different `pip` on `PATH`.
+Use **`python.exe -m pip`** for the same **`python.exe`** you use to run the app—not a different `pip` on `PATH`.
 
-List interpreters: `py -0p`.
+On Windows, list interpreters: `py -0p`.
 
 ---
 
 ## Development
 
+From a clone of this repository:
+
 ```bat
 git clone https://github.com/nvnkennedy/adbnik.git
 cd adbnik
-git checkout main
 py -m venv .venv
 .venv\Scripts\activate
 py -m pip install -e ".[dev]"
@@ -95,7 +93,7 @@ py -m pytest tests -q
 py -m adbnik
 ```
 
-Windows **.exe** builds, installers, and the project **website** are maintained on branch **`naveen`** (see that branch’s `scripts/`, `installer/`, and `site/`).
+Optional **Windows installers** or other distribution formats may be published via **GitHub Releases** or the **project site** (see links below)—not part of the PyPI package.
 
 ---
 
