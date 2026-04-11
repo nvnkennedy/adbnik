@@ -54,7 +54,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self._first_launch = first_launch
         self.setWindowTitle(APP_TITLE)
-        self.setWindowIcon(create_app_icon())
+        self.setWindowIcon(create_app_icon(dark=bool(getattr(self.config, "dark_theme", False))))
         self.resize(1450, 900)
         self.setMinimumSize(720, 480)
         self._build_ui()
@@ -110,6 +110,11 @@ class MainWindow(QMainWindow):
     def _apply_theme(self) -> None:
         dark = bool(getattr(self.config, "dark_theme", False))
         self.setStyleSheet(get_stylesheet(dark=dark))
+        _icon = create_app_icon(dark=dark)
+        self.setWindowIcon(_icon)
+        _app = QApplication.instance()
+        if _app is not None:
+            _app.setWindowIcon(_icon)
         self._refresh_version_label_style()
 
     def _setup_version_status(self) -> None:

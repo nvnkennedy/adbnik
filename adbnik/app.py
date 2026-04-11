@@ -28,18 +28,19 @@ def main():
     except AttributeError:
         pass
     app = QApplication(sys.argv)
-    app.setWindowIcon(create_app_icon())
     fusion = QStyleFactory.create("Fusion")
     if fusion is not None:
         app.setStyle(fusion)
     app.setApplicationName(APP_TITLE)
-    # Blinking text caret (ms). QApplication provides this in Qt5; ignore if unavailable.
     try:
         QApplication.setCursorFlashTime(530)
     except AttributeError:
         pass
+
     fresh_config = not has_existing_config_file()
     config = AppConfig.load()
+    app.setWindowIcon(create_app_icon(dark=bool(config.dark_theme)))
+
     window = MainWindow(config, first_launch=fresh_config)
     window.show()
     sys.exit(app.exec_())

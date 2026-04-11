@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [0.2.3] - 2026-04-11
+
+### Changed
+
+- **App icon** follows light/dark UI: light theme uses a light “card” icon; dark theme uses the slate tile. Taskbar/window icon updates when you toggle **View → Dark theme**.
+
 ## [0.2.2] - 2026-04-11
 
 ### Changed
