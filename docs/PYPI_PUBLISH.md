@@ -63,3 +63,35 @@ After publishing, users get the new version with `pip install -U adbnik`. The Gi
 ## Retiring old PyPI projects
 
 PyPI does not delete projects. **Yank** old releases on deprecated package names and point users to **`adbnik`** in the project description.
+
+## Upload errors (troubleshooting)
+
+**`400 File already exists` / `duplicate`**
+
+- PyPI never allows reusing the same **version** string. Bump **`version`** in **`pyproject.toml`** and **`adbnik/__init__.py`**, rebuild, upload again.
+
+**`403 Forbidden` / `invalid credentials`**
+
+- Use an **API token**, not your password (2FA is required on PyPI).
+- **Username** must be **`__token__`** when using a token.
+- **Password** is the token string (often starts with `pypi-`).
+- Token must be scoped to the **`adbnik`** project or the whole account.
+
+**`InvalidDistribution` / `license-expression` / metadata errors**
+
+- Upgrade tools: `pip install -U twine build`
+- Keep **`setuptools>=61,<77`** in `[build-system]` (this repo already caps it).
+- Run **`python -m twine check dist/*`** before upload; fix anything it reports.
+
+**Upload only the new files**
+
+- Delete **`dist/`** before each build so old wheels are not uploaded by mistake:
+
+  ```bash
+  rm -rf dist   # Linux/macOS
+  rmdir /s /q dist   # Windows cmd
+  ```
+
+**Windows path tip**
+
+- From repo root: `python -m build` then `python -m twine check dist\*` and `python -m twine upload dist\*`.

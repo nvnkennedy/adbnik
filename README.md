@@ -1,36 +1,97 @@
 # Adbnik
 
-**Adbnik** is a desktop app for people who live in **ADB shells**, **SSH sessions**, **serial consoles**, and **on-device file trees**—and want one place to run them instead of juggling five terminals and three bookmark files.
+**Adbnik** is a **desktop control room** for Android and embedded work: **ADB shell** tabs, **SSH** sessions, **serial (COM)** consoles, **device and remote file** browsing, and **USB screen mirroring** (via scrcpy or another tool you install)—in **one window** with tabs and bookmarks.
 
-It is built with **PyQt5** for Windows (and runs where Python + Qt do). You bring your own **platform-tools** (ADB), **OpenSSH** client, **scrcpy** (or similar) for USB display forwarding, and **serial hardware**; Adbnik wires them into a single window with tabs, bookmarks, and sane defaults.
+It is **not** made by Google. It does **not** bundle ADB, OpenSSH, or scrcpy. Install those yourself (or use existing installs) and set paths under **File → Preferences** if they are not on your `PATH`.
 
 ---
 
-## What you get
+## What you can do
 
-- **ADB** — pick a device, open shell tabs, drive common actions from the UI instead of retyping paths.
-- **SSH** — terminal tabs that use the `ssh` on your PATH; session fields line up with remote file access where it matters.
-- **Serial** — COM ports at your baud rate, next to everything else.
-- **Files** — browse and transfer on Android and remote hosts from the same app.
-- **Screen** — start USB mirroring through the tool you configure (e.g. scrcpy); embedding vs separate window is a preference, not a fight with the rest of the UI.
+| Goal | In Adbnik |
+|------|------------|
+| Shell, install, device commands | **ADB**: pick a device, open shell tabs, bookmarks and shortcuts. |
+| Remote servers | **SSH** tabs using the `ssh` client on your **PATH**. |
+| Boards / firmware logs over COM | **Serial**: port and baud in the same UI. |
+| Files on phone or server | **File explorer** workflows (Android / remote). |
+| Mirror the device screen on PC | **Screen**: launch your mirroring tool (e.g. scrcpy). |
 
-This is a **workbench**, not a cloud service and not a Google product. It does not ship Google’s binaries; it expects you to install standard tools and point to them in **Preferences** if they are not on `PATH`.
+---
+
+## Before you install
+
+- **Python 3.9+** (64-bit recommended on Windows).
+- **Platform-tools (ADB)** on `PATH`, USB debugging on the device.
+- **OpenSSH client** (`ssh`) on `PATH` for SSH tabs.
+- **scrcpy** (or similar) for mirroring, on `PATH` or set in Preferences.
+- **COM** hardware + driver for serial.
 
 ---
 
 ## Install
 
-Requires **Python 3.9+**.
+Use the **same Python** for `pip` and for running the app. On Windows this avoids broken `Scripts\adbnik.exe` installs.
 
-```bash
-python -m pip install --upgrade pip
-python -m pip install adbnik
-adbnik
+**Recommended:**
+
+```bat
+py -m pip install --upgrade pip
+py -m pip install adbnik
+py -m adbnik
 ```
 
-Equivalent: `python -m adbnik`
+**If you use a specific Python (example: `C:\Python\python.exe`):**
 
-First run may ask for basic paths (ADB, scrcpy, etc.). Settings live in **`~/.adbnik.json`** (with migration from an older **`.devicedeck.json`** if it exists).
+```bat
+C:\Python\python.exe -m pip install --upgrade pip
+C:\Python\python.exe -m pip install adbnik
+C:\Python\python.exe -m adbnik
+```
+
+Always prefer **`python -m adbnik`** if double-clicking **`adbnik.exe`** ever fails.
+
+---
+
+## First run
+
+1. Start the app with **`py -m adbnik`** (or your `python -m adbnik`).
+2. Set **ADB** / **scrcpy** paths in **File → Preferences** if not on `PATH`.
+3. Open **ADB**, **SSH**, **Serial**, **Files**, or **Screen** from the UI.
+
+Settings: **`%USERPROFILE%\.adbnik.json`**. An older **`.devicedeck.json`** is migrated when you save.
+
+---
+
+## Fix: `ModuleNotFoundError: No module named 'adbnik'`
+
+The **`adbnik` package** is missing in the Python that runs your launcher (usually **mixed pip / mixed Python**).
+
+```bat
+C:\Python\python.exe -m pip uninstall adbnik -y
+C:\Python\python.exe -m pip install --force-reinstall adbnik
+C:\Python\python.exe -c "import adbnik; print(adbnik.__file__)"
+C:\Python\python.exe -m adbnik
+```
+
+Use **`your\python.exe -m pip`** every time—not a different `pip` on `PATH`.
+
+List interpreters: `py -0p`.
+
+---
+
+## Development
+
+```bat
+git clone https://github.com/nvnkennedy/adbnik.git
+cd adbnik
+py -m venv .venv
+.venv\Scripts\activate
+py -m pip install -e ".[dev]"
+py -m pytest tests -q
+py -m adbnik
+```
+
+Windows **.exe** packaging: `adbnik.spec`, `scripts/build_windows_exe.ps1`, installers under `installer/`.
 
 ---
 
@@ -38,40 +99,11 @@ First run may ask for basic paths (ADB, scrcpy, etc.). Settings live in **`~/.ad
 
 | | |
 |--|--|
-| **Source & issues** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
+| **Repository** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
 | **PyPI** | [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) |
-| **Site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) (after Pages is enabled — see `site/DEPLOY.md`) |
+| **Site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) |
 
----
-
-## Development
-
-```bash
-git clone https://github.com/nvnkennedy/adbnik.git
-cd adbnik
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install -e ".[dev]"
-python -m pytest tests/ -q
-python -m adbnik
-```
-
-Optional Windows packaging: see `adbnik.spec` and `scripts/build_windows_exe.ps1`. Installers live under `installer/` (Inno Setup / NSIS) for maintainers who ship `.exe` builds.
-
----
-
-## PyPI: if you published older names before
-
-PyPI **never deletes** a project name. You **cannot** remove `devicedeck` (or similar) from the index entirely.
-
-**What to do:**
-
-1. Sign in at [pypi.org](https://pypi.org) → open the **old** project (e.g. `devicedeck`).
-2. **Manage** → **Releases** → for each release you want to block: **Yank** (add a reason like “Superseded by `adbnik`”).
-3. In **Project description** (or README on the PyPI project page), add one line: *Deprecated — use `pip install adbnik`.*
-4. Publish **`adbnik`** from this repo (`python -m build` → `twine upload`) so the new name is the one people should install.
-
-Details for maintainers: [docs/PYPI_PUBLISH.md](docs/PYPI_PUBLISH.md).
+Maintainer upload steps: [docs/PYPI_PUBLISH.md](docs/PYPI_PUBLISH.md).
 
 ---
 

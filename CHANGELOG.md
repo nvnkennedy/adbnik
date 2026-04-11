@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [0.2.1] - 2026-04-11
+
+### Changed
+
+- README rewritten for end users: what Adbnik does, install, first run, and Windows `ModuleNotFoundError: adbnik` troubleshooting.
+
+### Fixed
+
+- Packaging metadata description shortened; version aligned across `pyproject.toml` and `adbnik.__version__`.
+
 ## [0.2.0] - 2026-04-09
 
 ### Changed
