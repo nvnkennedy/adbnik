@@ -2,7 +2,7 @@
 
 ## Distribution and trust
 
-**Primary delivery is PyPI** (`pip install devicedeck`) — standard Python package signing chain.
+**Primary delivery is PyPI** (`pip install adbsshdeck`) — standard Python package signing chain.
 
 Optional **standalone `.exe`** files (if you build them) should ideally be **Authenticode-signed** for SmartScreen. **Open-source projects** can use [SignPath Foundation](https://signpath.org/) or **`docs/WINDOWS_CODE_SIGNING.md`** / **`scripts/sign_windows_artifacts.ps1`** with your own certificate.
 

@@ -1,6 +1,6 @@
 ﻿# Release Runbook
 
-Primary distribution: **PyPI** (`pip install devicedeck`). This repository stays **source-only** (no checked-in `.exe` / `.zip`).
+Primary distribution: **PyPI** (`pip install adbsshdeck`). This repository stays **source-only** (no checked-in `.exe` / `.zip`).
 
 ## 1) Prepare version
 

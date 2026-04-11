@@ -76,7 +76,7 @@ Minimal pattern (adapt step IDs and paths to your workflow):
     output-artifact-directory: signed
 ```
 
-Then upload `signed/` contents to a **GitHub Release** if you distribute optional Windows installers. Most users install with **`pip install devicedeck`** from PyPI.
+Then upload `signed/` contents to a **GitHub Release** if you distribute optional Windows installers. Most users install with **`pip install adbsshdeck`** from PyPI.
 
 ## 6. If something fails
 

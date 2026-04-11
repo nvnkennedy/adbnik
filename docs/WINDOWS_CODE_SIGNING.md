@@ -23,7 +23,7 @@ If you cannot buy a certificate, **[SignPath Foundation](https://signpath.org/)*
 1. **Apply** at [signpath.org](https://signpath.org/) and create a project linked to your **public** GitHub repository.
 2. **Define** which build artifacts may be signed (policy) so only builds produced from your repo get signed.
 3. **Upload** a release build through their UI, or connect **GitHub Actions** with their documented integration so CI submits the built `.exe` / installer for signing.
-4. **Publish** the **signed** files (e.g. attach to a GitHub Release). Primary user distribution is **PyPI** (`pip install devicedeck`), not checked-in installers.
+4. **Publish** the **signed** files (e.g. attach to a GitHub Release). Primary user distribution is **PyPI** (`pip install adbsshdeck`), not checked-in installers.
 
 If SignPath declines or your project does not qualify yet, the fallback remains: **community unsigned builds** and users using **More info → Run anyway** on their own PCs, or **purchasing** a certificate later.
 
@@ -87,7 +87,7 @@ You can sign inside Inno Setup via **Tools → Configure Sign Tools**, or rely o
 ## After signing: releases
 
 1. Attach **signed** artifacts to a **GitHub Release** (optional) or distribute through your own channel.
-2. Primary app delivery for users is **`pip install devicedeck`** on PyPI — unsigned/signed Windows bundles are optional extras for people without Python.
+2. Primary app delivery for users is **`pip install adbsshdeck`** on PyPI — unsigned/signed Windows bundles are optional extras for people without Python.
 
 ## References
 

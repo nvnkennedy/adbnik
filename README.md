@@ -1,13 +1,16 @@
 # DeviceDeck (PyQt5)
 
-Desktop workspace for Android debugging: ADB file transfer, multi-session terminal, and USB screen forwarding.
+Desktop workspace for Android debugging: ADB file transfer, multi-session **SSH**, **serial**, USB **screen** forwarding, and on-device files — in one app.
 
 | | |
 |--|--|
-| **PyPI package name** | `devicedeck` |
-| **Run after install** | `devicedeck` (also in `Scripts` on Windows) |
+| **PyPI package** | **`adbsshdeck`** (ADB + SSH + workspace “deck”, including screen control) |
+| **Run after install** | **`adbsshdeck`** (also in `Scripts` on Windows) |
+| **Python import** | `devicedeck` (unchanged) |
 | **Website** | [nvnkennedy.github.io/Device_Deck](https://nvnkennedy.github.io/Device_Deck/) |
-| **PyPI** | [pypi.org/project/devicedeck](https://pypi.org/project/devicedeck/) |
+| **PyPI** | [pypi.org/project/adbsshdeck](https://pypi.org/project/adbsshdeck/) |
+
+The name **`devicedeck`** on PyPI was already taken; **`adbsshdeck`** is this project’s distribution name.
 
 ## Prerequisites
 
@@ -18,22 +21,22 @@ Desktop workspace for Android debugging: ADB file transfer, multi-session termin
 
 ## Install (recommended)
 
-From [PyPI](https://pypi.org/project/devicedeck/):
+From [PyPI](https://pypi.org/project/adbsshdeck/):
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install devicedeck
+python -m pip install adbsshdeck
 ```
 
 Then:
 
 ```bash
-devicedeck
+adbsshdeck
 ```
 
-Same as: `python -m devicedeck`
+Same as: `python -m devicedeck` (import package is still `devicedeck`).
 
-This repository is **source-only** on GitHub — users install the **published package** with pip, not by downloading an `.exe` from the repo.
+This repository is **source-only** on GitHub — users install the **published package** with pip.
 
 ## Install from a git clone (development)
 
@@ -43,13 +46,7 @@ cd Device_Deck
 pip install -e ".[dev]"
 ```
 
-Editable install with tests:
-
-```bash
-pip install -e ".[dev]"
-```
-
-Or install **directly from GitHub**:
+Or:
 
 ```bash
 pip install "git+https://github.com/nvnkennedy/Device_Deck.git"
@@ -78,8 +75,8 @@ See `DeviceDeck.spec`. ADB and display-forwarding tools are **not** bundled.
 
 ## Project layout
 
-- `pyproject.toml` — metadata, `[project.scripts]` → `devicedeck` command
-- `devicedeck/` — application code
+- `pyproject.toml` — metadata; console entry **`adbsshdeck`**
+- `devicedeck/` — application code (import name)
 - `site/` — GitHub Pages (home + install + PyPI links)
 - `scripts/` — `build_windows_exe.ps1`, `export_app_icon.py`
 - `tests/` — pytest
@@ -92,7 +89,7 @@ pip install build
 python -m build
 ```
 
-Artifacts: `dist/devicedeck-*.whl` and `dist/*.tar.gz`.
+Artifacts: `dist/adbsshdeck-*.whl` and `dist/*.tar.gz`.
 
 ## Testing
 
