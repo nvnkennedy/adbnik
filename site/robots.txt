@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://nvnkennedy.github.io/adbnik/sitemap.xml
