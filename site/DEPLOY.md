@@ -1,6 +1,6 @@
 # Publishing the GitHub Pages site
 
-The site under `site/` explains **pip install devicedeck** and links to **PyPI**. It does **not** host Windows `.exe` installers in the repository.
+The site under `site/` explains **pip install adbsshdeck** and links to **PyPI**. It does **not** host Windows `.exe` installers in the repository.
 
 ## One-time setup (GitHub)
 

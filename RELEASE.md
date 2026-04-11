@@ -5,8 +5,8 @@
 Users install from **PyPI**:
 
 ```bash
-pip install devicedeck
-devicedeck
+pip install adbsshdeck
+adbsshdeck
 ```
 
 Marketing site: [GitHub Pages](https://nvnkennedy.github.io/Device_Deck/) → **Install** page.

@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [0.1.1] - 2026-04-09
+
+### Changed
+- PyPI distribution renamed to **`adbsshdeck`** (the name `devicedeck` was unavailable). Console command: **`adbsshdeck`**. Python import package remains **`devicedeck`**.
+
 ## [0.1.0] - 2026-04-09
 
 ### Added
