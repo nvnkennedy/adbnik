@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [0.2.2] - 2026-04-11
+
+### Changed
+
+- New **Adbnik** window icon (slate tile, teal accent, “A” mark)—replacing the older generic device-style glyph.
+- **Version** shown in the **status bar** (bottom-right) and in **Help → About** (title + body).
+
 ## [0.2.1] - 2026-04-11
 
 ### Changed

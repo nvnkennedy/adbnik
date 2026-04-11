@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adbnik"
-version = "0.2.1"
+version = "0.2.2"
 description = "Adbnik — one desktop app for ADB, SSH, serial, device files, and USB screen control."
 readme = "README.md"
 license = { text = "MIT" }

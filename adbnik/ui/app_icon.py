@@ -1,37 +1,51 @@
-"""Application window icon — multi-resolution for crisp taskbar and title bars."""
+"""Application window icon — multi-resolution for taskbar and title bars.
+
+Adbnik mark: dark slate tile + teal accent + white "A" (distinct from older generic device glyphs).
+"""
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
 
 def _render_icon_pixmap(size: int) -> QPixmap:
-    """Rounded tile with a simple device glyph, scaled to ``size``."""
     s = max(16, int(size))
     pm = QPixmap(s, s)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing, True)
     p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+
+    pad = max(1, s // 14)
+    r = max(3, s // 5)
+
+    # Base: deep slate rounded tile
     p.setPen(Qt.NoPen)
+    p.setBrush(QColor("#0f172a"))
+    p.drawRoundedRect(pad, pad, s - 2 * pad, s - 2 * pad, r, r)
 
-    m = max(1, s // 10)
-    r = max(2, s // 5)
-    p.setBrush(QColor("#2563eb"))
-    p.drawRoundedRect(m, m, s - 2 * m, s - 2 * m, r, r)
+    # Accent: teal node (top-right)
+    nd = max(2, s // 5)
+    ex = s - pad - nd - max(0, s // 40)
+    ey = pad + max(0, s // 28)
+    p.setBrush(QColor("#14b8a6"))
+    p.drawEllipse(ex, ey, nd, nd)
 
-    inner_l = s // 4
-    inner_t = s // 5
-    inner_w = s - 2 * inner_l
-    inner_h = int(s * 0.55)
-    p.setBrush(QColor("#e2e8f0"))
-    p.drawRoundedRect(inner_l, inner_t, inner_w, inner_h, max(1, s // 32), max(1, s // 32))
+    # Letter A — white
+    pen_w = max(1, round(s / 14))
+    p.setPen(QPen(QColor("#f8fafc"), pen_w, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
 
-    p.setBrush(QColor("#2563eb"))
-    ex = s // 2 - s // 10
-    ey = inner_t + inner_h - s // 12
-    ew = max(2, s // 5)
-    eh = max(2, s // 12)
-    p.drawEllipse(ex, ey, ew, eh)
+    cx = s // 2
+    top = int(s * 0.30)
+    bot = int(s * 0.72)
+    half_w = int(s * 0.20)
+    # Left and right legs meeting at top
+    p.drawLine(cx - half_w, bot, cx, top)
+    p.drawLine(cx, top, cx + half_w, bot)
+    # Crossbar
+    bar_y = int(s * 0.52)
+    bar_half = int(s * 0.12)
+    p.drawLine(cx - bar_half, bar_y, cx + bar_half, bar_y)
 
     p.end()
     return pm
@@ -40,7 +54,6 @@ def _render_icon_pixmap(size: int) -> QPixmap:
 def create_app_icon() -> QIcon:
     """Icons for taskbar, alt-tab, and window title — several sizes for HiDPI."""
     icon = QIcon()
-    for size in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256):
-        pm = _render_icon_pixmap(size)
-        icon.addPixmap(pm)
+    for sz in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256):
+        icon.addPixmap(_render_icon_pixmap(sz))
     return icon
