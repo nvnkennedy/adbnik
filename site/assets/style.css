@@ -434,6 +434,34 @@ section.block h2 {
   margin-bottom: 0;
 }
 
+.screenshot-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-top: 8px;
+}
+
+.screenshot-grid .shot {
+  margin: 0;
+}
+
+.screenshot-grid .shot figcaption {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+.screenshot-grid .shot img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--nav-border);
+  box-shadow: var(--shadow);
+  display: block;
+  background: var(--surface);
+}
+
 .small {
   font-size: 0.88rem;
   color: var(--muted);
