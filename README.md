@@ -16,6 +16,23 @@ The name keeps **ADB** visible and uses **‑nik** as a short, memorable suffix 
 
 ---
 
+## Screenshots
+
+Source files: [`docs/screenshots/`](docs/screenshots/). PyPI and GitHub use **absolute** raw URLs below.
+
+<p align="center">
+  <b>Main window</b><br />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/01-main-window.png" width="720" alt="Adbnik main window" /><br /><br />
+  <b>Terminal</b><br />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/02-terminal.png" width="720" alt="Adbnik terminal tab" /><br /><br />
+  <b>File Explorer</b><br />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/03-file-explorer.png" width="720" alt="Adbnik file explorer" /><br /><br />
+  <b>Screen Control</b><br />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/04-screen-control.png" width="720" alt="Adbnik screen control" />
+</p>
+
+---
+
 ## What you can do
 
 | Goal | In Adbnik |
