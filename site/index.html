@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Adbnik — ADB, SSH, serial, and Android tools</title>
-  <meta name="description" content="Adbnik: install with pip (adbnik). Tabbed ADB, SSH, serial, device files, and USB screen forwarding." />
+  <title>Adbnik — ADB device workspace (shell, APK, SSH, serial, files, screen)</title>
+  <meta name="description" content="Adbnik (adbnik): an ADB explorer–style workflow and ADB device workspace — tabbed ADB shell, APK install, SSH, serial, device files, USB screen. Install with pip." />
   <link rel="canonical" href="https://nvnkennedy.github.io/adbnik/" />
   <link rel="icon" href="https://nvnkennedy.github.io/adbnik/branding/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="256x256" href="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
   <link rel="apple-touch-icon" href="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Adbnik" />
-  <meta property="og:title" content="Adbnik — ADB, SSH, serial, and Android tools" />
-  <meta property="og:description" content="Install with pip (adbnik). Tabbed ADB, SSH, serial, device files, and USB screen forwarding." />
+  <meta property="og:title" content="Adbnik — ADB device workspace" />
+  <meta property="og:description" content="ADB explorer–style workflow: ADB shell, APK install, SSH, serial, files, USB screen. pip install adbnik" />
   <meta property="og:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
   <meta property="og:url" content="https://nvnkennedy.github.io/adbnik/" />
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Adbnik — ADB, SSH, serial, and Android tools" />
-  <meta name="twitter:description" content="Install with pip (adbnik). Tabbed ADB, SSH, serial, device files, and USB screen forwarding." />
+  <meta name="twitter:title" content="Adbnik — ADB device workspace" />
+  <meta name="twitter:description" content="ADB explorer–style workflow: ADB shell, APK install, SSH, serial, files, USB screen. pip install adbnik" />
   <meta name="twitter:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
@@ -25,7 +25,7 @@
   <div class="topbar">
     <div class="topbar-inner">
       <a class="logo logo-mark" href="index.html"><img src="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" width="32" height="32" alt="" /> <span>Adbnik</span></a>
-      <span class="tagline">ADB · SSH · serial · files · screen</span>
+      <span class="tagline">ADB workspace · SSH · serial · files · screen</span>
     </div>
   </div>
   <nav class="mainnav" aria-label="Primary">
@@ -56,9 +56,10 @@
       <h2>Why Adbnik</h2>
       <p style="color: var(--muted); margin: 0 0 14px; max-width: 58ch;">
         Many setups give you a terminal here, a file window there, and another place to start mirroring.
-        Adbnik is aimed at people who routinely mix <strong>phone or tablet work</strong> with
-        <strong>SSH to servers</strong> or <strong>serial to hardware</strong> — and want that work in
-        <strong>one consistent layout</strong> with a shared device bar, bookmarks, and session list.
+        Adbnik is an <strong>ADB device workspace</strong>: an <strong>ADB explorer–style workflow</strong> for people who mix
+        <strong>phone or tablet work</strong> with <strong>SSH</strong> or <strong>serial</strong> — one consistent layout,
+        shared device selection, bookmarks, and session list. The name keeps <strong>ADB</strong> in view; the suffix is only a short handle.
+        The product name is <strong>Adbnik</strong> (PyPI: <code>adbnik</code>).
       </p>
       <ul class="why-list">
         <li>
@@ -81,7 +82,7 @@
       <div class="feature-grid">
         <article class="feature-card">
           <h3>ADB &amp; Android shell</h3>
-          <p>Pick a device, open an interactive ADB shell tab, and use bookmarks and shortcuts for common tasks (root, remount, reboot, and more).</p>
+          <p>Pick a device, open an interactive ADB shell tab, install APKs via <strong>Session → ADB → Install APK</strong> (<code>adb install -r</code>), and use bookmarks and shortcuts (root, remount, reboot, and more).</p>
         </article>
         <article class="feature-card">
           <h3>SSH terminal</h3>

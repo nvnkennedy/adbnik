@@ -32,7 +32,7 @@ from PyQt5.QtWidgets import (
 from .. import APP_TITLE, __version__
 from ..config import AppConfig
 from ..services.adb_devices import list_adb_devices
-from ..services.commands import run_adb
+from ..services.commands import run_adb, run_adb_with_line_callback
 from ..session import ConnectionKind, SessionProfile
 from .app_icon import create_app_icon
 from .first_run_dialog import FirstRunDialog
@@ -462,6 +462,11 @@ class MainWindow(QMainWindow):
         a_adb_shell.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
         a_adb_shell.triggered.connect(self._menu_session_adb_shell)
         adb_menu.addAction(a_adb_shell)
+        a_install_apk = QAction("Install &APK on selected device…", self)
+        a_install_apk.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
+        a_install_apk.setToolTip("Runs adb install -r against the device chosen in the Terminal tab.")
+        a_install_apk.triggered.connect(self._menu_install_apk)
+        adb_menu.addAction(a_install_apk)
 
         ssh_menu = session.addMenu("SSH")
         ssh_menu.setIcon(self.style().standardIcon(QStyle.SP_DriveNetIcon))
@@ -600,6 +605,45 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
         self.terminal.open_session_matching_profile(self.get_session_profile())
 
+    def _menu_install_apk(self) -> None:
+        self.tabs.setCurrentIndex(0)
+        adb = self.get_adb_path()
+        serial = self.terminal.current_adb_serial()
+        if not serial:
+            QMessageBox.warning(
+                self,
+                "No device",
+                "No Android device is selected for ADB. Connect a device with USB debugging, "
+                "wait until it appears in the ADB device list, then pick it — same selection used for "
+                "Terminal and File Explorer — and try again.",
+            )
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Install APK",
+            "",
+            "Android packages (*.apk);;All files (*.*)",
+        )
+        if not path:
+            return
+        self.append_log(f"ADB: installing APK on {serial} …")
+        args = ["-s", serial, "install", "-r", path]
+
+        def on_line(line: str) -> None:
+            self.append_log(line.rstrip())
+
+        code, out, err = run_adb_with_line_callback(adb, args, timeout=600, on_line=on_line)
+        tail = (err or out or "").strip()
+        if code != 0:
+            msg = f"adb install exited with code {code}."
+            if tail:
+                msg += f"\n\n{tail[-1200:]}"
+            self.append_log(f"ADB install failed: {msg.replace(chr(10), ' ')}")
+            QMessageBox.warning(self, "Install failed", msg)
+            return
+        self.append_log("ADB: install finished.")
+        QMessageBox.information(self, "Install", "APK install finished. See the application log for adb output.")
+
     def _menu_cmd_adb_root(self):
         self.tabs.setCurrentIndex(1)
         self.file_explorer.action_adb_root()
@@ -658,7 +702,8 @@ Pull, push, drag-and-drop, find files, and external editors with sync where supp
 <ul style="margin-top:0;">
 <li><b>File → Preferences</b> — ADB/scrcpy paths, dark theme, serial defaults, and <b>SSH quick commands</b>
 (label and command per line: <code>Label | command</code>). Those commands appear under <b>Commands → SSH</b>.</li>
-<li><b>Session</b> — Refresh devices (F5), ADB tools, open SSH using Explorer’s SFTP host or a new session.</li>
+<li><b>Session</b> — Refresh devices (F5), ADB tools (including <b>Install APK</b> on the selected device),
+open SSH using Explorer’s SFTP host or a new session.</li>
 <li><b>Commands</b> — ADB shortcuts (root, remount, reboot) and your custom SSH lines from Preferences.</li>
 <li><b>View</b> — Jump tabs (Ctrl+1–3), stop screen mirror, toggle dark theme.</li>
 </ul>
