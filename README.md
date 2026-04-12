@@ -8,13 +8,19 @@
 
 It is **not** made by Google. It does **not** bundle ADB, OpenSSH, or scrcpy. Install those yourself (or use existing installs) and set paths under **File → Preferences** if they are not on your `PATH`.
 
+**Positioning:** Adbnik is an **ADB device workspace**—an **ADB explorer–style workflow** in one window: shells, on-device files, optional **APK** push via `adb install`, plus SSH, serial, and launching your mirroring binary. The product name stays **Adbnik** everywhere.
+
+### Why “Adbnik”
+
+The name keeps **ADB** visible and uses **‑nik** as a short, memorable suffix (a compact “nickname” for an ADB‑centric desktop). It is **not** a Google or Android trademark; the project is **Adbnik** only.
+
 ---
 
 ## What you can do
 
 | Goal | In Adbnik |
 |------|------------|
-| Shell, install, device commands | **ADB**: pick a device, open shell tabs, bookmarks and shortcuts. |
+| Shell, APK install, device commands | **ADB**: pick a device, shell tabs, **Session → ADB → Install APK**, bookmarks, shortcuts. |
 | Remote servers | **SSH** tabs using the `ssh` client on your **PATH**. |
 | Boards / firmware logs over COM | **Serial**: port and baud in the same UI. |
 | Files on phone or server | **File explorer** workflows (Android / remote). |
