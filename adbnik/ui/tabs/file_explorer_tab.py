@@ -4,6 +4,8 @@ import json
 import os
 import posixpath
 import re
+import sys
+import threading
 import time
 import shutil
 import tempfile
@@ -16,6 +18,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from PyQt5.QtCore import (
     QByteArray,
+    QEvent,
     QFileInfo,
     QFileSystemWatcher,
     QMimeData,
@@ -69,8 +72,16 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from ...services.commands import run_adb, run_adb_with_line_callback
-from ...services.remote_clients import disconnect_ftp, disconnect_sftp
+from ...services.commands import (
+    adb_remote_probe_size,
+    adb_remote_path_bytes_now,
+    adb_start_rm_rf,
+    kill_all_adb_subprocesses,
+    run_adb,
+    run_adb_with_line_callback,
+    unregister_adb_process,
+)
+from ...services.remote_clients import connect_ftp, connect_sftp, disconnect_ftp, disconnect_sftp
 
 # Windows/macOS shell icons by extension for remote listings (no real local path).
 _remote_ext_icon_cache: Dict[str, QIcon] = {}
@@ -273,14 +284,23 @@ def _human_bytes(n: int) -> str:
 _DIR_SIZE_MAX_FILES = 2_000_000
 
 
-def _dir_size_walk(path: Path, limit_files: int = _DIR_SIZE_MAX_FILES) -> Optional[int]:
-    """Recursive sum of regular-file sizes under path. None on error or if file count exceeds limit."""
+def _dir_size_walk(
+    path: Path,
+    limit_files: int = _DIR_SIZE_MAX_FILES,
+    *,
+    interrupt_check: Optional[Callable[[], bool]] = None,
+) -> Optional[int]:
+    """Recursive sum of regular-file sizes under path. None on error, limit, or interrupt."""
     total = 0
     n = 0
     root = str(path)
     try:
         for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+            if interrupt_check is not None and interrupt_check():
+                return None
             for fn in filenames:
+                if interrupt_check is not None and interrupt_check():
+                    return None
                 if n >= limit_files:
                     return None
                 fp = os.path.join(dirpath, fn)
@@ -479,10 +499,12 @@ class LocalFileTable(QTableWidget):
         self,
         on_paste_paths: Optional[Callable[[List[str]], None]] = None,
         on_drop_remote_pull: Optional[Callable[[List[dict]], None]] = None,
+        on_backspace_up: Optional[Callable[[], None]] = None,
     ):
         super().__init__()
         self._on_paste_paths = on_paste_paths
         self._on_drop_remote_pull = on_drop_remote_pull
+        self._on_backspace_up = on_backspace_up
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, e):
@@ -512,6 +534,21 @@ class LocalFileTable(QTableWidget):
         super().dropEvent(e)
 
     def keyPressEvent(self, ev):
+        if (
+            ev.key() == Qt.Key_Backspace
+            and not (ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+        ):
+            if self._on_backspace_up:
+                self._on_backspace_up()
+            else:
+                p = self.parentWidget()
+                while p is not None:
+                    if hasattr(p, "local_up"):
+                        p.local_up()
+                        break
+                    p = p.parentWidget()
+            ev.accept()
+            return
         if (ev.modifiers() & Qt.ControlModifier) and ev.key() in (Qt.Key_C, Qt.Key_Insert):
             paths: List[str] = []
             for r in sorted({i.row() for i in self.selectedItems()}):
@@ -572,10 +609,12 @@ class RemoteFileTable(QTableWidget):
         activated_slot,
         on_drop_local_paths: Callable[[List[str]], None],
         on_paste_paths: Optional[Callable[[List[str]], None]] = None,
+        on_backspace_up: Optional[Callable[[], None]] = None,
     ):
         super().__init__()
         self._on_drop_local_paths = on_drop_local_paths
         self._on_paste_paths = on_paste_paths
+        self._on_backspace_up = on_backspace_up
         self.setColumnCount(5)
         self.setHorizontalHeaderLabels(["Name", "Size", "Permissions", "Date modified", "Type"])
         _apply_table_chrome(self, stretch_first=True)
@@ -628,6 +667,21 @@ class RemoteFileTable(QTableWidget):
         super().dropEvent(e)
 
     def keyPressEvent(self, ev):
+        if (
+            ev.key() == Qt.Key_Backspace
+            and not (ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+        ):
+            if self._on_backspace_up:
+                self._on_backspace_up()
+            else:
+                p = self.parentWidget()
+                while p is not None:
+                    if hasattr(p, "remote_up"):
+                        p.remote_up()
+                        break
+                    p = p.parentWidget()
+            ev.accept()
+            return
         if (ev.modifiers() & Qt.ControlModifier) and ev.key() in (Qt.Key_C, Qt.Key_Insert):
             paths: List[str] = []
             for r in sorted({i.row() for i in self.selectedItems()}):
@@ -797,6 +851,635 @@ class _FindFilesSearchThread(QThread):
                 self.finished_ok.emit(list(paths))
         except Exception as exc:
             self.finished_err.emit(str(exc))
+
+
+class _AdbCommandThread(QThread):
+    progress = pyqtSignal(int)
+    status = pyqtSignal(str)
+    prep_done = pyqtSignal(str)
+    done = pyqtSignal(int, str)
+
+    def __init__(
+        self,
+        adb_path: str,
+        adb_args: List[str],
+        timeout: int = 600,
+        *,
+        adb_shell_prefix: Optional[List[str]] = None,
+        poll_total_bytes: int = 0,
+        poll_mode: str = "",
+        poll_remote: str = "",
+        poll_local: str = "",
+        prep_measure_push_dir: Optional[str] = None,
+        prep_measure_pull: Optional[Tuple[str, str]] = None,
+        cancel_event: Optional[threading.Event] = None,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+        self._adb_path = adb_path
+        self._adb_args = list(adb_args)
+        self._timeout = timeout
+        self._adb_shell_prefix = list(adb_shell_prefix or [])
+        self._poll_total_bytes = int(poll_total_bytes or 0)
+        self._poll_mode = (poll_mode or "").strip()
+        self._poll_remote = poll_remote
+        self._poll_local = poll_local
+        self._prep_measure_push_dir = (prep_measure_push_dir or "").strip() or None
+        self._prep_measure_pull = prep_measure_pull
+        self._cancel_event = cancel_event
+
+    def run(self) -> None:
+        last_pct = [0]
+        cancel_ev = self._cancel_event
+
+        def on_pct(p: int) -> None:
+            if p < 0:
+                self.progress.emit(-1)
+                return
+            if 0 <= p <= 100 and p >= last_pct[0]:
+                last_pct[0] = p
+                self.progress.emit(p)
+
+        def on_line(line: str) -> None:
+            txt = (line or "").strip()
+            if txt:
+                self.status.emit(txt[:180])
+
+        poll_total_bytes = int(self._poll_total_bytes or 0)
+        poll_mode = (self._poll_mode or "").strip()
+        poll_remote = self._poll_remote
+        poll_local = self._poll_local
+
+        def _cancelled() -> bool:
+            return bool(cancel_ev is not None and cancel_ev.is_set()) or self.isInterruptionRequested()
+
+        if self._prep_measure_push_dir:
+            if _cancelled():
+                self.done.emit(130, "Cancelled")
+                return
+            self.status.emit("Measuring local folder size (this can take a while)…")
+            self.progress.emit(0)
+            try:
+                lp = Path(self._prep_measure_push_dir)
+                walked = _dir_size_walk(lp, interrupt_check=_cancelled)
+                if _cancelled():
+                    self.done.emit(130, "Cancelled")
+                    return
+                poll_total_bytes = int(walked or 0)
+                poll_mode = "push_dir" if poll_total_bytes > 0 else ""
+            except OSError as exc:
+                self.done.emit(1, f"Could not measure folder: {exc}")
+                return
+
+        if self._prep_measure_pull:
+            if _cancelled():
+                self.done.emit(130, "Cancelled")
+                return
+            src, dest = self._prep_measure_pull
+            self.status.emit("Measuring remote size…")
+            self.progress.emit(0)
+            pbytes: Optional[int] = None
+            pkind = "unknown"
+            try:
+                pbytes, pkind = adb_remote_probe_size(self._adb_path, self._adb_shell_prefix, src)
+            except Exception as exc:
+                self.status.emit(f"Remote size probe failed: {exc}"[:180])
+            if _cancelled():
+                self.done.emit(130, "Cancelled")
+                return
+            poll_total_bytes = int(pbytes or 0)
+            poll_remote = ""
+            poll_local = dest
+            poll_mode = ""
+            if pkind == "file" and poll_total_bytes > 0:
+                poll_mode = "pull_file"
+            elif pkind == "dir" and poll_total_bytes > 0:
+                poll_mode = "pull_dir"
+            else:
+                poll_mode = ""
+
+        did_prep = bool(self._prep_measure_push_dir) or bool(self._prep_measure_pull)
+        if did_prep:
+            if poll_total_bytes > 0:
+                self.prep_done.emit(f"≈ {_human_bytes(int(poll_total_bytes))} total (measured)")
+            else:
+                self.prep_done.emit("Size not estimated — using adb output for progress")
+
+        code, out, err = run_adb_with_line_callback(
+            self._adb_path,
+            self._adb_args,
+            timeout=self._timeout,
+            on_line=on_line,
+            on_percent=on_pct,
+            poll_total_bytes=poll_total_bytes,
+            poll_mode=poll_mode,
+            poll_remote=poll_remote,
+            poll_local=poll_local,
+            adb_shell_prefix=self._adb_shell_prefix,
+            cancel_event=cancel_ev,
+        )
+        msg = (err or out or "").strip()
+        self.done.emit(code, msg)
+
+
+class _RemoteTransferThread(QThread):
+    progress = pyqtSignal(int, str)
+    done = pyqtSignal(bool, str, str)
+
+    def __init__(self, *, kind: str, mode: str, items: List[dict], remote_path: str, local_path: str, creds: dict):
+        super().__init__(None)
+        self._kind = kind
+        self._mode = mode
+        self._items = list(items)
+        self._remote_path = remote_path
+        self._local_path = local_path
+        self._creds = dict(creds or {})
+
+    def run(self) -> None:
+        try:
+            if self._kind == "sftp":
+                self._run_sftp()
+            elif self._kind == "ftp":
+                self._run_ftp()
+            else:
+                self.done.emit(False, "", f"Unsupported transfer kind: {self._kind}")
+        except Exception as exc:
+            self.done.emit(False, "", str(exc))
+
+    def _progress(self, idx: int, total: int, pct: int, msg: str) -> None:
+        base = int((idx * 100) / max(total, 1))
+        span = max(1, int(100 / max(total, 1)))
+        v = min(99, base + int((span * max(0, min(100, pct))) / 100))
+        self.progress.emit(v, msg)
+
+    def _run_sftp(self) -> None:
+        t, sftp, err = connect_sftp(
+            self._creds.get("host", ""),
+            int(self._creds.get("port", 22) or 22),
+            self._creds.get("user", ""),
+            self._creds.get("password", ""),
+            timeout=60,
+        )
+        if err or sftp is None:
+            self.done.emit(False, "", err or "SFTP connection failed")
+            return
+        last = ""
+        ok = 0
+        total = max(len(self._items), 1)
+        try:
+            for idx, it in enumerate(self._items):
+                if self._mode == "push":
+                    lp = Path(str(it.get("local", "")))
+                    if not lp.exists():
+                        continue
+                    rp = posixpath.join(self._remote_path.rstrip("/"), lp.name).replace("\\", "/")
+                    self._sftp_put(sftp, str(lp), rp, idx, total)
+                    last = lp.name
+                    ok += 1
+                else:
+                    rp = str(it.get("remote", "")).replace("\\", "/")
+                    if not rp:
+                        continue
+                    name = posixpath.basename(rp.rstrip("/")) or "item"
+                    lp = str(Path(self._local_path) / name)
+                    self._sftp_get(sftp, rp, lp, idx, total)
+                    last = name
+                    ok += 1
+            self.done.emit(True, last, f"Transferred {ok} item(s).")
+        finally:
+            disconnect_sftp(t, sftp)
+
+    def _run_ftp(self) -> None:
+        ftp, err = connect_ftp(
+            self._creds.get("host", ""),
+            int(self._creds.get("port", 21) or 21),
+            self._creds.get("user", ""),
+            self._creds.get("password", ""),
+            timeout=60,
+        )
+        if err or ftp is None:
+            self.done.emit(False, "", err or "FTP connection failed")
+            return
+        last = ""
+        ok = 0
+        total = max(len(self._items), 1)
+        try:
+            for idx, it in enumerate(self._items):
+                if self._mode == "push":
+                    lp = Path(str(it.get("local", "")))
+                    if not lp.exists():
+                        continue
+                    self._ftp_put(ftp, str(lp), self._remote_path, idx, total)
+                    last = lp.name
+                    ok += 1
+                else:
+                    rp = str(it.get("remote", "")).replace("\\", "/")
+                    if not rp:
+                        continue
+                    name = posixpath.basename(rp.rstrip("/")) or "item"
+                    lp = str(Path(self._local_path) / name)
+                    self._ftp_get(ftp, rp, lp, idx, total, is_dir=bool(it.get("is_dir")))
+                    last = name
+                    ok += 1
+            self.done.emit(True, last, f"Transferred {ok} item(s).")
+        finally:
+            disconnect_ftp(ftp)
+
+    def _sftp_put(self, sftp, local_path: str, remote_path: str, idx: int, total: int) -> None:
+        self._sftp_mkdir_p(sftp, posixpath.dirname(remote_path) or "/")
+        if Path(local_path).is_dir():
+            for root, _dirs, files in os.walk(local_path):
+                rel = Path(root).relative_to(local_path)
+                rel_s = "" if str(rel) == "." else str(rel).replace("\\", "/")
+                base_remote = posixpath.join(remote_path, rel_s).replace("//", "/") if rel_s else remote_path
+                self._sftp_mkdir_p(sftp, base_remote)
+                for fn in files:
+                    lp = str(Path(root) / fn)
+                    rp = posixpath.join(base_remote, fn).replace("\\", "/")
+                    self._sftp_put_file(sftp, lp, rp, idx, total)
+        else:
+            self._sftp_put_file(sftp, local_path, remote_path, idx, total)
+
+    def _sftp_put_file(self, sftp, local_file: str, remote_file: str, idx: int, total: int) -> None:
+        def _cb(sent: int, size: int) -> None:
+            pct = int((100 * sent) / max(size, 1)) if size else 0
+            self._progress(idx, total, pct, f"Uploading {Path(local_file).name} ({pct}%)")
+        sftp.put(local_file, remote_file, callback=_cb)
+
+    def _sftp_get(self, sftp, remote_path: str, local_path: str, idx: int, total: int) -> None:
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        try:
+            st = sftp.stat(remote_path)
+            if S_ISDIR(st.st_mode):
+                root_local = Path(local_path)
+                root_local.mkdir(parents=True, exist_ok=True)
+                for a in sftp.listdir_attr(remote_path):
+                    if a.filename in (".", ".."):
+                        continue
+                    self._sftp_get(
+                        sftp,
+                        posixpath.join(remote_path, a.filename).replace("\\", "/"),
+                        str(root_local / a.filename),
+                        idx,
+                        total,
+                    )
+                return
+        except Exception:
+            pass
+        def _cb(sent: int, size: int) -> None:
+            pct = int((100 * sent) / max(size, 1)) if size else 0
+            self._progress(idx, total, pct, f"Downloading {Path(local_path).name} ({pct}%)")
+        sftp.get(remote_path, local_path, callback=_cb)
+
+    def _sftp_mkdir_p(self, sftp, remote_dir: str) -> None:
+        r = remote_dir.replace("\\", "/").rstrip("/")
+        if not r or r == "/":
+            return
+        acc = ""
+        for p in [x for x in r.split("/") if x]:
+            acc = f"{acc}/{p}" if acc else f"/{p}"
+            try:
+                sftp.stat(acc)
+            except Exception:
+                try:
+                    sftp.mkdir(acc)
+                except Exception:
+                    pass
+
+    def _ftp_put(self, ftp, local_path: str, remote_dir: str, idx: int, total: int) -> None:
+        if Path(local_path).is_dir():
+            base_remote = posixpath.join(remote_dir.rstrip("/"), Path(local_path).name).replace("\\", "/")
+            for root, _dirs, files in os.walk(local_path):
+                rel = Path(root).relative_to(local_path)
+                rel_s = "" if str(rel) == "." else str(rel).replace("\\", "/")
+                cur_remote = posixpath.join(base_remote, rel_s).replace("//", "/") if rel_s else base_remote
+                self._ftp_ensure_dir(ftp, cur_remote)
+                for fn in files:
+                    self._ftp_put_file(ftp, str(Path(root) / fn), cur_remote, idx, total)
+        else:
+            self._ftp_put_file(ftp, local_path, remote_dir, idx, total)
+
+    def _ftp_put_file(self, ftp, local_file: str, remote_dir: str, idx: int, total: int) -> None:
+        self._ftp_ensure_dir(ftp, remote_dir)
+        size = max(Path(local_file).stat().st_size, 1)
+        sent = [0]
+        name = Path(local_file).name
+        def _cb(block: bytes) -> None:
+            sent[0] += len(block)
+            pct = int((100 * sent[0]) / size)
+            self._progress(idx, total, pct, f"Uploading {name} ({pct}%)")
+        with open(local_file, "rb") as f:
+            ftp.storbinary(f"STOR {name}", f, blocksize=65536, callback=_cb)
+
+    def _ftp_get(self, ftp, remote_path: str, local_path: str, idx: int, total: int, *, is_dir: bool = False) -> None:
+        if is_dir:
+            root = Path(local_path)
+            root.mkdir(parents=True, exist_ok=True)
+            self._ftp_get_tree(ftp, remote_path.rstrip("/"), root, idx, total)
+            return
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        parent = posixpath.dirname(remote_path) or "/"
+        name = posixpath.basename(remote_path)
+        self._ftp_ensure_dir(ftp, parent)
+        with open(local_path, "wb") as out:
+            ftp.retrbinary(f"RETR {name}", out.write)
+        self._progress(idx, total, 100, f"Downloaded {Path(local_path).name}")
+
+    def _ftp_get_tree(self, ftp, remote_path: str, local_root: Path, idx: int, total: int) -> None:
+        try:
+            ftp.cwd(remote_path)
+        except Exception:
+            return
+        try:
+            entries = list(ftp.mlsd())
+        except Exception:
+            entries = []
+            try:
+                for n in ftp.nlst():
+                    if n not in (".", ".."):
+                        entries.append((n, {"type": "file"}))
+            except Exception:
+                return
+        for n, facts in entries:
+            if n in (".", ".."):
+                continue
+            rp = posixpath.join(remote_path, n).replace("\\", "/")
+            lp = local_root / n
+            if bool(facts) and facts.get("type") == "dir":
+                lp.mkdir(parents=True, exist_ok=True)
+                self._ftp_get_tree(ftp, rp, lp, idx, total)
+            else:
+                self._ftp_get(ftp, rp, str(lp), idx, total, is_dir=False)
+
+    def _ftp_ensure_dir(self, ftp, remote_dir: str) -> None:
+        r = remote_dir.replace("\\", "/").rstrip("/")
+        if r in ("", "/"):
+            ftp.cwd("/")
+            return
+        try:
+            ftp.cwd(r)
+            return
+        except Exception:
+            pass
+        parent = posixpath.dirname(r) or "/"
+        base = posixpath.basename(r)
+        self._ftp_ensure_dir(ftp, parent)
+        try:
+            ftp.mkd(base)
+        except Exception:
+            pass
+        ftp.cwd(base)
+
+
+class _RemoteListThread(QThread):
+    done = pyqtSignal(object, str)
+
+    def __init__(self, *, kind: str, adb_path: str, adb_args: List[str], remote_path: str, creds: dict):
+        super().__init__(None)
+        self._kind = kind
+        self._adb_path = adb_path
+        self._adb_args = list(adb_args)
+        self._remote_path = remote_path
+        self._creds = dict(creds or {})
+
+    def run(self) -> None:
+        rows = []
+        err = ""
+        try:
+            rp = (self._remote_path or "").strip() or "/"
+            parent = posixpath.dirname(rp.rstrip("/")) or "/"
+            rows.append((RemoteItem("..", True, "", "", "", "", ""), parent))
+            if self._kind == "adb":
+                safe_rp = rp.replace("\\", "\\\\").replace('"', '\\"')
+                code, stdout, stderr = run_adb(
+                    self._adb_path,
+                    [*self._adb_args, "shell", f'ls -la "{safe_rp}"'],
+                )
+                if code != 0:
+                    err = (stderr or "ADB list failed.").strip()
+                    self.done.emit(rows, err)
+                    return
+                for line in stdout.splitlines():
+                    parsed = _parse_ls_line(line)
+                    if not parsed:
+                        continue
+                    rows.append((parsed, f"{rp.rstrip('/')}/{parsed.name}".replace("//", "/")))
+                self.done.emit(rows, "")
+                return
+            if self._kind == "sftp":
+                t, sftp, e = connect_sftp(
+                    self._creds.get("host", ""),
+                    int(self._creds.get("port", 22) or 22),
+                    self._creds.get("user", ""),
+                    self._creds.get("password", ""),
+                    timeout=30,
+                )
+                if e or sftp is None:
+                    self.done.emit(rows, e or "SFTP connection failed.")
+                    return
+                try:
+                    attrs = sftp.listdir_attr(rp.rstrip("/") or "/")
+                    for a in sorted(attrs, key=lambda x: (not S_ISDIR(x.st_mode), x.filename.lower())):
+                        name = a.filename
+                        if name in (".", ".."):
+                            continue
+                        is_dir = S_ISDIR(a.st_mode)
+                        full = posixpath.join(rp.rstrip("/") or "/", name).replace("\\", "/")
+                        perm = oct(a.st_mode)[-4:] if a.st_mode else ""
+                        sz = str(a.st_size)
+                        mt = datetime.fromtimestamp(a.st_mtime).strftime("%Y-%m-%d %H:%M") if a.st_mtime else ""
+                        rows.append((RemoteItem(name, is_dir, perm, "", "", sz, mt), full))
+                    self.done.emit(rows, "")
+                finally:
+                    disconnect_sftp(t, sftp)
+                return
+            if self._kind == "ftp":
+                ftp, e = connect_ftp(
+                    self._creds.get("host", ""),
+                    int(self._creds.get("port", 21) or 21),
+                    self._creds.get("user", ""),
+                    self._creds.get("password", ""),
+                    timeout=30,
+                )
+                if e or ftp is None:
+                    self.done.emit(rows, e or "FTP connection failed.")
+                    return
+                try:
+                    ftp.cwd(rp.rstrip("/") or "/")
+                    try:
+                        for name, facts in ftp.mlsd():
+                            if name in (".", ".."):
+                                continue
+                            is_dir = facts.get("type") == "dir"
+                            full = posixpath.join(rp.rstrip("/") or "/", name).replace("\\", "/")
+                            rows.append((RemoteItem(name, is_dir, "", "", "", "<DIR>" if is_dir else "?", ""), full))
+                    except (error_perm, AttributeError):
+                        for name in ftp.nlst():
+                            if name in (".", ".."):
+                                continue
+                            full = posixpath.join(rp.rstrip("/") or "/", name).replace("\\", "/")
+                            rows.append((RemoteItem(name, False, "", "", "", "?", ""), full))
+                    self.done.emit(rows, "")
+                finally:
+                    disconnect_ftp(ftp)
+                return
+            self.done.emit(rows, f"Unsupported remote kind: {self._kind}")
+        except Exception as exc:
+            self.done.emit(rows, str(exc))
+
+
+class _DeleteThread(QThread):
+    """Delete local or ADB paths with determinate progress (0–100%) where measurable."""
+
+    done = pyqtSignal(bool, str)
+    progress = pyqtSignal(int)
+
+    def __init__(
+        self,
+        *,
+        mode: str,
+        target: str,
+        is_dir: bool = False,
+        adb_path: str = "",
+        adb_args: Optional[List[str]] = None,
+        cancel_event: Optional[threading.Event] = None,
+    ):
+        super().__init__(None)
+        self._mode = mode
+        self._target = target
+        self._is_dir = is_dir
+        self._adb_path = adb_path
+        self._adb_args = list(adb_args or [])
+        self._cancel_event = cancel_event
+
+    def _cancelled(self) -> bool:
+        return bool(self._cancel_event is not None and self._cancel_event.is_set()) or self.isInterruptionRequested()
+
+    def run(self) -> None:
+        try:
+            if self._mode == "local":
+                self._run_local_delete()
+                return
+            if self._mode == "adb":
+                self._run_adb_delete()
+                return
+            self.done.emit(False, "Unsupported delete mode")
+        except Exception as exc:
+            self.done.emit(False, str(exc))
+
+    def _run_local_delete(self) -> None:
+        p = Path(self._target)
+        if not p.exists():
+            self.progress.emit(100)
+            self.done.emit(True, "")
+            return
+        if p.is_file() or (p.is_symlink() and not p.is_dir()):
+            try:
+                p.unlink()
+            except OSError as exc:
+                self.done.emit(False, str(exc))
+                return
+            self.progress.emit(100)
+            self.done.emit(True, "")
+            return
+        if not p.is_dir():
+            try:
+                p.unlink()
+            except OSError as exc:
+                self.done.emit(False, str(exc))
+                return
+            self.progress.emit(100)
+            self.done.emit(True, "")
+            return
+        total = _dir_size_walk(p, interrupt_check=self._cancelled)
+        if self._cancelled():
+            self.done.emit(False, "Cancelled.")
+            return
+        if total is None or total <= 0:
+            try:
+                shutil.rmtree(p)
+            except OSError as exc:
+                self.done.emit(False, str(exc))
+                return
+            self.progress.emit(100)
+            self.done.emit(True, "")
+            return
+        deleted = 0
+        root = str(p)
+        last_pct_shown = -1
+        for dirpath, _dirnames, filenames in os.walk(root, topdown=False):
+            if self._cancelled():
+                self.done.emit(False, "Cancelled.")
+                return
+            for name in filenames:
+                fp = os.path.join(dirpath, name)
+                try:
+                    st = os.stat(fp)
+                    if not S_ISREG(st.st_mode):
+                        continue
+                    sz = int(st.st_size)
+                    os.unlink(fp)
+                    deleted += sz
+                    pct = int(min(99, deleted * 100 // max(total, 1)))
+                    if pct != last_pct_shown:
+                        self.progress.emit(pct)
+                        last_pct_shown = pct
+                except OSError:
+                    pass
+            try:
+                os.rmdir(dirpath)
+            except OSError:
+                pass
+        self.progress.emit(100)
+        self.done.emit(True, "")
+
+    def _run_adb_delete(self) -> None:
+        tgt = (self._target or "").strip()
+        if not tgt:
+            self.done.emit(False, "Empty path.")
+            return
+        initial = adb_remote_path_bytes_now(self._adb_path, self._adb_args, tgt)
+        if initial is None:
+            self.progress.emit(100)
+            self.done.emit(True, "")
+            return
+        proc = adb_start_rm_rf(self._adb_path, self._adb_args, tgt)
+        last_emit = -1
+        try:
+            while proc.poll() is None:
+                if self._cancelled():
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    self.done.emit(False, "Cancelled.")
+                    return
+                cur = adb_remote_path_bytes_now(self._adb_path, self._adb_args, tgt)
+                if cur is None:
+                    pct = 100
+                elif initial <= 0:
+                    pct = 0
+                else:
+                    pct = int(min(99, max(0, (initial - cur) * 100 // initial)))
+                pct = max(last_emit, pct)
+                if pct != last_emit:
+                    self.progress.emit(pct)
+                    last_emit = pct
+                time.sleep(0.65)
+            code = int(proc.returncode or 0)
+            self.progress.emit(100)
+            self.done.emit(code == 0, "")
+        except Exception as exc:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            self.done.emit(False, str(exc))
+        finally:
+            try:
+                unregister_adb_process(proc)
+            except Exception:
+                pass
 
 
 _FIND_FILES_DIALOG_QSS_DARK = """
@@ -1017,7 +1700,7 @@ class ExplorerSessionPage(QWidget):
         self._ftp_port = int(ftp_port)
         self._ftp_user = ftp_user
         self._ftp_password = ftp_password
-        self.local_path = str(Path.home())
+        self.local_path = self._default_local_root()
         self.remote_path = "/sdcard" if kind == "adb" else "/"
         self.icon_provider = QFileIconProvider()
         self._adb_last_error = ""
@@ -1037,18 +1720,205 @@ class ExplorerSessionPage(QWidget):
         self._ext_poll_timer.setInterval(2000)
         self._ext_poll_timer.timeout.connect(self._poll_external_mtime)
         self._ext_poll_timer.start()
+        self._adb_transfer_thread: Optional[_AdbCommandThread] = None
+        self._adb_transfer_dialog: Optional[QProgressDialog] = None
+        self._adb_transfer_done_cb: Optional[Callable[[int, str], None]] = None
+        self._adb_elapsed_timer: Optional[QTimer] = None
+        self._delete_elapsed_timer: Optional[QTimer] = None
+        self._remote_transfer_thread: Optional[_RemoteTransferThread] = None
+        self._remote_transfer_dialog: Optional[QProgressDialog] = None
+        self._remote_transfer_mode: str = ""
+        self._delete_thread: Optional[_DeleteThread] = None
+        self._delete_dialog: Optional[QProgressDialog] = None
+        self._delete_done_cb: Optional[Callable[[bool, str], None]] = None
+        self._remote_refresh_thread: Optional[_RemoteListThread] = None
+        self._remote_refresh_pending: bool = False
+        self._last_active_side: str = "local"
         self._local_history: List[str] = []
+        self._local_root_map: Dict[str, str] = {}
         self._remote_history: List[str] = []
         self._build_ui()
+        QApplication.instance().installEventFilter(self)
+        self._backspace_page_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self)
+        self._backspace_page_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._backspace_page_shortcut.activated.connect(self._handle_backspace_nav)
         self.refresh_local()
         self.refresh_remote()
 
+    def _default_local_root(self) -> str:
+        if getattr(sys, "frozen", False):
+            try:
+                return str(Path(sys.executable).resolve().parent)
+            except OSError:
+                pass
+        try:
+            return str(Path.cwd().resolve())
+        except OSError:
+            return str(Path.home())
+
+    def hideEvent(self, event) -> None:
+        if self._adb_transfer_dialog is not None:
+            self._adb_transfer_dialog.hide()
+        if self._remote_transfer_dialog is not None:
+            self._remote_transfer_dialog.hide()
+        super().hideEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._adb_transfer_dialog is not None and self._adb_transfer_thread and self._adb_transfer_thread.isRunning():
+            self._adb_transfer_dialog.show()
+        if (
+            self._remote_transfer_dialog is not None
+            and self._remote_transfer_thread
+            and self._remote_transfer_thread.isRunning()
+        ):
+            self._remote_transfer_dialog.show()
+
+    @staticmethod
+    def _is_descendant_of(widget: Optional[QWidget], parent: Optional[QWidget]) -> bool:
+        w = widget
+        while w is not None:
+            if w is parent:
+                return True
+            w = w.parentWidget()
+        return False
+
+    def _handle_backspace_nav(self) -> bool:
+        fw = QApplication.focusWidget()
+        if fw is None:
+            if self._last_active_side == "remote":
+                self.remote_up()
+            else:
+                self.local_up()
+            return True
+        le_local = self.local_address.lineEdit() if hasattr(self, "local_address") else None
+        le_remote = self.remote_address.lineEdit() if hasattr(self, "remote_address") else None
+        if fw is le_local:
+            self._last_active_side = "local"
+            self.local_up()
+            return True
+        if fw is le_remote:
+            self._last_active_side = "remote"
+            self.remote_up()
+            return True
+        if self._is_descendant_of(fw, self.local_table):
+            self._last_active_side = "local"
+            self.local_up()
+            return True
+        if self._is_descendant_of(fw, self.remote_table):
+            self._last_active_side = "remote"
+            self.remote_up()
+            return True
+        if self._last_active_side == "remote":
+            self.remote_up()
+        else:
+            self.local_up()
+        return True
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.KeyPress and ev.key() == Qt.Key_Backspace:
+            mods = ev.modifiers()
+            if not (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
+                fw = QApplication.focusWidget()
+                if fw is not None and self._is_descendant_of(fw, self) and self._handle_backspace_nav():
+                    ev.accept()
+                    return True
+        if ev.type() in (QEvent.MouseButtonPress, QEvent.FocusIn):
+            if obj in {self.local_table, self.local_table.viewport(), self.local_address, self.local_address.lineEdit()}:
+                self._last_active_side = "local"
+            elif obj in {
+                self.remote_table,
+                self.remote_table.viewport(),
+                self.remote_address,
+                self.remote_address.lineEdit(),
+            }:
+                self._last_active_side = "remote"
+        return super().eventFilter(obj, ev)
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key_Backspace and not (ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
+            if self._handle_backspace_nav():
+                ev.accept()
+                return
+        super().keyPressEvent(ev)
+
     def disconnect_session(self) -> None:
+        self._stop_background_threads()
         disconnect_sftp(self._sftp_transport, self._sftp_client)
         self._sftp_transport = None
         self._sftp_client = None
         disconnect_ftp(self._ftp_client)
         self._ftp_client = None
+
+    def closeEvent(self, event) -> None:
+        self._stop_background_threads()
+        QApplication.instance().removeEventFilter(self)
+        super().closeEvent(event)
+
+    def _stop_background_threads(self) -> None:
+        try:
+            ev = getattr(self, "_adb_transfer_cancel_ev", None)
+            if ev is not None:
+                ev.set()
+        except Exception:
+            pass
+        try:
+            dev = getattr(self, "_delete_cancel_ev", None)
+            if dev is not None:
+                dev.set()
+        except Exception:
+            pass
+        try:
+            kill_all_adb_subprocesses()
+        except Exception:
+            pass
+        threads = [
+            self._adb_transfer_thread,
+            self._remote_transfer_thread,
+            self._remote_refresh_thread,
+            self._delete_thread,
+        ]
+        for th in threads:
+            if th is None:
+                continue
+            try:
+                if th.isRunning():
+                    th.requestInterruption()
+                    if not th.wait(400):
+                        th.terminate()
+                        th.wait(800)
+            except Exception:
+                pass
+        self._adb_transfer_thread = None
+        self._remote_transfer_thread = None
+        self._remote_refresh_thread = None
+        self._delete_thread = None
+        if self._adb_transfer_dialog is not None:
+            self._adb_transfer_dialog.close()
+            self._adb_transfer_dialog.deleteLater()
+            self._adb_transfer_dialog = None
+        if self._remote_transfer_dialog is not None:
+            self._remote_transfer_dialog.close()
+            self._remote_transfer_dialog.deleteLater()
+            self._remote_transfer_dialog = None
+        if self._delete_dialog is not None:
+            self._delete_dialog.close()
+            self._delete_dialog.deleteLater()
+            self._delete_dialog = None
+        if self._adb_elapsed_timer is not None:
+            try:
+                self._adb_elapsed_timer.stop()
+            except Exception:
+                pass
+            self._adb_elapsed_timer.deleteLater()
+            self._adb_elapsed_timer = None
+        if self._delete_elapsed_timer is not None:
+            try:
+                self._delete_elapsed_timer.stop()
+            except Exception:
+                pass
+            self._delete_elapsed_timer.deleteLater()
+            self._delete_elapsed_timer = None
 
     def get_sftp_profile(self) -> SessionProfile:
         if self.kind != "sftp":
@@ -1137,8 +2007,12 @@ class ExplorerSessionPage(QWidget):
         self.local_address.setEditable(True)
         self.local_address.setObjectName("WinScpAddress")
         self.local_address.setCurrentText(self.local_path)
+        self._seed_local_roots()
+        self.local_address.setCurrentText(self.local_path)
+        self.local_address.activated.connect(lambda _i: self.go_local())
         if self.local_address.lineEdit():
             self.local_address.lineEdit().returnPressed.connect(self.go_local)
+            self.local_address.lineEdit().installEventFilter(self)
         la.addWidget(self.local_address, 1)
         st = self.style()
         self._local_up_btn = QToolButton()
@@ -1193,6 +2067,7 @@ class ExplorerSessionPage(QWidget):
         self.local_table = LocalFileTable(
             on_paste_paths=self._drop_local_paths_push,
             on_drop_remote_pull=self._drop_remote_infos_pull,
+            on_backspace_up=self.local_up,
         )
         self.local_table.setColumnCount(4)
         self.local_table.setHorizontalHeaderLabels(["Name", "Size", "Date modified", "Type"])
@@ -1223,6 +2098,7 @@ class ExplorerSessionPage(QWidget):
         self.remote_address.setCurrentText(self.remote_path)
         if self.remote_address.lineEdit():
             self.remote_address.lineEdit().returnPressed.connect(self.go_remote)
+            self.remote_address.lineEdit().installEventFilter(self)
         ra.addWidget(self.remote_address, 1)
         self._remote_up_btn = QToolButton()
         self._remote_up_btn.setObjectName("WinScpIconBtn")
@@ -1287,6 +2163,7 @@ class ExplorerSessionPage(QWidget):
             self.on_remote_activated,
             self._drop_local_paths_push,
             on_paste_paths=self._drop_local_paths_push,
+            on_backspace_up=self.remote_up,
         )
 
         mid_wrap = QWidget()
@@ -1310,10 +2187,23 @@ class ExplorerSessionPage(QWidget):
         rv = self.remote_table.viewport()
         rv.setContextMenuPolicy(Qt.CustomContextMenu)
         rv.customContextMenuRequested.connect(self._on_remote_context_menu)
+        self.local_table.installEventFilter(self)
+        self.local_table.viewport().installEventFilter(self)
+        self.remote_table.installEventFilter(self)
+        self.remote_table.viewport().installEventFilter(self)
+        self.local_address.installEventFilter(self)
+        self.remote_address.installEventFilter(self)
+        if self.local_address.lineEdit():
+            self.local_address.lineEdit().installEventFilter(self)
+        if self.remote_address.lineEdit():
+            self.remote_address.lineEdit().installEventFilter(self)
         QShortcut(QKeySequence(Qt.Key_F5), self.local_table, self.refresh_local)
         QShortcut(QKeySequence(Qt.Key_Delete), self.local_table, self.delete_local)
         QShortcut(QKeySequence(Qt.Key_F5), self.remote_table, self.refresh_remote)
         QShortcut(QKeySequence(Qt.Key_Delete), self.remote_table, self.delete_selected_remote)
+        self._backspace_nav_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self)
+        self._backspace_nav_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._backspace_nav_shortcut.activated.connect(self._handle_backspace_nav)
 
         header_grid = QGridLayout()
         header_grid.setContentsMargins(0, 0, 0, 0)
@@ -1488,7 +2378,13 @@ class ExplorerSessionPage(QWidget):
                 return
 
     def _addr_local_text(self) -> str:
-        return (self.local_address.currentText() or "").strip()
+        txt = (self.local_address.currentText() or "").strip()
+        data = self.local_address.currentData()
+        if isinstance(data, str):
+            drv = data.strip()
+            if drv and txt in self._local_root_map:
+                return drv
+        return txt
 
     def _addr_remote_text(self) -> str:
         return (self.remote_address.currentText() or "").strip()
@@ -1498,6 +2394,41 @@ class ExplorerSessionPage(QWidget):
         if path and path not in self._local_history:
             self._local_history.append(path)
             self.local_address.addItem(path)
+
+    def _seed_local_roots(self) -> None:
+        if sys.platform == "win32":
+            for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                drv = f"{ch}:\\"
+                try:
+                    if Path(drv).exists() and drv not in self._local_history:
+                        label = drv
+                        try:
+                            import ctypes
+
+                            vol = ctypes.create_unicode_buffer(260)
+                            fsn = ctypes.create_unicode_buffer(260)
+                            serial = ctypes.c_uint(0)
+                            max_comp = ctypes.c_uint(0)
+                            flags = ctypes.c_uint(0)
+                            ok = ctypes.windll.kernel32.GetVolumeInformationW(
+                                ctypes.c_wchar_p(drv),
+                                vol,
+                                len(vol),
+                                ctypes.byref(serial),
+                                ctypes.byref(max_comp),
+                                ctypes.byref(flags),
+                                fsn,
+                                len(fsn),
+                            )
+                            if ok and vol.value.strip():
+                                label = f"{vol.value.strip()} ({drv})"
+                        except Exception:
+                            pass
+                        self._local_history.append(drv)
+                        self._local_root_map[label] = drv
+                        self.local_address.addItem(label, drv)
+                except OSError:
+                    continue
 
     def _set_remote_address(self, path: str) -> None:
         self.remote_address.setCurrentText(path)
@@ -1906,9 +2837,494 @@ class ExplorerSessionPage(QWidget):
         msg = (err or out or "").strip()
         return code, msg
 
+    def _start_adb_transfer(
+        self,
+        *,
+        label: str,
+        adb_args: List[str],
+        timeout: int,
+        done_cb: Callable[[int, str], None],
+        poll_total_bytes: int = 0,
+        poll_mode: str = "",
+        poll_remote: str = "",
+        poll_local: str = "",
+        prep_measure_push_dir: Optional[str] = None,
+        prep_measure_pull: Optional[Tuple[str, str]] = None,
+    ) -> bool:
+        if self._adb_transfer_thread and self._adb_transfer_thread.isRunning():
+            QMessageBox.information(self, "Transfer in progress", "Wait for the current ADB transfer to finish.")
+            return False
+        self._adb_transfer_done_cb = done_cb
+        self._adb_transfer_cancel_ev = threading.Event()
+        dlg = QProgressDialog(label, "Cancel", 0, 100, self)
+        dlg.setMinimumDuration(0)
+        dlg.setWindowModality(Qt.NonModal)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        defer_prep = bool((prep_measure_push_dir or "").strip()) or bool(prep_measure_pull)
+        use_poll = defer_prep or (int(poll_total_bytes or 0) > 0 and bool((poll_mode or "").strip()))
+        if use_poll:
+            dlg.setRange(0, 100)
+            dlg.setValue(0)
+        else:
+            dlg.setRange(0, 0)
+            dlg.setValue(0)
+        dlg.canceled.connect(self._adb_transfer_cancel_ev.set)
+        dlg.show()
+        self._adb_transfer_dialog = dlg
+        self._adb_transfer_base_label = label
+        self._adb_transfer_use_poll = bool(use_poll)
+        self._adb_transfer_t0 = time.monotonic()
+        self._adb_last_pct = -1
+        extra = ""
+        if defer_prep:
+            extra = "\nPreparing…"
+        elif use_poll:
+            extra = f"\n≈ {_human_bytes(int(poll_total_bytes))} total (measured)"
+        self._adb_transfer_extra_note = extra
+        if self._adb_elapsed_timer is not None:
+            try:
+                self._adb_elapsed_timer.stop()
+            except Exception:
+                pass
+            self._adb_elapsed_timer.deleteLater()
+            self._adb_elapsed_timer = None
+        self._adb_elapsed_timer = QTimer(self)
+        self._adb_elapsed_timer.setInterval(200)
+        self._adb_elapsed_timer.timeout.connect(self._tick_adb_transfer_elapsed)
+        self._adb_elapsed_timer.start()
+        self._tick_adb_transfer_elapsed()
+
+        th = _AdbCommandThread(
+            self.get_adb_path(),
+            adb_args,
+            timeout=timeout,
+            adb_shell_prefix=self._adb_prefix(),
+            poll_total_bytes=poll_total_bytes,
+            poll_mode=poll_mode,
+            poll_remote=poll_remote,
+            poll_local=poll_local,
+            prep_measure_push_dir=prep_measure_push_dir,
+            prep_measure_pull=prep_measure_pull,
+            cancel_event=self._adb_transfer_cancel_ev,
+            parent=self,
+        )
+        th.progress.connect(self._on_adb_transfer_progress)
+        th.status.connect(self._on_adb_transfer_status)
+        th.prep_done.connect(self._on_adb_prep_done)
+        th.done.connect(self._on_adb_transfer_done)
+        th.finished.connect(th.deleteLater)
+        self._adb_transfer_thread = th
+        th.start()
+        return True
+
+    def _tick_adb_transfer_elapsed(self) -> None:
+        dlg = self._adb_transfer_dialog
+        if dlg is None:
+            return
+        t0 = getattr(self, "_adb_transfer_t0", None)
+        if t0 is None:
+            return
+        elapsed = time.monotonic() - float(t0)
+        lbl = getattr(self, "_adb_transfer_base_label", "Transfer")
+        extra = getattr(self, "_adb_transfer_extra_note", "")
+        pct = getattr(self, "_adb_last_pct", -1)
+        use_poll = getattr(self, "_adb_transfer_use_poll", False)
+        if use_poll and (pct is None or int(pct) < 0):
+            dlg.setRange(0, 100)
+            dlg.setValue(0)
+            dlg.setLabelText(f"{lbl}\n0% · {elapsed:,.1f}s elapsed{extra}")
+            return
+        if pct is None or int(pct) < 0:
+            dlg.setLabelText(f"{lbl}\nWorking… · {elapsed:,.1f}s elapsed{extra}")
+        else:
+            dlg.setLabelText(f"{lbl}\n{int(pct)}% · {elapsed:,.1f}s elapsed{extra}")
+
+    def _on_adb_transfer_progress(self, pct: int) -> None:
+        if self._adb_transfer_dialog is None:
+            return
+        lbl = getattr(self, "_adb_transfer_base_label", "Transfer")
+        extra = getattr(self, "_adb_transfer_extra_note", "")
+        if int(pct) >= 0:
+            self._adb_last_pct = max(int(getattr(self, "_adb_last_pct", -1)), int(pct))
+        else:
+            self._adb_last_pct = int(pct)
+        use_poll = getattr(self, "_adb_transfer_use_poll", False)
+        if pct < 0:
+            if use_poll:
+                self._adb_transfer_dialog.setRange(0, 100)
+                self._adb_transfer_dialog.setValue(0)
+                t0 = getattr(self, "_adb_transfer_t0", None)
+                elapsed = 0.0 if t0 is None else (time.monotonic() - float(t0))
+                self._adb_transfer_dialog.setLabelText(f"{lbl}\n0% · {elapsed:,.1f}s elapsed{extra}")
+            else:
+                self._adb_transfer_dialog.setRange(0, 0)
+                t0 = getattr(self, "_adb_transfer_t0", None)
+                elapsed = 0.0 if t0 is None else (time.monotonic() - float(t0))
+                self._adb_transfer_dialog.setLabelText(f"{lbl}\nWorking… · {elapsed:,.1f}s elapsed{extra}")
+            return
+        self._adb_transfer_dialog.setRange(0, 100)
+        showv = max(0, min(100, int(getattr(self, "_adb_last_pct", int(pct)))))
+        self._adb_transfer_dialog.setValue(showv)
+        t0 = getattr(self, "_adb_transfer_t0", None)
+        elapsed = 0.0 if t0 is None else (time.monotonic() - float(t0))
+        self._adb_transfer_dialog.setLabelText(f"{lbl}\n{showv}% · {elapsed:,.1f}s elapsed{extra}")
+
+    def _on_adb_transfer_status(self, line: str) -> None:
+        if self._adb_transfer_dialog is None:
+            return
+        lbl = getattr(self, "_adb_transfer_base_label", "Transfer")
+        extra = getattr(self, "_adb_transfer_extra_note", "")
+        txt = (line or "").strip()
+        t0 = getattr(self, "_adb_transfer_t0", None)
+        elapsed = 0.0 if t0 is None else (time.monotonic() - float(t0))
+        pct = getattr(self, "_adb_last_pct", -1)
+        if txt:
+            if pct is not None and int(pct) >= 0:
+                self._adb_transfer_dialog.setLabelText(
+                    f"{lbl}\n{int(pct)}% · {elapsed:,.1f}s elapsed{extra}\n{txt[:120]}"
+                )
+            else:
+                self._adb_transfer_dialog.setLabelText(f"{lbl}\n{txt[:140]}\n{elapsed:,.1f}s elapsed{extra}")
+
+    def _on_adb_prep_done(self, note: str) -> None:
+        """After folder-size prep finishes, replace the short “Preparing…” line with the measured total."""
+        self._adb_transfer_extra_note = f"\n{note}"
+        self._tick_adb_transfer_elapsed()
+
+    def _on_adb_transfer_done(self, code: int, msg: str) -> None:
+        if self._adb_elapsed_timer is not None:
+            try:
+                self._adb_elapsed_timer.stop()
+            except Exception:
+                pass
+            self._adb_elapsed_timer.deleteLater()
+            self._adb_elapsed_timer = None
+        if self._adb_transfer_dialog is not None:
+            self._adb_transfer_dialog.setValue(100)
+            self._adb_transfer_dialog.close()
+            self._adb_transfer_dialog.deleteLater()
+            self._adb_transfer_dialog = None
+        self._adb_transfer_thread = None
+        self._adb_last_pct = -1
+        self._adb_transfer_use_poll = False
+        self._adb_transfer_cancel_ev = None
+        if code == 130:
+            self._log("Explorer: transfer cancelled.")
+        cb = self._adb_transfer_done_cb
+        self._adb_transfer_done_cb = None
+        if cb:
+            cb(code, msg)
+
+    def _queue_adb_pull(
+        self,
+        infos: List[dict],
+        *,
+        notify_final: bool = True,
+        select_final: bool = True,
+        explicit_final_name: Optional[str] = None,
+    ) -> None:
+        pull_items = [i for i in infos if isinstance(i, dict) and i.get("path")]
+        if not pull_items:
+            return
+        target_dir = self.local_path
+        total = len(pull_items)
+        result = {"ok": 0}
+
+        def _finish() -> None:
+            if result["ok"] > 0:
+                if notify_final:
+                    self._notify_path_result(
+                        "Pull complete",
+                        f"Pulled {result['ok']} item(s)\nTo local folder:",
+                        target_dir,
+                    )
+                if select_final:
+                    final_name = explicit_final_name or posixpath.basename(str(pull_items[-1]["path"]).rstrip("/"))
+                    if final_name:
+                        self._select_local_basename(final_name)
+                QTimer.singleShot(0, self.refresh_local)
+
+        def _run_one(idx: int) -> None:
+            if idx >= total:
+                _finish()
+                return
+            info = pull_items[idx]
+            src = str(info["path"])
+            self._log(f"Explorer: pull {src} → {target_dir}")
+            base = posixpath.basename(src.rstrip("/")) or "item"
+            local_dest = str(Path(target_dir) / base)
+            started = self._start_adb_transfer(
+                label=f"Pull ({idx + 1}/{total})",
+                adb_args=[*self._adb_prefix(), "pull", src, target_dir],
+                timeout=3600,
+                done_cb=lambda code, msg, i=idx, s=src: _on_done(i, s, code, msg),
+                poll_total_bytes=0,
+                poll_mode="",
+                poll_remote="",
+                poll_local="",
+                prep_measure_pull=(src, local_dest),
+            )
+            if not started:
+                return
+
+        def _on_done(idx: int, src: str, code: int, msg: str) -> None:
+            if code == 130:
+                return
+            if code != 0:
+                self._log(f"Explorer: pull failed ({code}) {msg[:400]}")
+                QMessageBox.warning(self, "Pull", msg or "Failed.")
+                return
+            result["ok"] += 1
+            self._log(f"Explorer: pull finished — {msg[:400] if msg else 'ok'}")
+            _run_one(idx + 1)
+
+        _run_one(0)
+
+    def _queue_adb_push(self, items: List[str]) -> None:
+        push_items = []
+        for p in items:
+            try:
+                if p and Path(p).exists():
+                    push_items.append(p)
+            except OSError:
+                continue
+        if not push_items:
+            return
+        total = len(push_items)
+        result = {"ok": 0, "last": ""}
+
+        def _finish() -> None:
+            if result["ok"] <= 0:
+                return
+            self._log(
+                f"Explorer: push completed ({result['ok']} item(s)) from local folder '{self.local_path}' "
+                f"to remote folder '{self.remote_path}'."
+            )
+            QMessageBox.information(
+                self,
+                "Push",
+                f"Transferred {result['ok']} item(s)\nFrom: {self.local_path}\nTo: {self.remote_path}",
+            )
+            if result["last"]:
+                self._select_remote_basename(result["last"])
+            QTimer.singleShot(0, self.refresh_remote)
+
+        def _run_one(idx: int) -> None:
+            if idx >= total:
+                _finish()
+                return
+            local = push_items[idx]
+            lp = Path(local)
+            name = lp.name
+            poll_total = 0
+            poll_mode = ""
+            poll_remote = ""
+            poll_local = ""
+            prep_measure_push_dir: Optional[str] = None
+            try:
+                if lp.is_file():
+                    poll_total = int(lp.stat().st_size)
+                    if poll_total > 0:
+                        poll_mode = "push_file"
+                        poll_remote = posixpath.join(self.remote_path.rstrip("/"), name).replace("\\", "/")
+                elif lp.is_dir():
+                    prep_measure_push_dir = str(lp)
+                    poll_remote = posixpath.join(self.remote_path.rstrip("/"), name).replace("\\", "/")
+            except OSError:
+                poll_total = 0
+            started = self._start_adb_transfer(
+                label=f"Push ({idx + 1}/{total})",
+                adb_args=[*self._adb_prefix(), "push", local, self.remote_path],
+                timeout=3600,
+                done_cb=lambda code, msg, i=idx, n=name: _on_done(i, n, code, msg),
+                poll_total_bytes=poll_total,
+                poll_mode=poll_mode,
+                poll_remote=poll_remote,
+                poll_local=poll_local,
+                prep_measure_push_dir=prep_measure_push_dir,
+            )
+            if not started:
+                return
+
+        def _on_done(idx: int, name: str, code: int, msg: str) -> None:
+            if code == 130:
+                return
+            if code != 0:
+                self._log(f"Explorer: push failed ({code}) {msg[:300]}")
+                QMessageBox.warning(self, "Push", msg or "Failed.")
+                return
+            result["ok"] += 1
+            result["last"] = name
+            _run_one(idx + 1)
+
+        _run_one(0)
+
+    def _start_remote_transfer(self, *, mode: str, items: List[dict]) -> bool:
+        if self._remote_transfer_thread and self._remote_transfer_thread.isRunning():
+            QMessageBox.information(self, "Transfer in progress", "Wait for the current transfer to finish.")
+            return False
+        if self.kind not in ("sftp", "ftp"):
+            return False
+        creds = (
+            {
+                "host": self._ssh_host,
+                "port": self._ssh_port,
+                "user": self._ssh_user,
+                "password": self._ssh_password,
+            }
+            if self.kind == "sftp"
+            else {
+                "host": self._ftp_host,
+                "port": self._ftp_port,
+                "user": self._ftp_user,
+                "password": self._ftp_password,
+            }
+        )
+        dlg = QProgressDialog("Transferring…", None, 0, 100, self)
+        dlg.setCancelButton(None)
+        dlg.setMinimumDuration(0)
+        dlg.setWindowModality(Qt.NonModal)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        dlg.setValue(0)
+        dlg.show()
+        self._remote_transfer_dialog = dlg
+        self._remote_transfer_mode = mode
+        th = _RemoteTransferThread(
+            kind=self.kind,
+            mode=mode,
+            items=items,
+            remote_path=self.remote_path,
+            local_path=self.local_path,
+            creds=creds,
+        )
+        th.progress.connect(self._on_remote_transfer_progress)
+        th.done.connect(self._on_remote_transfer_done)
+        th.finished.connect(th.deleteLater)
+        self._remote_transfer_thread = th
+        th.start()
+        return True
+
+    def _on_remote_transfer_progress(self, pct: int, msg: str) -> None:
+        if self._remote_transfer_dialog is None:
+            return
+        self._remote_transfer_dialog.setValue(max(0, min(100, int(pct))))
+        self._remote_transfer_dialog.setLabelText(msg or "Transferring…")
+
+    def _on_remote_transfer_done(self, ok: bool, last_name: str, message: str) -> None:
+        if self._remote_transfer_dialog is not None:
+            self._remote_transfer_dialog.setValue(100)
+            self._remote_transfer_dialog.close()
+            self._remote_transfer_dialog.deleteLater()
+            self._remote_transfer_dialog = None
+        self._remote_transfer_thread = None
+        if not ok:
+            QMessageBox.warning(self, "Transfer", message or "Transfer failed.")
+            return
+        if self._remote_transfer_mode == "push":
+            self.refresh_remote()
+            if last_name:
+                self._select_remote_basename(last_name)
+        else:
+            self.refresh_local()
+            if last_name:
+                self._select_local_basename(last_name)
+        self._log(f"Explorer: {self.kind.upper()} {self._remote_transfer_mode} complete — {message}")
+
+    def _start_delete_job(
+        self,
+        *,
+        mode: str,
+        target: str,
+        is_dir: bool = False,
+        done_cb: Callable[[bool, str], None],
+    ) -> bool:
+        if self._delete_thread and self._delete_thread.isRunning():
+            QMessageBox.information(self, "Delete", "Another delete operation is still running.")
+            return False
+        self._delete_done_cb = done_cb
+        self._delete_cancel_ev = threading.Event()
+        dlg = QProgressDialog("Deleting…", "Cancel", 0, 100, self)
+        dlg.setMinimumDuration(0)
+        dlg.setWindowModality(Qt.NonModal)
+        dlg.setRange(0, 100)
+        dlg.setValue(0)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        dlg.canceled.connect(self._delete_cancel_ev.set)
+        dlg.show()
+        self._delete_dialog = dlg
+        self._delete_last_pct = 0
+        self._delete_t0 = time.monotonic()
+        if self._delete_elapsed_timer is not None:
+            try:
+                self._delete_elapsed_timer.stop()
+            except Exception:
+                pass
+            self._delete_elapsed_timer.deleteLater()
+            self._delete_elapsed_timer = None
+        self._delete_elapsed_timer = QTimer(self)
+        self._delete_elapsed_timer.setInterval(200)
+        self._delete_elapsed_timer.timeout.connect(self._tick_delete_elapsed)
+        self._delete_elapsed_timer.start()
+        self._tick_delete_elapsed()
+        th = _DeleteThread(
+            mode=mode,
+            target=target,
+            is_dir=is_dir,
+            adb_path=self.get_adb_path(),
+            adb_args=self._adb_prefix(),
+            cancel_event=self._delete_cancel_ev,
+        )
+        th.progress.connect(self._on_delete_progress)
+        th.done.connect(self._on_delete_job_done)
+        th.finished.connect(th.deleteLater)
+        self._delete_thread = th
+        th.start()
+        return True
+
+    def _on_delete_progress(self, pct: int) -> None:
+        self._delete_last_pct = max(int(getattr(self, "_delete_last_pct", 0)), max(0, min(100, int(pct))))
+        dlg = self._delete_dialog
+        if dlg is None:
+            return
+        dlg.setRange(0, 100)
+        dlg.setValue(self._delete_last_pct)
+
+    def _tick_delete_elapsed(self) -> None:
+        dlg = self._delete_dialog
+        if dlg is None:
+            return
+        t0 = getattr(self, "_delete_t0", None)
+        if t0 is None:
+            return
+        elapsed = time.monotonic() - float(t0)
+        pct = int(getattr(self, "_delete_last_pct", 0))
+        dlg.setLabelText(f"Deleting…\n{pct}% · {elapsed:,.1f}s elapsed")
+
+    def _on_delete_job_done(self, ok: bool, err: str) -> None:
+        if self._delete_elapsed_timer is not None:
+            try:
+                self._delete_elapsed_timer.stop()
+            except Exception:
+                pass
+            self._delete_elapsed_timer.deleteLater()
+            self._delete_elapsed_timer = None
+        if self._delete_dialog is not None:
+            self._delete_dialog.close()
+            self._delete_dialog.deleteLater()
+            self._delete_dialog = None
+        self._delete_thread = None
+        self._delete_cancel_ev = None
+        cb = self._delete_done_cb
+        self._delete_done_cb = None
+        if cb:
+            cb(ok, err)
+
     def local_go_home(self) -> None:
-        self.local_path = str(Path.home())
-        self.local_address.setText(self.local_path)
+        self.local_path = self._default_local_root()
+        self._set_local_address(self.local_path)
         self.refresh_local()
 
     def remote_go_home(self) -> None:
@@ -1919,7 +3335,7 @@ class ExplorerSessionPage(QWidget):
             self.remote_path = f"/home/{u}" if u else "/"
         else:
             self.remote_path = "/"
-        self.remote_address.setText(self.remote_path)
+        self._set_remote_address(self.remote_path)
         self.refresh_remote()
 
     def _update_nav_buttons(self) -> None:
@@ -1946,7 +3362,10 @@ class ExplorerSessionPage(QWidget):
             )
 
     def go_local(self) -> None:
-        p = Path(self._addr_local_text() or self.local_path)
+        txt = self._addr_local_text() or self.local_path
+        if sys.platform == "win32" and re.fullmatch(r"[A-Za-z]:", txt):
+            txt = txt + "\\"
+        p = Path(txt)
         if p.exists() and p.is_dir():
             self.local_path = str(p.resolve())
             self._set_local_address(self.local_path)
@@ -1960,6 +3379,7 @@ class ExplorerSessionPage(QWidget):
             self.refresh_local()
 
     def refresh_local(self) -> None:
+        self._notify_refresh_start("Local")
         self.local_table.setSortingEnabled(False)
         self.local_table.setRowCount(0)
         current = Path(self._addr_local_text() or self.local_path)
@@ -1998,7 +3418,8 @@ class ExplorerSessionPage(QWidget):
                 self.local_table.item(i, 0).setData(Qt.UserRole, str(child))
                 continue
             icon = _icon_for_local_path(child, self.icon_provider, self.style())
-            name_item = _SortTableItem(child.name, icon, sort_key=_local_name_sort_key(child))
+            display_name = child.name or str(child)
+            name_item = _SortTableItem(display_name, icon, sort_key=_local_name_sort_key(child))
             name_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             self.local_table.setItem(i, 0, name_item)
             self.local_table.setItem(
@@ -2034,6 +3455,14 @@ class ExplorerSessionPage(QWidget):
         while w:
             if hasattr(w, "_flash_refresh_banner"):
                 w._flash_refresh_banner(side, ts)
+                break
+            w = w.parent()
+
+    def _notify_refresh_start(self, side: str) -> None:
+        w = self.parent()
+        while w:
+            if hasattr(w, "_show_refreshing_banner"):
+                w._show_refreshing_banner(side)
                 break
             w = w.parent()
 
@@ -2084,19 +3513,67 @@ class ExplorerSessionPage(QWidget):
         self.refresh_remote()
 
     def refresh_remote(self) -> None:
+        if self._remote_transfer_thread and self._remote_transfer_thread.isRunning():
+            self._notify_parent_status()
+            return
+        self._notify_refresh_start("Remote")
         self.remote_path = self._addr_remote_text() or self.remote_path
         self._set_remote_address(self.remote_path)
+        self._start_remote_refresh()
+
+    def _start_remote_refresh(self) -> None:
+        if self._remote_refresh_thread and self._remote_refresh_thread.isRunning():
+            self._remote_refresh_pending = True
+            return
+        creds = (
+            {
+                "host": self._ssh_host,
+                "port": self._ssh_port,
+                "user": self._ssh_user,
+                "password": self._ssh_password,
+            }
+            if self.kind == "sftp"
+            else {
+                "host": self._ftp_host,
+                "port": self._ftp_port,
+                "user": self._ftp_user,
+                "password": self._ftp_password,
+            }
+        )
+        th = _RemoteListThread(
+            kind=self.kind,
+            adb_path=self.get_adb_path(),
+            adb_args=self._adb_prefix(),
+            remote_path=self.remote_path,
+            creds=creds,
+        )
+        th.done.connect(self._on_remote_refresh_done)
+        th.finished.connect(th.deleteLater)
+        self._remote_refresh_thread = th
+        th.start()
+
+    def _on_remote_refresh_done(self, rows, err: str) -> None:
+        self._remote_refresh_thread = None
+        _fill_remote_table(self.remote_table, rows or [], self.style(), self.icon_provider)
+        msg = (err or "").strip()
         if self.kind == "adb":
-            self._refresh_adb()
+            self._adb_last_error = msg
         elif self.kind == "sftp":
-            self._refresh_sftp()
+            self._sftp_last_error = msg
         else:
-            self._refresh_ftp()
+            self._ftp_last_error = msg
+        if msg:
+            self._report_remote_error(msg)
+        else:
+            self._last_error_popup_key = ""
         self._last_refresh_note = datetime.now().strftime("%H:%M:%S")
         self._update_nav_buttons()
         self._update_explorer_header()
         self._notify_parent_status()
         self._notify_refresh_flash("Remote")
+        if self._remote_refresh_pending:
+            self._remote_refresh_pending = False
+            self._start_remote_refresh()
 
     def _refresh_adb(self) -> None:
         serial = _first_serial_token(self.get_device_serial()) or _first_serial_token(self._session_adb_serial)
@@ -2345,22 +3822,19 @@ class ExplorerSessionPage(QWidget):
         if QMessageBox.question(self, "Delete", f"Delete?\n{p}") != QMessageBox.Yes:
             return
         self._log(f"Explorer: delete local {p}")
-        dlg = QProgressDialog("Deleting…", None, 0, 0, self)
-        dlg.setCancelButton(None)
-        dlg.setMinimumDuration(0)
-        dlg.setWindowModality(Qt.ApplicationModal)
-        QApplication.processEvents()
-        try:
-            if p.is_dir():
-                shutil.rmtree(p)
-            else:
-                p.unlink()
-            dlg.close()
+        self._start_delete_job(
+            mode="local",
+            target=str(p),
+            is_dir=p.is_dir(),
+            done_cb=lambda ok, err: self._on_local_delete_done(ok, err),
+        )
+
+    def _on_local_delete_done(self, ok: bool, err: str) -> None:
+        if ok:
             self._log("Explorer: local delete completed.")
             self.refresh_local()
-        except OSError as exc:
-            dlg.close()
-            QMessageBox.warning(self, "Delete", str(exc))
+            return
+        QMessageBox.warning(self, "Delete", err or "Delete failed.")
 
     def local_properties(self) -> None:
         path = self._selected_local()
@@ -2871,6 +4345,13 @@ class ExplorerSessionPage(QWidget):
             return
         if not self._ensure_local_pull_target_or_warn():
             return
+        if self.kind == "adb":
+            self._queue_adb_pull(good, notify_final=True, select_final=True)
+            return
+        if self.kind in ("sftp", "ftp"):
+            items = [{"remote": str(i.get("path", "")), "is_dir": bool(i.get("is_dir"))} for i in good]
+            self._start_remote_transfer(mode="pull", items=items)
+            return
         n = len(good)
         for idx, info in enumerate(good):
             path = str(info["path"])
@@ -2893,29 +4374,22 @@ class ExplorerSessionPage(QWidget):
     ) -> None:
         target_dir = self.local_path
 
+        if self.kind == "adb":
+            self._queue_adb_pull(
+                [info],
+                notify_final=notify,
+                select_final=select_basename,
+                explicit_final_name=pulled_name,
+            )
+            return
+        if self.kind in ("sftp", "ftp"):
+            self._start_remote_transfer(
+                mode="pull",
+                items=[{"remote": str(info.get("path", "")), "is_dir": bool(info.get("is_dir"))}],
+            )
+            return
+
         if info.get("is_dir"):
-            if self.kind == "adb":
-                self._log(f"Explorer: pull {info['path']} → {target_dir}")
-                code, msg = self._adb_progress_exec(
-                    "Pull from device",
-                    [*self._adb_prefix(), "pull", info["path"], target_dir],
-                    timeout=600,
-                )
-                if code == 0:
-                    self._log(f"Explorer: pull finished — {msg[:400] if msg else 'ok'}")
-                    self.refresh_local()
-                    if notify:
-                        self._notify_path_result(
-                            "Pull complete",
-                            f"Pulled: {info['path']}\nTo local folder:",
-                            target_dir,
-                        )
-                    if select_basename:
-                        self._select_local_basename(pulled_name)
-                else:
-                    self._log(f"Explorer: pull failed ({code}) {msg[:400]}")
-                    QMessageBox.warning(self, "Pull", msg or "Failed.")
-                return
             if self.kind == "sftp" and self._sftp_client:
                 try:
                     dlg = QProgressDialog("Downloading folder (SFTP)…", None, 0, 0, self)
@@ -2968,28 +4442,6 @@ class ExplorerSessionPage(QWidget):
 
         dest = str(Path(target_dir) / Path(info["path"]).name)
 
-        if self.kind == "adb":
-            self._log(f"Explorer: pull {info['path']} → {target_dir}")
-            code, msg = self._adb_progress_exec(
-                "Pull from device",
-                [*self._adb_prefix(), "pull", info["path"], target_dir],
-                timeout=600,
-            )
-            if code == 0:
-                self._log(f"Explorer: pull finished — {msg[:400] if msg else 'ok'}")
-                self.refresh_local()
-                if notify:
-                    self._notify_path_result(
-                        "Pull complete",
-                        f"Pulled: {info['path']}\nSaved to:",
-                        dest,
-                    )
-                if select_basename:
-                    self._select_local_basename(pulled_name)
-            else:
-                self._log(f"Explorer: pull failed ({code}) {msg[:400]}")
-                QMessageBox.warning(self, "Pull", msg or "Failed.")
-            return
         if self.kind == "sftp" and self._sftp_client:
             try:
                 self._sftp_get_with_progress(info["path"], dest)
@@ -3067,6 +4519,12 @@ class ExplorerSessionPage(QWidget):
             )
             return
         self._log(f"Explorer: push {len(items)} item(s) → {self.remote_path}")
+        if self.kind == "adb":
+            self._queue_adb_push(items)
+            return
+        if self.kind in ("sftp", "ftp"):
+            self._start_remote_transfer(mode="push", items=[{"local": p} for p in items])
+            return
         last_pushed = ""
         for idx, local in enumerate(items):
             lp = Path(local)
@@ -3241,15 +4699,13 @@ class ExplorerSessionPage(QWidget):
 
         if self.kind == "adb":
             self._log(f"Explorer: delete remote {info['path']}")
-            flag = "-rf" if info.get("is_dir") else "-f"
-            code, _, stderr = run_adb(self.get_adb_path(), [*self._adb_prefix(), "shell", "rm", flag, info["path"]])
             dlg.close()
-            if code == 0:
-                self._log("Explorer: delete completed.")
-                self.refresh_remote()
-            else:
-                self._log(f"Explorer: delete failed: {stderr or code}")
-                QMessageBox.warning(self, "Delete", stderr or "Failed.")
+            self._start_delete_job(
+                mode="adb",
+                target=str(info["path"]),
+                is_dir=bool(info.get("is_dir")),
+                done_cb=lambda ok, err: self._on_remote_adb_delete_done(ok, err),
+            )
             return
         if self.kind == "sftp" and self._sftp_client:
             try:
@@ -3281,6 +4737,14 @@ class ExplorerSessionPage(QWidget):
             except Exception as exc:
                 dlg.close()
                 QMessageBox.warning(self, "Delete", str(exc))
+
+    def _on_remote_adb_delete_done(self, ok: bool, err: str) -> None:
+        if ok:
+            self._log("Explorer: delete completed.")
+            self.refresh_remote()
+            return
+        self._log(f"Explorer: delete failed: {err or 'unknown'}")
+        QMessageBox.warning(self, "Delete", err or "Failed.")
 
     def make_remote_folder(self) -> None:
         name, ok = QInputDialog.getText(self, "New folder", "Folder name:")
@@ -3332,7 +4796,9 @@ class FileExplorerTab(QWidget):
         self._get_default_ssh_host = get_default_ssh_host or (lambda: "")
         self._on_remote_session_changed = on_remote_session_changed
         self._adb_serial = ""
+        self._device_stats_text = ""
         self._build_ui()
+        QApplication.instance().installEventFilter(self)
         self._update_status_bar()
 
     def apply_session_kind(self, _kind: ConnectionKind) -> None:
@@ -3446,6 +4912,36 @@ class FileExplorerTab(QWidget):
         self.status_conn_label.setObjectName("WinScpStatusConn")
         sl.addWidget(self.status_conn_label)
         root.addWidget(self.status_bar)
+        self._backspace_global_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self)
+        self._backspace_global_shortcut.setContext(Qt.ApplicationShortcut)
+        self._backspace_global_shortcut.activated.connect(self._on_backspace_global)
+
+    def _on_backspace_global(self) -> None:
+        page = self._current_page()
+        if not page:
+            return
+        page._handle_backspace_nav()
+
+    @staticmethod
+    def _is_descendant_of(widget: Optional[QWidget], parent: Optional[QWidget]) -> bool:
+        w = widget
+        while w is not None:
+            if w is parent:
+                return True
+            w = w.parentWidget()
+        return False
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.KeyPress and ev.key() == Qt.Key_Backspace:
+            page = self._current_page()
+            if page is None:
+                return super().eventFilter(obj, ev)
+            fw = QApplication.focusWidget()
+            if fw is not None and self._is_descendant_of(fw, page):
+                page._handle_backspace_nav()
+                ev.accept()
+                return True
+        return super().eventFilter(obj, ev)
 
     def _open_login_dialog(self) -> None:
         dlg = SessionLoginDialog(
@@ -3519,9 +5015,19 @@ class FileExplorerTab(QWidget):
         self.session_tabs.removeTab(index)
         self._update_status_bar()
 
+    def closeEvent(self, event) -> None:
+        try:
+            QApplication.instance().removeEventFilter(self)
+        except Exception:
+            pass
+        super().closeEvent(event)
+
     def _update_status_bar(self) -> None:
         page = self._current_page()
-        self.status_conn_label.setText("Sessions")
+        conn = "Sessions"
+        if self._device_stats_text:
+            conn = f"{conn} · {self._device_stats_text}"
+        self.status_conn_label.setText(conn)
         self._session_stack.setCurrentIndex(1 if self.session_tabs.count() > 0 else 0)
         if page:
             self.status_label.setText(page.status_line())
@@ -3532,6 +5038,10 @@ class FileExplorerTab(QWidget):
         else:
             self.status_label.setText(f"{APP_TITLE} — select a session tab.")
 
+    def set_device_stats_text(self, text: str) -> None:
+        self._device_stats_text = (text or "").strip()
+        self._update_status_bar()
+
     def _flash_refresh_banner(self, side: str, ts: str) -> None:
         self.status_label.setStyleSheet("color: #2563eb; font-weight: 700;")
         self.status_label.setText(f"Listing updated · {side} · {ts}")
@@ -3541,6 +5051,10 @@ class FileExplorerTab(QWidget):
         else:
             self._log(f"Explorer: {side.lower()} listing updated at {ts}.")
         QTimer.singleShot(850, self._clear_refresh_flash)
+
+    def _show_refreshing_banner(self, side: str) -> None:
+        self.status_label.setStyleSheet("color: #38bdf8; font-weight: 700;")
+        self.status_label.setText(f"Refreshing {side}…")
 
     def _clear_refresh_flash(self) -> None:
         self.status_label.setStyleSheet("")

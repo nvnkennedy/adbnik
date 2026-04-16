@@ -2,8 +2,10 @@ import html
 import platform
 import sys
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, Optional, Tuple
 
-from PyQt5.QtCore import QSize, Qt, QTimer
+from PyQt5.QtCore import QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QKeySequence, QTextCursor
 from PyQt5.QtWidgets import (
     QAction,
@@ -32,6 +34,7 @@ from PyQt5.QtWidgets import (
 from .. import APP_TITLE, __version__
 from ..config import AppConfig
 from ..services.adb_devices import list_adb_devices
+from ..services.commands import kill_all_adb_subprocesses
 from ..services.commands import run_adb, run_adb_with_line_callback
 from ..session import ConnectionKind, SessionProfile
 from .app_icon import create_app_icon
@@ -48,6 +51,47 @@ from .win_scrcpy_hotkey import (
 )
 
 
+class _AdbDevicesRefreshThread(QThread):
+    done = pyqtSignal(object, bool)
+
+    def __init__(self, adb_path: str):
+        super().__init__(None)
+        self._adb_path = adb_path
+
+    def run(self) -> None:
+        pairs = list_adb_devices(self._adb_path)
+        if pairs:
+            self.done.emit(pairs, True)
+            return
+        code, _, _ = run_adb(self._adb_path, ["devices"], timeout=8)
+        self.done.emit([], code == 0)
+
+
+class _AdbDeviceStatsThread(QThread):
+    done = pyqtSignal(str, object, str)
+
+    def __init__(self, adb_path: str, serial: str):
+        super().__init__(None)
+        self._adb_path = adb_path
+        self._serial = serial
+
+    def run(self) -> None:
+        serial = (self._serial or "").strip()
+        if not serial:
+            self.done.emit("", None, "No device selected")
+            return
+        cmd = (
+            "cat /proc/uptime; "
+            "head -n 1 /proc/stat; "
+            "cat /proc/meminfo"
+        )
+        code, out, err = run_adb(self._adb_path, ["-s", serial, "shell", cmd], timeout=12)
+        if code != 0:
+            self.done.emit(serial, None, (err or "stats command failed").strip())
+            return
+        self.done.emit(serial, out, "")
+
+
 class MainWindow(QMainWindow):
     def __init__(self, config: AppConfig, *, first_launch: bool = False):
         super().__init__()
@@ -58,6 +102,11 @@ class MainWindow(QMainWindow):
         self.resize(1450, 900)
         self.setMinimumSize(720, 480)
         self._build_ui()
+        self._device_refresh_thread: Optional[_AdbDevicesRefreshThread] = None
+        self._device_refresh_pending = False
+        self._stats_refresh_thread: Optional[_AdbDeviceStatsThread] = None
+        self._stats_refresh_pending = False
+        self._stats_prev_cpu: Dict[str, Tuple[int, int]] = {}
         self._apply_theme()
         self._setup_version_status()
         if hasattr(self, "_action_dark"):
@@ -73,6 +122,10 @@ class MainWindow(QMainWindow):
         self._adb_poll_timer.setInterval(5000)
         self._adb_poll_timer.timeout.connect(self.refresh_devices)
         self._adb_poll_timer.start()
+        self._adb_stats_timer = QTimer(self)
+        self._adb_stats_timer.setInterval(8000)
+        self._adb_stats_timer.timeout.connect(self.refresh_device_stats)
+        self._adb_stats_timer.start()
         self._scrcpy_hotkey_registered = False
 
     def showEvent(self, event):
@@ -171,9 +224,15 @@ class MainWindow(QMainWindow):
             self.file_explorer.refresh_all_remotes()
 
     def closeEvent(self, event):
+        try:
+            kill_all_adb_subprocesses()
+        except Exception:
+            pass
         self.unregister_scrcpy_stop_hotkey()
         if hasattr(self, "_adb_poll_timer"):
             self._adb_poll_timer.stop()
+        if hasattr(self, "_adb_stats_timer"):
+            self._adb_stats_timer.stop()
         if hasattr(self, "terminal"):
             self.terminal.shutdown_all_sessions()
         if hasattr(self, "file_explorer"):
@@ -350,19 +409,30 @@ class MainWindow(QMainWindow):
     def _on_device_combo_changed(self, _text: str):
         if hasattr(self, "file_explorer"):
             self.file_explorer.set_remote_device(self.terminal.current_adb_serial())
+        self.refresh_device_stats()
 
     def refresh_devices(self):
         if not hasattr(self, "terminal"):
             return
-        prev_selected_serial = self.terminal.current_adb_serial()
-        self.terminal.device_combo.blockSignals(True)
-        self.terminal.device_combo.clear()
-        pairs = list_adb_devices(self.get_adb_path())
+        if self._device_refresh_thread and self._device_refresh_thread.isRunning():
+            self._device_refresh_pending = True
+            return
+        self._prev_selected_serial_for_refresh = self.terminal.current_adb_serial()
+        th = _AdbDevicesRefreshThread(self.get_adb_path())
+        th.done.connect(self._on_devices_refreshed)
+        th.finished.connect(th.deleteLater)
+        self._device_refresh_thread = th
+        th.start()
+
+    def _on_devices_refreshed(self, pairs, adb_ok: bool) -> None:
+        self._device_refresh_thread = None
+        prev_selected_serial = getattr(self, "_prev_selected_serial_for_refresh", "")
         prev_sig = getattr(self, "_last_adb_device_sig", None)
         sig = tuple(pairs) if pairs else ()
+        self.terminal.device_combo.blockSignals(True)
+        self.terminal.device_combo.clear()
         if not pairs:
-            code, _, _ = run_adb(self.get_adb_path(), ["devices"])
-            if code != 0:
+            if not adb_ok:
                 self.terminal.device_combo.addItem("ADB not found")
                 self.terminal.device_combo.blockSignals(False)
                 if hasattr(self, "file_explorer"):
@@ -370,31 +440,138 @@ class MainWindow(QMainWindow):
                 if prev_sig != ("__adb_err__",):
                     self._last_adb_device_sig = ("__adb_err__",)
                     self.append_log("ADB not responding — check ADB path in Preferences (menu).")
-                return
-            self.terminal.device_combo.addItem("No device")
+            else:
+                self.terminal.device_combo.addItem("No device")
+                self.terminal.device_combo.blockSignals(False)
+                if hasattr(self, "file_explorer"):
+                    self.file_explorer.set_remote_device("")
+                if prev_sig != ():
+                    self._last_adb_device_sig = ()
+                    self.append_log("ADB: no devices detected — connect a device, enable USB debugging, and authorize this PC.")
+        else:
+            selected_index = 0
+            for serial, display in pairs:
+                self.terminal.device_combo.addItem(display, serial)
+                if prev_selected_serial and serial == prev_selected_serial:
+                    selected_index = self.terminal.device_combo.count() - 1
+            self.terminal.device_combo.setCurrentIndex(selected_index)
             self.terminal.device_combo.blockSignals(False)
             if hasattr(self, "file_explorer"):
-                self.file_explorer.set_remote_device("")
-            if prev_sig != ():
-                self._last_adb_device_sig = ()
-                self.append_log("ADB: no devices detected — connect a device, enable USB debugging, and authorize this PC.")
-            return
-        selected_index = 0
-        for serial, display in pairs:
-            self.terminal.device_combo.addItem(display, serial)
-            if prev_selected_serial and serial == prev_selected_serial:
-                selected_index = self.terminal.device_combo.count() - 1
-        self.terminal.device_combo.setCurrentIndex(selected_index)
-        self.terminal.device_combo.blockSignals(False)
+                self.file_explorer.set_remote_device(self.terminal.current_adb_serial())
+            if sig != prev_sig:
+                self._last_adb_device_sig = sig
+                self.append_log(
+                    f"ADB: {len(pairs)} device(s) — {', '.join(s for s, _ in pairs[:5])}{'…' if len(pairs) > 5 else ''}"
+                )
+                if hasattr(self, "file_explorer") and self.tabs.currentWidget() is self.file_explorer:
+                    QTimer.singleShot(0, self.file_explorer.refresh_all_remotes)
+        if self._device_refresh_pending:
+            self._device_refresh_pending = False
+            self.refresh_devices()
+        self.refresh_device_stats()
+
+    def _format_uptime(self, seconds: float) -> str:
+        s = max(0, int(seconds))
+        d, rem = divmod(s, 86400)
+        h, rem = divmod(rem, 3600)
+        m, _ = divmod(rem, 60)
+        if d > 0:
+            return f"{d}d {h}h {m}m"
+        if h > 0:
+            return f"{h}h {m}m"
+        return f"{m}m"
+
+    def _parse_device_stats(self, serial: str, raw: str) -> str:
+        lines = [ln.strip() for ln in (raw or "").splitlines() if ln.strip()]
+        uptime_sec = 0.0
+        cpu_total = None
+        cpu_idle = None
+        mem_total_kb = None
+        mem_avail_kb = None
+        for ln in lines:
+            if ln.startswith("cpu "):
+                parts = ln.split()[1:]
+                vals = []
+                for p in parts:
+                    try:
+                        vals.append(int(p))
+                    except ValueError:
+                        vals.append(0)
+                if len(vals) >= 4:
+                    cpu_total = sum(vals)
+                    cpu_idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+            elif "MemTotal:" in ln:
+                try:
+                    mem_total_kb = int(ln.split(":", 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+            elif "MemAvailable:" in ln:
+                try:
+                    mem_avail_kb = int(ln.split(":", 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+            elif uptime_sec <= 0.0 and " " in ln:
+                parts = ln.split()
+                try:
+                    uptime_sec = float(parts[0])
+                except (ValueError, IndexError):
+                    pass
+
+        cpu_txt = "CPU --"
+        if cpu_total is not None and cpu_idle is not None:
+            prev = self._stats_prev_cpu.get(serial)
+            self._stats_prev_cpu[serial] = (cpu_total, cpu_idle)
+            if prev is not None:
+                dt = max(1, cpu_total - prev[0])
+                di = max(0, cpu_idle - prev[1])
+                usage = max(0.0, min(100.0, 100.0 * (dt - di) / dt))
+                cpu_txt = f"CPU {usage:.0f}%"
+
+        mem_txt = "RAM --"
+        if mem_total_kb and mem_avail_kb is not None and mem_total_kb > 0:
+            used = max(0, mem_total_kb - mem_avail_kb)
+            pct = 100.0 * used / mem_total_kb
+            mem_txt = f"RAM {pct:.0f}% ({used // 1024}MB/{mem_total_kb // 1024}MB)"
+
+        up_txt = f"Uptime {self._format_uptime(uptime_sec)}" if uptime_sec > 0 else "Uptime --"
+        return f"{up_txt} · {cpu_txt} · {mem_txt}"
+
+    def _apply_device_stats(self, text: str) -> None:
+        stats = (text or "").strip()
+        if hasattr(self, "terminal"):
+            self.terminal.set_device_stats_text(stats)
         if hasattr(self, "file_explorer"):
-            self.file_explorer.set_remote_device(self.terminal.current_adb_serial())
-        if sig != prev_sig:
-            self._last_adb_device_sig = sig
-            self.append_log(
-                f"ADB: {len(pairs)} device(s) — {', '.join(s for s, _ in pairs[:5])}{'…' if len(pairs) > 5 else ''}"
-            )
-            if hasattr(self, "file_explorer"):
-                self.file_explorer.refresh_all_remotes()
+            self.file_explorer.set_device_stats_text(stats)
+
+    def refresh_device_stats(self) -> None:
+        if not hasattr(self, "terminal"):
+            return
+        serial = (self.terminal.current_adb_serial() or "").strip()
+        if not serial:
+            self._apply_device_stats("")
+            return
+        if self._stats_refresh_thread and self._stats_refresh_thread.isRunning():
+            self._stats_refresh_pending = True
+            return
+        th = _AdbDeviceStatsThread(self.get_adb_path(), serial)
+        th.done.connect(self._on_device_stats_ready)
+        th.finished.connect(th.deleteLater)
+        self._stats_refresh_thread = th
+        th.start()
+
+    def _on_device_stats_ready(self, serial: str, raw: object, err: str) -> None:
+        self._stats_refresh_thread = None
+        current = (self.terminal.current_adb_serial() or "").strip() if hasattr(self, "terminal") else ""
+        if serial and current and serial != current:
+            return
+        if err:
+            self._apply_device_stats("Uptime -- · CPU -- · RAM --")
+        else:
+            txt = self._parse_device_stats(serial, str(raw or ""))
+            self._apply_device_stats(txt)
+        if self._stats_refresh_pending:
+            self._stats_refresh_pending = False
+            self.refresh_device_stats()
 
     def _build_menu_bar(self):
         bar = self.menuBar()
@@ -734,10 +911,11 @@ open SSH using Explorer’s SFTP host or a new session.</li>
         m.exec_(self.log_view.mapToGlobal(pos))
 
     def _save_app_log(self) -> None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save application log",
-            "adbnik_log.txt",
+            f"adbnik_log_{ts}.txt",
             "Text files (*.txt);;All files (*.*)",
         )
         if not path:
@@ -746,14 +924,45 @@ open SSH using Explorer’s SFTP host or a new session.</li>
             with open(path, "w", encoding="utf-8", errors="replace") as f:
                 f.write(self.log_view.toPlainText())
             self.append_log(f"Log saved: {path}")
+            box = QMessageBox(self)
+            box.setWindowTitle("Saved")
+            box.setIcon(QMessageBox.Information)
+            box.setText("Application log saved.")
+            box.setInformativeText(path)
+            open_btn = box.addButton("Open file", QMessageBox.ActionRole)
+            box.addButton(QMessageBox.Ok)
+            box.exec_()
+            if box.clickedButton() == open_btn:
+                from PyQt5.QtCore import QUrl
+                from PyQt5.QtGui import QDesktopServices
+
+                QDesktopServices.openUrl(QUrl.fromLocalFile(path))
         except OSError as exc:
             QMessageBox.warning(self, "Save Log Failed", f"Unable to save log: {exc}")
 
     def get_adb_path(self) -> str:
-        return (self.config.adb_path or "").strip() or "adb"
+        raw = (self.config.adb_path or "").strip()
+        if not raw:
+            return "adb"
+        p = Path(raw)
+        try:
+            if p.is_file():
+                return str(p.resolve())
+        except OSError:
+            pass
+        return raw
 
     def get_scrcpy_path(self) -> str:
-        return (self.config.scrcpy_path or "").strip() or "scrcpy"
+        raw = (self.config.scrcpy_path or "").strip()
+        if not raw:
+            return "scrcpy"
+        p = Path(raw)
+        try:
+            if p.is_file():
+                return str(p.resolve())
+        except OSError:
+            pass
+        return raw
 
     def get_default_ssh_host(self) -> str:
         return (self.config.default_ssh_host or "").strip()
