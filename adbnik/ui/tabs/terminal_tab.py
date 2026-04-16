@@ -1,16 +1,18 @@
 import os
 import re
+import shutil
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Sequence
 
 from ...session import ConnectionKind, SessionProfile, ssh_command_args
 from ...services.adb_devices import friendly_name_for_serial
+from ...services.commands import run_adb
 from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 
-from PyQt5.QtCore import QSize, Qt, QProcess, QTimer
+from PyQt5.QtCore import QProcessEnvironment, QSize, Qt, QProcess, QTimer
 from PyQt5.QtGui import QFont, QKeySequence, QTextCursor
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -26,6 +28,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QShortcut,
     QSplitter,
     QStyle,
     QTabWidget,
@@ -77,12 +80,29 @@ def _normalize_pty_text(data: str, *, collapse_blank_runs: bool = True) -> str:
     # Strip ANSI escape/control sequences so `clear` and terminal color codes do not print raw bytes.
     data = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data)
     data = re.sub(r"\x1b\][^\x07]*(\x07|\x1b\\)", "", data)
+    # Remove BEL/other C0 control noise from PTYs (Android shell can emit BEL on Tab).
+    data = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", data)
     data = data.replace("\r\n", "\n")
     data = data.replace("\r", "\n")
     if collapse_blank_runs:
         # Collapse 3+ newlines only (do not merge \n\n).
         data = re.sub(r"\n{3,}", "\n\n", data)
     return data
+
+
+def _preferred_python_exe_from_path(path_val: str) -> str:
+    raw_path = path_val or os.environ.get("PATH", "")
+    for d in raw_path.split(os.pathsep):
+        d = (d or "").strip().strip('"')
+        if not d:
+            continue
+        p = Path(d) / "python.exe"
+        if p.is_file() and "windowsapps" not in str(p).lower():
+            return str(p)
+    cand = shutil.which("python") or ""
+    if cand and "windowsapps" not in cand.lower() and Path(cand).is_file():
+        return cand
+    return str(Path(sys.executable).resolve())
 
 
 class ShellPlainTextEdit(QPlainTextEdit):
@@ -93,9 +113,12 @@ class ShellPlainTextEdit(QPlainTextEdit):
         self._anchor = 0
         self._on_commit_line: Optional[Callable[[str], None]] = None
         self._on_save_buffer: Optional[Callable[[], None]] = None
+        self._on_tab_key: Optional[Callable[[bool], None]] = None  # bool = shift (Backtab)
         self._cmd_history: List[str] = []
         self._hist_browse_idx: Optional[int] = None
         self._hist_stash: str = ""
+        self._preserve_typed_input = False
+        self._font_pt = 11
         self.setCursorWidth(2)
         self.setUndoRedoEnabled(False)
 
@@ -104,6 +127,22 @@ class ShellPlainTextEdit(QPlainTextEdit):
 
     def set_on_save_buffer(self, fn: Callable[[], None]) -> None:
         self._on_save_buffer = fn
+
+    def set_on_tab_key(self, fn: Optional[Callable[[bool], None]]) -> None:
+        """If set, Tab / Shift+Tab are sent to the shell (completion) instead of changing Qt focus."""
+        self._on_tab_key = fn
+
+    def set_preserve_typed_input(self, enabled: bool) -> None:
+        self._preserve_typed_input = bool(enabled)
+
+    def set_terminal_font_size(self, pt: int) -> None:
+        self._font_pt = max(8, min(24, int(pt)))
+        f = self.font()
+        f.setPointSize(self._font_pt)
+        self.setFont(f)
+
+    def adjust_terminal_font_size(self, delta: int) -> None:
+        self.set_terminal_font_size(self._font_pt + int(delta))
 
     def set_initial_content(self, text: str) -> None:
         self.setPlainText(text)
@@ -132,6 +171,13 @@ class ShellPlainTextEdit(QPlainTextEdit):
         cur.insertText(text)
         cur.movePosition(QTextCursor.End)
         self.setTextCursor(cur)
+
+    def current_input_tail(self) -> str:
+        doc = self.toPlainText()
+        return doc[self._anchor :]
+
+    def set_input_tail(self, text: str) -> None:
+        self._replace_input_tail(text)
 
     def _history_prev(self) -> None:
         if not self._cmd_history:
@@ -206,6 +252,30 @@ class ShellPlainTextEdit(QPlainTextEdit):
                 return
 
         if mods & Qt.ControlModifier:
+            if k in (Qt.Key_Equal, Qt.Key_Plus):
+                self.adjust_terminal_font_size(+1)
+                ev.accept()
+                return
+            if k == Qt.Key_Minus:
+                self.adjust_terminal_font_size(-1)
+                ev.accept()
+                return
+            if k == Qt.Key_0:
+                self.set_terminal_font_size(11)
+                ev.accept()
+                return
+
+        if self._on_tab_key:
+            if k == Qt.Key_Tab and not (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
+                self._on_tab_key(False)
+                ev.accept()
+                return
+            if k == Qt.Key_Backtab and not (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
+                self._on_tab_key(True)
+                ev.accept()
+                return
+
+        if mods & Qt.ControlModifier:
             if k == Qt.Key_C:
                 self.copy()
                 ev.accept()
@@ -273,12 +343,15 @@ class ShellPlainTextEdit(QPlainTextEdit):
 
         super().keyPressEvent(ev)
 
-    def mousePressEvent(self, ev):
-        super().mousePressEvent(ev)
-        if ev.button() == Qt.LeftButton and self.textCursor().position() < self._anchor:
-            cur = self.textCursor()
-            cur.movePosition(QTextCursor.End)
-            self.setTextCursor(cur)
+    def wheelEvent(self, ev):
+        if ev.modifiers() & Qt.ControlModifier:
+            if ev.angleDelta().y() > 0:
+                self.adjust_terminal_font_size(+1)
+            elif ev.angleDelta().y() < 0:
+                self.adjust_terminal_font_size(-1)
+            ev.accept()
+            return
+        super().wheelEvent(ev)
 
     def _commit_current_line(self) -> None:
         cur = self.textCursor()
@@ -292,23 +365,28 @@ class ShellPlainTextEdit(QPlainTextEdit):
             if not self._cmd_history or self._cmd_history[-1] != line:
                 self._cmd_history.append(line)
         self._reset_history_browse()
-        # Remove what we typed before sending: an interactive shell echoes the line from the PTY, so
-        # keeping it here duplicates "ls" / blank lines and can interleave with async stdout if we send first.
         cur = self.textCursor()
-        cur.setPosition(self._anchor)
-        cur.setPosition(end_input, QTextCursor.KeepAnchor)
-        cur.removeSelectedText()
-        doc = self.toPlainText()
-        pos = self.textCursor().position()
-        # If the shell did not end the previous line with a newline, insert one so the next prompt/output
-        # does not glue to the prior line. Do NOT insert when typing on the same line as a prompt:
-        # Windows `>`, Android/adb ` $` / `#`, or trailing space after those.
-        if pos > 0:
-            prev = doc[pos - 1]
-            at_prompt = prev in " \t" or prev in ">$#"
-            if prev != "\n" and not at_prompt:
-                cur.insertText("\n")
-                pos += 1
+        if not self._preserve_typed_input:
+            # Remove what we typed before sending: an interactive shell echoes the line from the PTY, so
+            # keeping it here duplicates "ls" / blank lines and can interleave with async stdout if we send first.
+            cur.setPosition(self._anchor)
+            cur.setPosition(end_input, QTextCursor.KeepAnchor)
+            cur.removeSelectedText()
+            doc = self.toPlainText()
+            pos = self.textCursor().position()
+            # If the shell did not end the previous line with a newline, insert one so the next prompt/output
+            # does not glue to the prior line. Do NOT insert when typing on the same line as a prompt:
+            # Windows `>`, Android/adb ` $` / `#`, or trailing space after those.
+            if pos > 0:
+                prev = doc[pos - 1]
+                at_prompt = prev in " \t" or prev in ">$#"
+                if prev != "\n" and not at_prompt:
+                    cur.insertText("\n")
+                    pos += 1
+        else:
+            cur.movePosition(QTextCursor.End)
+            cur.insertText("\n")
+            pos = cur.position()
         self._anchor = pos
         self.setTextCursor(cur)
         if self._on_commit_line:
@@ -326,6 +404,7 @@ class SessionWidget(QWidget):
         *,
         working_dir: Optional[str] = None,
         shell_profile: Optional[str] = None,
+        path_extra_dirs: Optional[Sequence[str]] = None,
     ):
         super().__init__()
         self.session_label = session_label
@@ -333,6 +412,11 @@ class SessionWidget(QWidget):
         self._banner = (banner or "").strip() or None
         self._trim_first_pty_chunk = bool(self._banner)
         self._shell_profile = shell_profile if shell_profile in ("cmd", "powershell") else None
+        self._path_extra_dirs = [
+            str(Path(d).resolve())
+            for d in (path_extra_dirs or [])
+            if d and str(d).strip() and Path(d).is_dir()
+        ]
         try:
             base = Path(working_dir or os.getcwd()).resolve()
         except OSError:
@@ -341,6 +425,11 @@ class SessionWidget(QWidget):
         self._cwd: Path = base
         self.proc = QProcess(self)
         self._log_fp = None
+        self._log_pending_chunks: List[str] = []
+        self._tail_cache = ""
+        self._path_command_cache: List[str] = []
+        self._path_command_cache_key: str = ""
+        self._python_repl_mode = False
         self._log_path = self._build_log_path()
         self._build_ui()
         self._start()
@@ -366,13 +455,26 @@ class SessionWidget(QWidget):
 
         self.output = ShellPlainTextEdit()
         self.output.setObjectName("MobaTerminalOutput")
-        self.output.setFont(QFont("Consolas", 11))
+        self.output.setFont(QFont("Consolas", 10))
+        self.output.set_terminal_font_size(10)
         self.output.setLineWrapMode(QPlainTextEdit.NoWrap)
         # Keep UI responsive; full stream is persisted to disk.
         self.output.setMaximumBlockCount(60000)
         self.output.set_on_commit(self._send_line)
         self.output.setContextMenuPolicy(Qt.DefaultContextMenu)
         self.output.set_on_save_buffer(self._save_buffer_as)
+        self.output.set_on_tab_key(self._send_tab_to_shell)
+        # Reliable font zoom shortcuts on terminal widget.
+        self._zoom_in_sc = QShortcut(QKeySequence.ZoomIn, self.output)
+        self._zoom_out_sc = QShortcut(QKeySequence.ZoomOut, self.output)
+        self._zoom_in_sc_alt = QShortcut(QKeySequence("Ctrl+="), self.output)
+        self._zoom_out_sc_alt = QShortcut(QKeySequence("Ctrl+-"), self.output)
+        self._zoom_reset_sc = QShortcut(QKeySequence("Ctrl+0"), self.output)
+        self._zoom_in_sc.activated.connect(lambda: self.output.adjust_terminal_font_size(+1))
+        self._zoom_out_sc.activated.connect(lambda: self.output.adjust_terminal_font_size(-1))
+        self._zoom_in_sc_alt.activated.connect(lambda: self.output.adjust_terminal_font_size(+1))
+        self._zoom_out_sc_alt.activated.connect(lambda: self.output.adjust_terminal_font_size(-1))
+        self._zoom_reset_sc.activated.connect(lambda: self.output.set_terminal_font_size(10))
         layout.addWidget(self.output, 1)
         self._session_footer = QLabel()
         self._session_footer.setObjectName("TerminalSessionFooter")
@@ -390,10 +492,303 @@ class SessionWidget(QWidget):
         self._flush_timer.setSingleShot(True)
         self._flush_timer.setInterval(25)
         self._flush_timer.timeout.connect(self._flush_pending_output)
+        self._log_flush_timer = QTimer(self)
+        self._log_flush_timer.setSingleShot(True)
+        self._log_flush_timer.setInterval(180)
+        self._log_flush_timer.timeout.connect(self._flush_log_buffer)
 
         self.proc.readyReadStandardOutput.connect(self._read_stdout)
         self.proc.readyReadStandardError.connect(self._read_stderr)
         self.proc.finished.connect(self._on_proc_finished)
+        self.proc.errorOccurred.connect(self._on_proc_error)
+
+    def _send_tab_to_shell(self, shift: bool) -> None:
+        """Forward Tab to the child process so CMD/PowerShell/adb shell can complete paths/commands."""
+        if self.proc.state() != QProcess.Running:
+            return
+        if self._is_adb_shell and not shift:
+            if self._adb_complete_from_host():
+                return
+        if self._shell_profile in ("cmd", "powershell") and not shift:
+            if self._local_complete_from_host():
+                return
+            self._beep_completion_miss()
+            return
+        if shift:
+            if self._shell_profile in ("cmd", "powershell"):
+                self.proc.write(b"\t")
+            else:
+                self.proc.write(b"\x1b[Z")
+        else:
+            self.proc.write(b"\t")
+
+    def _adb_shell_serial(self) -> str:
+        parts = [str(x) for x in self.command]
+        for i, p in enumerate(parts[:-1]):
+            if p == "-s":
+                return parts[i + 1].strip()
+        return ""
+
+    def _adb_shell_cwd(self) -> str:
+        last = self._last_nonempty_line().strip()
+        m = re.search(r":(/[^ ]*)\s*[$#]\s*$", last)
+        return m.group(1) if m else "/"
+
+    def _adb_list_dir_names(self, remote_dir: str) -> List[str]:
+        d = (remote_dir or "/").replace('"', '\\"')
+        adb = self.command[0] if self.command else ""
+        serial = self._adb_shell_serial()
+        args = ["shell", f'ls -1 -a "{d}" 2>/dev/null']
+        if serial:
+            args = ["-s", serial, *args]
+        code, out, _err = run_adb(adb, args, timeout=6)
+        if code != 0:
+            return []
+        out_names: List[str] = []
+        for ln in out.splitlines():
+            n = ln.strip()
+            if not n or n in (".", ".."):
+                continue
+            out_names.append(n)
+        return out_names
+
+    @staticmethod
+    def _expand_common_prefix(token: str, candidates: Sequence[str]) -> str:
+        if not token or not candidates:
+            return token
+        lowers = [c.lower() for c in candidates]
+        low_prefix = os.path.commonprefix(lowers)
+        if not low_prefix:
+            return token
+        first = candidates[0]
+        matched_case_prefix = first[: len(low_prefix)]
+        # Expand when we can grow the token; also normalize case when user typed lower-case.
+        if len(low_prefix) > len(token):
+            return matched_case_prefix
+        if len(low_prefix) == len(token) and token.lower() == low_prefix and token != matched_case_prefix:
+            return matched_case_prefix
+        return token
+
+    def _beep_completion_miss(self) -> None:
+        # Moba-like feedback: when Tab cannot complete further, emit a local bell.
+        QApplication.beep()
+
+    def _show_completion_lines(self, candidates: Sequence[str]) -> None:
+        opts = sorted(dict.fromkeys(candidates), key=lambda s: s.lower())
+        if not opts:
+            return
+        # Moba-like: show candidates on next line(s), then continue current input line.
+        line = "  ".join(opts[:48])
+        more = "" if len(opts) <= 48 else f"  ...(+{len(opts) - 48})"
+        tail = self.output.current_input_tail()
+        prompt = ""
+        last = self._last_nonempty_line()
+        m = re.search(r"^((?:\d+\|)?[^\n]*?[>$#]\s*)$", last)
+        if m:
+            prompt = m.group(1)
+        self._append_output_text(f"\n{line}{more}\n{prompt}")
+        self.output.set_input_tail(tail)
+
+    @staticmethod
+    def _adb_escape_word(text: str) -> str:
+        return text.replace(" ", r"\ ")
+
+    def _adb_render_completed_token(self, left: str, token: str) -> str:
+        if " " not in token:
+            return token
+        cmd = (left or "").lstrip()
+        if cmd.startswith("cd "):
+            return f'"{token}"'
+        return self._adb_escape_word(token)
+
+    def _adb_complete_from_host(self) -> bool:
+        tail = self.output.current_input_tail()
+        if not tail:
+            return False
+        m = re.search(r"^(.*?)([^\s]*)$", tail, re.DOTALL)
+        if not m:
+            return False
+        left, token = m.group(1), m.group(2)
+        if token == "":
+            return False
+        cwd = self._adb_shell_cwd()
+        want_path = "/" in token
+        candidates: List[str] = []
+        if want_path:
+            if token.startswith("/"):
+                remote_dir = token.rsplit("/", 1)[0] or "/"
+                prefix = token.rsplit("/", 1)[1]
+                base = remote_dir if remote_dir.startswith("/") else "/" + remote_dir
+            else:
+                rel_dir = token.rsplit("/", 1)[0] if "/" in token else ""
+                prefix = token.rsplit("/", 1)[1] if "/" in token else token
+                base = (cwd.rstrip("/") + "/" + rel_dir).replace("//", "/") if rel_dir else cwd
+                remote_dir = base
+            names = self._adb_list_dir_names(remote_dir)
+            prefix_l = prefix.lower()
+            candidates = [n for n in names if n.lower().startswith(prefix_l)]
+            if len(candidates) == 1:
+                filled = f"{remote_dir.rstrip('/')}/{candidates[0]}" if token.startswith("/") else (
+                    f"{token.rsplit('/', 1)[0]}/{candidates[0]}" if "/" in token else candidates[0]
+                )
+                if not filled.endswith("/"):
+                    filled = filled + "/"
+                self.output.set_input_tail(left + self._adb_render_completed_token(left, filled))
+                return True
+            expanded = self._expand_common_prefix(prefix, candidates)
+            if expanded != prefix:
+                if token.startswith("/"):
+                    filled = f"{remote_dir.rstrip('/')}/{expanded}"
+                else:
+                    filled = f"{token.rsplit('/', 1)[0]}/{expanded}" if "/" in token else expanded
+                self.output.set_input_tail(left + self._adb_render_completed_token(left, filled))
+                return True
+            self._show_completion_lines(candidates)
+            return True
+        names = self._adb_list_dir_names(cwd)
+        common_bins: List[str] = []
+        for d in ("/ifs/bin", "/system/bin", "/system/xbin"):
+            common_bins.extend(self._adb_list_dir_names(d))
+        pool = list(dict.fromkeys([*names, *common_bins]))
+        token_l = token.lower()
+        candidates = [n for n in pool if n.lower().startswith(token_l)]
+        if len(candidates) == 1:
+            self.output.set_input_tail(left + self._adb_render_completed_token(left, candidates[0]))
+            return True
+        expanded = self._expand_common_prefix(token, candidates)
+        if expanded != token:
+            self.output.set_input_tail(left + self._adb_render_completed_token(left, expanded))
+            return True
+        self._show_completion_lines(candidates)
+        return True
+
+    def _list_local_dir_names(self, directory: str) -> List[str]:
+        try:
+            return [n for n in os.listdir(directory or ".") if n not in (".", "..")]
+        except OSError:
+            return []
+
+    def _local_command_candidates(self) -> List[str]:
+        env = self.proc.processEnvironment()
+        path_val = env.value("PATH", "") or env.value("Path", "")
+        key = path_val.lower()
+        if key == self._path_command_cache_key and self._path_command_cache:
+            return self._path_command_cache
+        out: List[str] = []
+        seen = set()
+        exts = [".exe", ".cmd", ".bat", ".com", ".ps1"]
+        for d in path_val.split(os.pathsep):
+            d = (d or "").strip().strip('"')
+            if not d or not os.path.isdir(d):
+                continue
+            try:
+                for n in os.listdir(d):
+                    nl = n.lower()
+                    base = n
+                    for ext in exts:
+                        if nl.endswith(ext):
+                            base = n[: -len(ext)]
+                            break
+                    b = base.strip()
+                    if not b:
+                        continue
+                    bl = b.lower()
+                    if bl not in seen:
+                        seen.add(bl)
+                        out.append(b)
+            except OSError:
+                continue
+        self._path_command_cache_key = key
+        self._path_command_cache = out
+        return out
+
+    def _preferred_python_exe(self) -> str:
+        env = self.proc.processEnvironment()
+        path_val = env.value("PATH", "") or env.value("Path", "")
+        return _preferred_python_exe_from_path(path_val)
+
+    def _local_complete_from_host(self) -> bool:
+        tail = self.output.current_input_tail()
+        if not tail:
+            return False
+        m = re.search(r"^(.*?)([^\s]*)$", tail, re.DOTALL)
+        if not m:
+            return False
+        left, token = m.group(1), m.group(2)
+        if token == "":
+            return False
+        cmd_name = ""
+        m_cmd = re.search(r"(?:^|\s)(cd|chdir|dir|ls|set-location|sl)\s+$", left.lstrip(), re.IGNORECASE)
+        if m_cmd:
+            cmd_name = (m_cmd.group(1) or "").lower()
+        force_path_context = bool(cmd_name)
+        token_norm = token.replace("/", "\\")
+        want_path = force_path_context or ("\\" in token_norm) or ("/" in token) or token_norm.startswith(".")
+        if want_path:
+            if token_norm.endswith("\\"):
+                return False
+            if "\\" in token_norm:
+                head, prefix = token_norm.rsplit("\\", 1)
+                if re.match(r"^[A-Za-z]:$", head):
+                    base = head + "\\"
+                elif os.path.isabs(token_norm):
+                    # Rooted path without drive (e.g. "\foo") means "current drive root" on Windows.
+                    if not head:
+                        drv = Path(str(self._cwd)).drive or ""
+                        base = (drv + "\\") if drv else "\\"
+                    else:
+                        base = head
+                else:
+                    base = str((self._cwd / head).resolve())
+            else:
+                prefix = token_norm
+                base = str(self._cwd)
+            names = self._list_local_dir_names(base)
+            cands = [n for n in names if n.lower().startswith(prefix.lower())]
+            if cmd_name in {"cd", "chdir", "set-location", "sl"}:
+                cands = [n for n in cands if os.path.isdir(os.path.join(base, n))]
+            if not cands:
+                return False
+            expanded = self._expand_common_prefix(prefix, cands)
+            if expanded == prefix and len(cands) == 1:
+                expanded = cands[0]
+            if expanded == prefix and len(cands) > 1:
+                self._show_completion_lines(cands)
+                return True
+            if "\\" in token_norm:
+                repl = token_norm.rsplit("\\", 1)[0] + "\\" + expanded
+            else:
+                repl = expanded
+            if len(cands) == 1:
+                full = os.path.join(base, cands[0])
+                if os.path.isdir(full) and not repl.endswith("\\"):
+                    repl += "\\"
+                elif os.path.isfile(full) and not repl.endswith(" "):
+                    repl += " "
+            self.output.set_input_tail(left + repl)
+            return True
+        pool = self._list_local_dir_names(str(self._cwd)) + self._local_command_candidates()
+        # Stable unique pool (case-insensitive)
+        uniq: List[str] = []
+        seen = set()
+        for n in pool:
+            nl = n.lower()
+            if nl not in seen:
+                seen.add(nl)
+                uniq.append(n)
+        cands = [n for n in uniq if n.lower().startswith(token.lower())]
+        if not cands:
+            return False
+        expanded = self._expand_common_prefix(token, cands)
+        if expanded == token and len(cands) == 1:
+            expanded = cands[0]
+        if expanded == token and len(cands) > 1:
+            self._show_completion_lines(cands)
+            return True
+        if len(cands) == 1 and not expanded.endswith(" "):
+            expanded += " "
+        self.output.set_input_tail(left + expanded)
+        return True
 
     def shutdown(self, *, wait_for_process: bool = False) -> None:
         """Stop the shell process when the tab is closed.
@@ -408,12 +803,19 @@ class SessionWidget(QWidget):
         self._close_log()
 
     def _on_proc_finished(self):
-        self.output.append_from_process("\n[session terminated]\n")
+        self._append_output_text("\n[session terminated]\n")
         self._write_log("\n[session terminated]\n")
         self._write_log(f"[full log path] {self._log_path}\n")
         if hasattr(self, "_session_footer"):
             self._session_footer.setText(f"Session · {self.session_label} — ended")
         self._close_log()
+
+    def _on_proc_error(self, _error) -> None:
+        err = (self.proc.errorString() or "").strip()
+        cmd = " ".join(self.command)
+        if not err:
+            err = "Process failed to start."
+        self._append(f"\n[start error] {err}\nCommand: {cmd}\n")
 
     def _update_session_footer(self) -> None:
         if not hasattr(self, "_session_footer"):
@@ -429,20 +831,36 @@ class SessionWidget(QWidget):
         """CMD only: pipe-backed cmd may end with `>` without a space. PowerShell prints its own prompt; adding a space here caused extra gaps and missing prompt lines."""
         if self._shell_profile != "cmd":
             return
-        doc = self.output.toPlainText()
+        doc = self._tail_cache
         if not doc or doc.endswith("> ") or not doc.rstrip().endswith(">"):
             return
         last = self._last_nonempty_line().rstrip()
         if not re.search(r"[A-Za-z]:\\[^>\n]*>$", last):
             return
-        self.output.append_from_process(" ")
+        self._append_output_text(" ")
 
     def _send_line(self, line: str) -> None:
         if self.proc.state() != QProcess.Running:
             return
+        stripped = (line or "").strip().lower()
+        if self._shell_profile in ("cmd", "powershell") and stripped in ("python", "py", "python.exe"):
+            self._python_repl_mode = True
+            self.output.set_preserve_typed_input(True)
+            py = self._preferred_python_exe()
+            if self._shell_profile == "powershell":
+                line = f'& "{py}" -i'
+            else:
+                line = f'"{py}" -i'
+        if self._shell_profile == "cmd":
+            s = (line or "").strip()
+            m = re.match(r"^cd\s+(.+)$", s, re.IGNORECASE)
+            if m:
+                arg = m.group(1).strip()
+                if arg and not arg.lower().startswith("/d ") and re.match(r'^[A-Za-z]:[\\/]', arg.strip('"')):
+                    line = f"cd /d {arg}"
         self._apply_local_cd_line(line)
         self._update_session_footer()
-        self._write_log(f">>> {line}\n")
+        self._write_log(f"{line}\n")
         self.proc.write((line + "\n").encode("utf-8", errors="replace"))
 
     def _format_local_prompt(self) -> str:
@@ -450,7 +868,7 @@ class SessionWidget(QWidget):
         return f"{str(self._cwd)}> "
 
     def _last_nonempty_line(self) -> str:
-        for line in reversed(self.output.toPlainText().split("\n")):
+        for line in reversed(self._tail_cache.split("\n")):
             if line.strip():
                 return line
         return ""
@@ -472,9 +890,9 @@ class SessionWidget(QWidget):
         if self._buffer_already_shows_prompt():
             return
         p = self._format_local_prompt()
-        if not self.output.toPlainText().endswith("\n"):
-            self.output.append_from_process("\n")
-        self.output.append_from_process(p)
+        if self._tail_cache and not self._tail_cache.endswith("\n"):
+            self._append_output_text("\n")
+        self._append_output_text(p)
 
     def _apply_local_cd_line(self, line: str) -> None:
         """Best-effort cwd for the synthetic prompt (the real shell updates its own cwd)."""
@@ -532,8 +950,9 @@ class SessionWidget(QWidget):
         if not text:
             return text
         text = re.sub(r"\n{2,}", "\n", text)
-        doc = self.output.toPlainText()
-        if doc.endswith("\n") and text.startswith("\n"):
+        # Android `ls` often escapes spaces as `\ `; render plain names for readability.
+        text = text.replace(r"\ ", " ")
+        if self._tail_cache.endswith("\n") and text.startswith("\n"):
             text = text[1:]
         return text
 
@@ -548,6 +967,14 @@ class SessionWidget(QWidget):
             self._trim_first_pty_chunk = False
         if not data:
             return
+        if self._is_adb_shell:
+            data = self._tighten_adb_chunk(data)
+            if not data:
+                return
+        elif self._shell_profile in ("cmd", "powershell") and not self._python_repl_mode:
+            # Compact local-shell output (PowerShell often emits spacer lines with indentation).
+            data = re.sub(r"\n[ \t]*\n+", "\n", data)
+            data = re.sub(r"\n{2,}", "\n", data)
         self._write_log(data)
         self._pending_chunks.append(data)
         if not self._flush_timer.isActive():
@@ -558,26 +985,68 @@ class SessionWidget(QWidget):
             return
         text = "".join(self._pending_chunks)
         self._pending_chunks.clear()
-        if self._is_adb_shell:
-            text = self._tighten_adb_chunk(text)
-        self.output.append_from_process(text)
-        self._maybe_append_synthetic_prompt()
+        if self._shell_profile in ("cmd", "powershell") and not self._python_repl_mode:
+            # Compact local-shell output after chunk merge (covers split spacer lines across packets).
+            text = re.sub(r"\n[ \t]*\n+", "\n", text)
+            text = re.sub(r"\n{2,}", "\n", text)
+        self._append_output_text(text)
+        # Keep viewport anchored to latest prompt/output after long command dumps.
+        self.output.moveCursor(QTextCursor.End)
+        self.output.ensureCursorVisible()
         self._ensure_prompt_trailing_space()
         self._update_session_footer()
 
+    def _append_output_text(self, text: str) -> None:
+        if not text:
+            return
+        self.output.append_from_process(text)
+        self._tail_cache = (self._tail_cache + text)[-32768:]
+        self._sync_python_repl_mode()
+
+    def _sync_python_repl_mode(self) -> None:
+        if self._shell_profile not in ("cmd", "powershell"):
+            self._python_repl_mode = False
+            self.output.set_preserve_typed_input(False)
+            return
+        last = self._last_nonempty_line()
+        py_prompt = bool(re.search(r"(>>>|\.\.\.)\s*$", last))
+        shell_prompt = bool(re.search(r"(?:^[A-Za-z]:\\.*>\s*$)|(?:^PS\s+.*>\s*$)", last))
+        if py_prompt:
+            self._python_repl_mode = True
+            self.output.set_preserve_typed_input(True)
+            return
+        if shell_prompt:
+            self._python_repl_mode = False
+            self.output.set_preserve_typed_input(False)
+
     def _start(self):
         # Banner line only; first PTY bytes may include leading newlines — trimmed in _append.
-        self.output.set_initial_content((self._banner + "\n") if self._banner else "")
+        initial = (self._banner + "\n") if self._banner else ""
+        self.output.set_initial_content(initial)
+        self._tail_cache = initial[-32768:]
         self._open_log()
         if self._banner:
             self._write_log(self._banner + "\n")
+        env = QProcessEnvironment.systemEnvironment()
+        if self._path_extra_dirs:
+            path = env.value("PATH", "") or env.value("Path", "")
+            merged = os.pathsep.join(self._path_extra_dirs)
+            combined = merged + (os.pathsep + path if path else "")
+            env.insert("PATH", combined)
+            env.insert("Path", combined)
+        elif env.value("PATH", "") and not env.value("Path", ""):
+            env.insert("Path", env.value("PATH", ""))
+        elif env.value("Path", "") and not env.value("PATH", ""):
+            env.insert("PATH", env.value("Path", ""))
+        self.proc.setProcessEnvironment(env)
         self.proc.setWorkingDirectory(self._working_dir_str)
         self.proc.start(self.command[0], self.command[1:])
-        if not self.proc.waitForStarted(3500):
-            self._append("Failed to start terminal process.\n")
         self.output.setFocus(Qt.OtherFocusReason)
-        if self._shell_profile == "cmd":
-            QTimer.singleShot(120, self._maybe_append_synthetic_prompt)
+        if self._is_adb_shell:
+            self._append_output_text(
+                "\n[Tip] This shell runs on the Android device. adb.exe lives on your PC — use a "
+                "“Command Prompt” or “PowerShell” tab here to run adb, or run cmd.exe outside the app.\n"
+            )
         self._update_session_footer()
 
     def _read_stdout(self):
@@ -587,13 +1056,42 @@ class SessionWidget(QWidget):
         self._append(bytes(self.proc.readAllStandardError()).decode(errors="ignore"))
 
     def _save_buffer_as(self) -> None:
-        suggested = f"{self.session_label.replace(' ', '_')}.txt"
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        suggested = f"{self.session_label.replace(' ', '_')}_{ts}.txt"
         path, _ = QFileDialog.getSaveFileName(self, "Save terminal output as", suggested, "Text files (*.txt);;All files (*.*)")
         if not path:
             return
+        mode = QMessageBox.question(
+            self,
+            "Save terminal output",
+            "Save full session log (all output since tab opened)?\n\n"
+            "Yes = full session log\n"
+            "No = visible buffer only",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if mode == QMessageBox.Cancel:
+            return
         try:
-            with open(path, "w", encoding="utf-8", errors="replace") as f:
-                f.write(self.output.toPlainText())
+            if mode == QMessageBox.Yes and self._log_path.exists():
+                self._flush_log_buffer()
+                shutil.copyfile(str(self._log_path), path)
+            else:
+                with open(path, "w", encoding="utf-8", errors="replace") as f:
+                    f.write(self.output.toPlainText())
+            box = QMessageBox(self)
+            box.setWindowTitle("Saved")
+            box.setIcon(QMessageBox.Information)
+            box.setText("Terminal output saved.")
+            box.setInformativeText(path)
+            open_btn = box.addButton("Open file", QMessageBox.ActionRole)
+            box.addButton(QMessageBox.Ok)
+            box.exec_()
+            if box.clickedButton() == open_btn:
+                from PyQt5.QtCore import QUrl
+                from PyQt5.QtGui import QDesktopServices
+
+                QDesktopServices.openUrl(QUrl.fromLocalFile(path))
         except OSError:
             pass
 
@@ -602,19 +1100,31 @@ class SessionWidget(QWidget):
             self._log_fp = self._log_path.open("a", encoding="utf-8", errors="replace")
 
     def _write_log(self, text: str) -> None:
+        if not text:
+            return
+        self._log_pending_chunks.append(text)
+        if not self._log_flush_timer.isActive():
+            self._log_flush_timer.start()
+
+    def _flush_log_buffer(self) -> None:
+        if not self._log_pending_chunks:
+            return
         try:
             if self._log_fp is None:
                 self._open_log()
-            if self._log_fp is not None:
-                self._log_fp.write(text)
-                self._log_fp.flush()
+            if self._log_fp is None:
+                return
+            payload = "".join(self._log_pending_chunks)
+            self._log_pending_chunks.clear()
+            self._log_fp.write(payload)
+            self._log_fp.flush()
         except Exception:
             pass
 
     def _close_log(self) -> None:
         try:
+            self._flush_log_buffer()
             if self._log_fp is not None:
-                self._log_fp.flush()
                 self._log_fp.close()
         except Exception:
             pass
@@ -642,6 +1152,29 @@ class TerminalTab(QWidget):
         self._append_log = append_log or (lambda _m: None)
         self._placeholder_tab: Optional[QWidget] = None
         self._build_ui()
+
+    def _tool_bin_dirs_for_path(self) -> List[str]:
+        """Prepend configured tool locations (adb/scrcpy) to PATH for embedded CMD/PowerShell."""
+        out: List[str] = []
+        py = self._preferred_python_exe()
+        if py:
+            p = Path(py)
+            if p.is_file():
+                out.append(str(p.resolve().parent))
+        ap = (self.get_adb_path() or "").strip()
+        if ap:
+            p = Path(ap)
+            if p.is_file():
+                out.append(str(p.resolve().parent))
+        sp = (self.config.scrcpy_path or "").strip()
+        if sp:
+            p = Path(sp)
+            if p.is_file():
+                out.append(str(p.resolve().parent))
+        return out
+
+    def _preferred_python_exe(self) -> str:
+        return _preferred_python_exe_from_path(os.environ.get("PATH", ""))
 
     def _init_hidden_session_controls(self) -> None:
         """ADB device list + serial fields for MainWindow (File Explorer, menus). Combo stays hidden in Terminal."""
@@ -782,9 +1315,9 @@ class TerminalTab(QWidget):
         self.tabs.tabCloseRequested.connect(self._on_tab_close)
         right_layout.addWidget(self.tabs, 1)
 
-        status = QLabel("Ready")
-        status.setObjectName("MobaStatus")
-        right_layout.addWidget(status)
+        self._status_label = QLabel("Ready")
+        self._status_label.setObjectName("MobaStatus")
+        right_layout.addWidget(self._status_label)
 
         split.addWidget(left)
         split.addWidget(right)
@@ -806,12 +1339,63 @@ class TerminalTab(QWidget):
             return f"{base}:{p}"
         return base
 
+    def _ftp_tab_title(self, profile: SessionProfile) -> str:
+        h = (profile.ftp_host or "").strip() or "FTP"
+        p = int(profile.ftp_port or 21)
+        u = (profile.ftp_user or "").strip()
+        base = f"{u}@{h}" if u else h
+        return f"{base}:{p}" if p != 21 else base
+
+    def _ensure_ssh_client_available(self) -> bool:
+        if shutil.which("ssh"):
+            return True
+        QMessageBox.warning(
+            self,
+            "SSH client not found",
+            "OpenSSH client ('ssh') is not available on PATH.\n"
+            "Install/enable OpenSSH Client in Windows Optional Features, then retry.",
+        )
+        return False
+
+    def _open_ftp_terminal(self, host: str, port: int, user: str = "") -> None:
+        h = (host or "").strip()
+        if not h:
+            QMessageBox.information(self, "FTP", "Enter host first.")
+            return
+        ftp_exe = shutil.which("ftp")
+        if not ftp_exe:
+            QMessageBox.warning(
+                self,
+                "FTP client not found",
+                "Windows FTP client ('ftp') is not available on PATH.\n"
+                "Enable/install it, then retry.",
+            )
+            return
+        label = f"FTP · {(user + '@') if user else ''}{h}:{int(port or 21)}"
+        cmd = [ftp_exe, h]
+        self.add_session(
+            label,
+            cmd,
+            shell_profile=None,
+            working_dir=os.getcwd(),
+            path_extra_dirs=self._tool_bin_dirs_for_path(),
+        )
+        self._append_log(
+            "FTP terminal: started interactive ftp client. "
+            "Login is manual in terminal (user/password prompts)."
+        )
+
+    def set_device_stats_text(self, text: str) -> None:
+        base = "Ready"
+        extra = (text or "").strip()
+        self._status_label.setText(f"{base} · {extra}" if extra else base)
+
     def _reload_bookmark_sidebar(self) -> None:
         self.bookmark_list.clear()
         for bm in self.config.session_bookmarks:
             if not isinstance(bm, dict):
                 continue
-            if bm.get("kind") not in ("ssh", "adb", "serial", "local_cmd", "local_pwsh"):
+            if bm.get("kind") not in ("ssh", "ftp", "adb", "serial", "local_cmd", "local_pwsh"):
                 continue
             it = QListWidgetItem(bm.get("name") or "Untitled")
             it.setIcon(bookmark_icon_from_entry(bm, self))
@@ -894,6 +1478,8 @@ class TerminalTab(QWidget):
             self.add_session(label, cmd, banner=_adb_terminal_banner(adb, serial, label))
             return
         if k == "ssh":
+            if not self._ensure_ssh_client_available():
+                return
             try:
                 sp = int(bm.get("ssh_port") or 22)
             except (TypeError, ValueError):
@@ -907,6 +1493,17 @@ class TerminalTab(QWidget):
             )
             self.add_session(self._ssh_tab_title(profile), ssh_command_args(profile))
             return
+        if k == "ftp":
+            try:
+                fp = int(bm.get("ftp_port") or 21)
+            except (TypeError, ValueError):
+                fp = 21
+            self._open_ftp_terminal(
+                host=str(bm.get("ftp_host") or "").strip(),
+                port=fp,
+                user=str(bm.get("ftp_user") or "").strip(),
+            )
+            return
         if k == "serial":
             port = bm.get("serial_port") or self.get_default_serial_port()
             baud = bm.get("serial_baud") or self.get_default_serial_baud()
@@ -914,21 +1511,21 @@ class TerminalTab(QWidget):
             self.add_session(f"Serial · {port}", cmd)
 
     def _open_local_cmd(self) -> None:
-        # Small quality-of-life aliases so Linux-style habits still work in CMD.
+        # Native CMD behavior; keep command parsing/execution identical to real cmd.exe.
         cmd_exe = os.environ.get("COMSPEC", "cmd.exe")
-        # Chain with `&` — `$T` is for inside a doskey macro body, not two separate doskey commands.
         self.add_session(
             "Command Prompt",
-            [cmd_exe, "/K", "doskey ls=dir & doskey pwd=cd"],
+            [cmd_exe, "/K", "doskey ls=dir"],
             working_dir=os.getcwd(),
             shell_profile="cmd",
+            path_extra_dirs=self._tool_bin_dirs_for_path(),
         )
 
     def _open_local_powershell(self) -> None:
         sys_root = os.environ.get("SystemRoot", r"C:\Windows")
         ps = Path(sys_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
         ps_exe = str(ps) if ps.is_file() else "powershell.exe"
-        # Startup command: `lx` is a common typo for `ls` (helps when muscle memory slips).
+        # Native PowerShell behavior; no startup command rewriting.
         self.add_session(
             "Windows PowerShell",
             [
@@ -938,11 +1535,10 @@ class TerminalTab(QWidget):
                 "-ExecutionPolicy",
                 "Bypass",
                 "-NoExit",
-                "-Command",
-                "Set-Alias -Name lx -Value Get-ChildItem -Scope Global",
             ],
             working_dir=os.getcwd(),
             shell_profile="powershell",
+            path_extra_dirs=self._tool_bin_dirs_for_path(),
         )
 
     def _next_bookmark_name(self, base: str) -> str:
@@ -1083,6 +1679,8 @@ class TerminalTab(QWidget):
             short = (o.adb_display_label or "").strip() or f"{friendly_name_for_serial(self.get_adb_path(), serial)} · {serial}"
             self.add_session(short, cmd, banner=_adb_terminal_banner(adb, serial, short))
         elif o.kind == "sftp":
+            if not self._ensure_ssh_client_available():
+                return
             profile = SessionProfile(
                 ConnectionKind.SSH_SFTP,
                 ssh_host=o.sftp_host,
@@ -1091,6 +1689,12 @@ class TerminalTab(QWidget):
                 ssh_password=o.sftp_password or "",
             )
             self.add_session(self._ssh_tab_title(profile), ssh_command_args(profile))
+        elif o.kind == "ftp":
+            self._open_ftp_terminal(
+                host=o.ftp_host,
+                port=int(o.ftp_port or 21),
+                user=o.ftp_user or "",
+            )
         elif o.kind == "serial":
             port = (o.serial_port or "").strip() or self.get_default_serial_port()
             baud = (o.serial_baud or "").strip() or self.get_default_serial_baud()
@@ -1109,6 +1713,7 @@ class TerminalTab(QWidget):
         banner: Optional[str] = None,
         working_dir: Optional[str] = None,
         shell_profile: Optional[str] = None,
+        path_extra_dirs: Optional[Sequence[str]] = None,
     ):
         if self._placeholder_tab is not None:
             idx = self.tabs.indexOf(self._placeholder_tab)
@@ -1121,6 +1726,7 @@ class TerminalTab(QWidget):
             banner=banner,
             working_dir=working_dir,
             shell_profile=shell_profile,
+            path_extra_dirs=path_extra_dirs,
         )
         idx = self.tabs.addTab(widget, label)
         self.tabs.setCurrentIndex(idx)
@@ -1170,6 +1776,8 @@ class TerminalTab(QWidget):
             short = f"{friendly_name_for_serial(adb, serial)} · {serial}" if serial else "ADB"
             self.add_session(short, cmd, banner=_adb_terminal_banner(adb, serial, short))
         elif profile.kind == ConnectionKind.SSH_SFTP:
+            if not self._ensure_ssh_client_available():
+                return
             if not (profile.ssh_host or "").strip():
                 QMessageBox.information(
                     self,
@@ -1180,10 +1788,10 @@ class TerminalTab(QWidget):
                 return
             self.add_session(self._ssh_tab_title(profile), ssh_command_args(profile))
         elif profile.kind == ConnectionKind.FTP:
-            QMessageBox.information(
-                self,
-                "FTP",
-                "FTP is for file transfer in File Explorer. Use New Session for a shell.",
+            self._open_ftp_terminal(
+                host=profile.ftp_host,
+                port=int(profile.ftp_port or 21),
+                user=profile.ftp_user,
             )
         elif profile.kind == ConnectionKind.SERIAL:
             port = profile.serial_port or self.get_default_serial_port()
