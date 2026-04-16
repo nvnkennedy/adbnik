@@ -1,5 +1,7 @@
 import shlex
+import subprocess
 import sys
+from datetime import datetime
 from typing import Callable, Optional
 
 from PyQt5.QtCore import QProcess, QProcessEnvironment, Qt, QTimer
@@ -13,6 +15,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QFileDialog,
     QSizePolicy,
     QSplitter,
     QStyle,
@@ -159,6 +162,9 @@ class ScrcpyTab(QWidget):
         self._get_serial = get_serial
         self.config = config
         self.proc: Optional[QProcess] = None
+        self._stop_requested = False
+        self._stop_force_kill_timer: Optional[QTimer] = None
+        self._stop_poll_timer: Optional[QTimer] = None
         self._embed_poll: Optional[QTimer] = None
         self._embed_title: str = ""
         self._embed_hwnd: int = 0
@@ -442,6 +448,22 @@ class ScrcpyTab(QWidget):
         self.extra_args.setMinimumHeight(34)
         grid.addWidget(self.extra_args, 8, 1)
 
+        grid.addWidget(QLabel("Record to"), 9, 0)
+        rec_row = QHBoxLayout()
+        rec_row.setContentsMargins(0, 0, 0, 0)
+        rec_row.setSpacing(6)
+        self.record_path = QLineEdit()
+        self.record_path.setPlaceholderText("optional output .mp4/.mkv")
+        self.record_path.setMinimumHeight(34)
+        rec_row.addWidget(self.record_path, 1)
+        b_rec_browse = QToolButton()
+        b_rec_browse.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
+        b_rec_browse.setToolTip("Choose recording file")
+        b_rec_browse.setFixedSize(34, 34)
+        b_rec_browse.clicked.connect(self._choose_record_file)
+        rec_row.addWidget(b_rec_browse)
+        grid.addLayout(rec_row, 9, 1)
+
         form.addWidget(grp)
 
         st = self.style()
@@ -625,10 +647,35 @@ class ScrcpyTab(QWidget):
     def _on_proc_finished(self, exit_code: int, exit_status: int) -> None:
         self._sync_stop_hotkey(False)
         self._stop_embed_poll()
+        if self._stop_force_kill_timer is not None:
+            self._stop_force_kill_timer.stop()
+            self._stop_force_kill_timer.deleteLater()
+            self._stop_force_kill_timer = None
+        if self._stop_poll_timer is not None:
+            self._stop_poll_timer.stop()
+            self._stop_poll_timer.deleteLater()
+            self._stop_poll_timer = None
         self._drain_process_log()
-        self._append_log(f"Screen: scrcpy process finished — exit code {exit_code}, exit status {exit_status}.")
+        if self._stop_requested:
+            self._append_log("Screen: scrcpy stopped.")
+        else:
+            self._append_log(f"Screen: scrcpy process finished — exit code {exit_code}, exit status {exit_status}.")
+        self._stop_requested = False
         self.status.setText("Idle")
         self._clear_embed()
+
+    def _on_proc_error(self, _error) -> None:
+        if not self.proc:
+            return
+        if self._stop_requested:
+            # User requested stop: scrcpy may report process error during normal teardown.
+            return
+        self._drain_process_log()
+        self.status.setText("Failed to start")
+        self._append_log(
+            "Screen: scrcpy start error — "
+            + ((self.proc.errorString() or "").strip() or "unknown process error")
+        )
 
     def start_scrcpy(self):
         if self.proc and self.proc.state() == QProcess.Running:
@@ -679,6 +726,12 @@ class ScrcpyTab(QWidget):
             cmd.append("--turn-screen-off")
         if self.fullscreen_cb.isChecked():
             cmd.append("--fullscreen")
+        rec_out = (self.record_path.text() or "").strip()
+        if rec_out:
+            cmd.extend(["--record", rec_out])
+            # MP4 players on Windows often fail with Opus audio track; force AAC for compatibility.
+            if rec_out.lower().endswith(".mp4"):
+                cmd.extend(["--audio-codec", "aac"])
 
         extras = (self.extra_args.text() or "").strip()
         if extras:
@@ -702,7 +755,7 @@ class ScrcpyTab(QWidget):
         self._append_log(f"Screen: starting on {serial}: {' '.join(cmd)}")
         self._append_log(f"Screen: ADB executable={adb_path!r}")
 
-        def _launch(_cmd: list, started_timeout_ms: int = 8000) -> bool:
+        def _launch(_cmd: list) -> None:
             if self.proc is not None:
                 prev = self.proc
                 self.proc = None
@@ -714,57 +767,143 @@ class ScrcpyTab(QWidget):
             self.proc.setProcessEnvironment(env)
             self.proc.readyReadStandardOutput.connect(self._on_proc_output)
             self.proc.finished.connect(self._on_proc_finished)
+            self.proc.errorOccurred.connect(self._on_proc_error)
             self.proc.start(_cmd[0], _cmd[1:])
-            return bool(self.proc.waitForStarted(started_timeout_ms))
+        def _on_started() -> None:
+            self.status.setText("Running")
+            self._sync_stop_hotkey(True)
+            self._stop_embed_poll()
+            if sys.platform == "win32" and not self.fullscreen_cb.isChecked() and self.embed_mirror_cb.isChecked():
+                self._embed_poll = QTimer(self)
+                self._embed_poll.setInterval(180)
+                n = [0]
 
-        started = _launch(cmd)
-        if not started:
-            # Fallback launch with safest settings if first start failed.
+                def _tick():
+                    n[0] += 1
+                    if n[0] > 80:
+                        self._stop_embed_poll()
+                        self._append_log(
+                            "Screen: embedding timed out — mirror may still be open in a separate window."
+                        )
+                        return
+                    self._poll_embed_window()
+
+                self._embed_poll.timeout.connect(_tick)
+                self._embed_poll.start()
+
+        launched = {"fallback": False}
+
+        def _check_start() -> None:
+            if self.proc and self.proc.state() == QProcess.Running:
+                _on_started()
+                return
+            if launched["fallback"]:
+                self.status.setText("Failed to start")
+                self._append_log(
+                    "Screen: failed to start scrcpy after retry (check scrcpy path, USB debugging, RSA trust, cable)."
+                )
+                return
+            launched["fallback"] = True
             safe_cmd = [exe, "-s", serial, "--window-title", win_title, "--video-bit-rate", br]
             self._append_log("Screen: first start failed, retrying with safe fallback options.")
-            started = _launch(safe_cmd, started_timeout_ms=9000)
+            _launch(safe_cmd)
+            QTimer.singleShot(1300, _check_start)
 
-        if not started:
-            self.status.setText("Failed to start")
-            err = ""
-            if self.proc:
-                err = bytes(self.proc.readAllStandardOutput()).decode(errors="ignore")
-            self._append_log(
-                "Screen: failed to start scrcpy after retry (check scrcpy path, USB debugging, RSA trust, cable). "
-                + (err.strip() or "(no process output)")
-            )
-            return
-
-        self.status.setText("Running")
-        self._sync_stop_hotkey(True)
-        self._stop_embed_poll()
-        if sys.platform == "win32" and not self.fullscreen_cb.isChecked() and self.embed_mirror_cb.isChecked():
-            self._embed_poll = QTimer(self)
-            self._embed_poll.setInterval(180)
-            n = [0]
-
-            def _tick():
-                n[0] += 1
-                if n[0] > 80:
-                    self._stop_embed_poll()
-                    self._append_log(
-                        "Screen: embedding timed out — mirror may still be open in a separate window."
-                    )
-                    return
-                self._poll_embed_window()
-
-            self._embed_poll.timeout.connect(_tick)
-            self._embed_poll.start()
+        self.status.setText("Starting…")
+        _launch(cmd)
+        QTimer.singleShot(1200, _check_start)
 
     def stop_scrcpy(self):
         self._sync_stop_hotkey(False)
         self._stop_embed_poll()
+        if self._stop_requested:
+            return
         if self.proc and self.proc.state() == QProcess.Running:
+            self._stop_requested = True
+            self.status.setText("Stopping…")
+            self._append_log("Screen: stop requested.")
+            self._request_graceful_scrcpy_stop()
+
+    def _request_graceful_scrcpy_stop(self) -> None:
+        if not self.proc or self.proc.state() != QProcess.Running:
+            return
+        # Prefer graceful close so recording container finalizes correctly.
+        if sys.platform == "win32" and self._embed_hwnd:
+            try:
+                import ctypes
+
+                WM_CLOSE = 0x0010
+                ctypes.windll.user32.PostMessageW(int(self._embed_hwnd), WM_CLOSE, 0, 0)
+            except Exception:
+                pass
+        self.proc.terminate()
+        if self._stop_poll_timer is not None:
+            self._stop_poll_timer.stop()
+            self._stop_poll_timer.deleteLater()
+        self._stop_poll_timer = QTimer(self)
+        self._stop_poll_timer.setSingleShot(False)
+        self._stop_poll_timer.setInterval(180)
+        started = {"ms": 0}
+
+        def _tick() -> None:
+            if not self.proc or self.proc.state() != QProcess.Running:
+                if self._stop_poll_timer is not None:
+                    self._stop_poll_timer.stop()
+                return
+            started["ms"] += 180
+            if started["ms"] < 3500:
+                return
+            if self._stop_poll_timer is not None:
+                self._stop_poll_timer.stop()
+            self._force_kill_scrcpy_after_stop()
+
+        self._stop_poll_timer.timeout.connect(_tick)
+        self._stop_poll_timer.start()
+
+    def _force_kill_scrcpy_after_stop(self) -> None:
+        if self.proc and self.proc.state() == QProcess.Running:
+            self._append_log("Screen: forced stop after graceful timeout.")
+            if sys.platform == "win32":
+                try:
+                    pid = int(self.proc.processId())
+                    if pid > 0:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(pid), "/T", "/F"],
+                            capture_output=True,
+                            text=True,
+                            timeout=4,
+                        )
+                except Exception:
+                    pass
             self.proc.kill()
-            self.proc.waitForFinished(5000)
-            self.status.setText("Stopped")
-            self._append_log("Screen: stopped.")
-        self._clear_embed()
 
     def shutdown(self):
-        self.stop_scrcpy()
+        self._sync_stop_hotkey(False)
+        self._stop_embed_poll()
+        if self._stop_poll_timer is not None:
+            self._stop_poll_timer.stop()
+            self._stop_poll_timer.deleteLater()
+            self._stop_poll_timer = None
+        if self._stop_force_kill_timer is not None:
+            self._stop_force_kill_timer.stop()
+            self._stop_force_kill_timer.deleteLater()
+            self._stop_force_kill_timer = None
+        if self.proc and self.proc.state() == QProcess.Running:
+            self._stop_requested = True
+            self.proc.terminate()
+            if not self.proc.waitForFinished(8000):
+                self.proc.kill()
+                self.proc.waitForFinished(1200)
+        self._clear_embed()
+
+    def _choose_record_file(self) -> None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        suggested = f"scrcpy_record_{ts}.mp4"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Choose recording file",
+            suggested,
+            "Video files (*.mp4 *.mkv);;All files (*.*)",
+        )
+        if path:
+            self.record_path.setText(path)
