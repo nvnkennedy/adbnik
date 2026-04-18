@@ -8,6 +8,7 @@ from PyQt5.QtCore import QProcess, QProcessEnvironment, Qt, QTimer
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QCheckBox,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -16,6 +17,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QFileDialog,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStyle,
@@ -317,8 +319,8 @@ class ScrcpyTab(QWidget):
 
         left_wrap = QWidget()
         left_wrap.setObjectName("ScrcpyLeftPanel")
-        left_wrap.setMinimumWidth(280)
-        left_wrap.setMaximumWidth(900)
+        left_wrap.setMinimumWidth(260)
+        left_wrap.setMaximumWidth(16777215)
         left_wrap.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
         left_l = QVBoxLayout(left_wrap)
         left_l.setContentsMargins(0, 0, 8, 0)
@@ -335,6 +337,7 @@ class ScrcpyTab(QWidget):
         hdr = QLabel("Configuration")
         hdr.setObjectName("ScrcpyConfigTitle")
         hdr.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        hdr.setWordWrap(True)
         form.addWidget(hdr)
 
         grp = QGroupBox("Mirror")
@@ -407,7 +410,10 @@ class ScrcpyTab(QWidget):
 
         self.audio_cb = QCheckBox("Forward audio")
         self.audio_cb.setChecked(True)
-        self.audio_cb.setToolTip("Off → --no-audio (often faster)")
+        self.audio_cb.setToolTip(
+            "On: scrcpy forwards device audio to the PC. Off → --no-audio (often faster on low-end PCs). "
+            "For recording to .mp4, AAC is used when possible so files play in normal players."
+        )
         grid.addWidget(self.audio_cb, 5, 0)
 
         self.stay_awake_cb = QCheckBox("Stay awake (USB)")
@@ -512,7 +518,13 @@ class ScrcpyTab(QWidget):
         self.status.setWordWrap(True)
         form.addWidget(self.status)
 
-        left_l.addWidget(inner, 0)
+        scroll = QScrollArea()
+        scroll.setObjectName("ScrcpyConfigScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(inner)
+        left_l.addWidget(scroll, 1)
 
         right_wrap = QWidget()
         right_l = QVBoxLayout(right_wrap)
@@ -582,46 +594,49 @@ class ScrcpyTab(QWidget):
             self._embed_poll = None
 
     def _poll_embed_window(self) -> None:
-        if not self.proc or self.proc.state() != QProcess.Running:
+        try:
+            if not self.proc or self.proc.state() != QProcess.Running:
+                self._stop_embed_poll()
+                return
+            if self.fullscreen_cb.isChecked() or not self.embed_mirror_cb.isChecked():
+                self._stop_embed_poll()
+                return
+            title = (self._embed_title or "").strip()
+            if not title:
+                self._stop_embed_poll()
+                return
+            hwnd = _win_find_window_by_title(title)
+            if not hwnd:
+                hwnd = _win_find_window_title_contains(title[: min(32, len(title))])
+            if not hwnd:
+                return
             self._stop_embed_poll()
-            return
-        if self.fullscreen_cb.isChecked() or not self.embed_mirror_cb.isChecked():
+            if sys.platform == "win32":
+                lay = self._embed_host.layout()
+                if lay is not None:
+                    while lay.count():
+                        w = lay.takeAt(0).widget()
+                        if w is not None:
+                            w.deleteLater()
+                if _win_embed_hwnd_into_widget(hwnd, self._embed_host):
+                    self._embed_hwnd = int(hwnd)
+                    self._embed_host.set_embedded_hwnd(self._embed_hwnd)
+                    self._append_log("Screen: embedded mirror via Win32 SetParent.")
+                else:
+                    self._embed_hwnd = 0
+                    self._embed_host.set_embedded_hwnd(0)
+                    ph = QLabel(
+                        "Could not embed the mirror window. It should still appear as a separate window.\n"
+                        "Stop scrcpy from here when finished."
+                    )
+                    ph.setWordWrap(True)
+                    ph.setMargin(12)
+                    ph.setObjectName("ScrcpyHintLabel")
+                    if self._embed_host.layout() is not None:
+                        self._embed_host.layout().addWidget(ph, 1)
+                    self._append_log("Screen: could not embed mirror window — using external scrcpy window.")
+        except RuntimeError:
             self._stop_embed_poll()
-            return
-        title = (self._embed_title or "").strip()
-        if not title:
-            self._stop_embed_poll()
-            return
-        hwnd = _win_find_window_by_title(title)
-        if not hwnd:
-            hwnd = _win_find_window_title_contains(title[: min(32, len(title))])
-        if not hwnd:
-            return
-        self._stop_embed_poll()
-        if sys.platform == "win32":
-            lay = self._embed_host.layout()
-            if lay is not None:
-                while lay.count():
-                    w = lay.takeAt(0).widget()
-                    if w is not None:
-                        w.deleteLater()
-            if _win_embed_hwnd_into_widget(hwnd, self._embed_host):
-                self._embed_hwnd = int(hwnd)
-                self._embed_host.set_embedded_hwnd(self._embed_hwnd)
-                self._append_log("Screen: embedded mirror via Win32 SetParent.")
-            else:
-                self._embed_hwnd = 0
-                self._embed_host.set_embedded_hwnd(0)
-                ph = QLabel(
-                    "Could not embed the mirror window. It should still appear as a separate window.\n"
-                    "Stop scrcpy from here when finished."
-                )
-                ph.setWordWrap(True)
-                ph.setMargin(12)
-                ph.setObjectName("ScrcpyHintLabel")
-                if self._embed_host.layout() is not None:
-                    self._embed_host.layout().addWidget(ph, 1)
-                self._append_log("Screen: could not embed mirror window — using external scrcpy window.")
 
     def _drain_process_log(self) -> None:
         if not self.proc:
@@ -645,6 +660,11 @@ class ScrcpyTab(QWidget):
                     self._append_log(f"scrcpy: {line.strip()}")
 
     def _on_proc_finished(self, exit_code: int, exit_status: int) -> None:
+        if self.proc is not None:
+            try:
+                self.proc.started.disconnect()
+            except Exception:
+                pass
         self._sync_stop_hotkey(False)
         self._stop_embed_poll()
         if self._stop_force_kill_timer is not None:
@@ -676,6 +696,34 @@ class ScrcpyTab(QWidget):
             "Screen: scrcpy start error — "
             + ((self.proc.errorString() or "").strip() or "unknown process error")
         )
+
+    def _on_scrcpy_started(self) -> None:
+        self.status.setText("Running")
+        self._sync_stop_hotkey(True)
+        self._stop_embed_poll()
+        if sys.platform == "win32" and not self.fullscreen_cb.isChecked() and self.embed_mirror_cb.isChecked():
+            self._embed_poll = QTimer(self)
+            self._embed_poll.setInterval(50)
+            n = [0]
+
+            def _tick():
+                try:
+                    if self._embed_poll is None:
+                        return
+                    n[0] += 1
+                    if n[0] > 200:
+                        self._stop_embed_poll()
+                        self._append_log(
+                            "Screen: embedding timed out — mirror may still be open in a separate window."
+                        )
+                        return
+                    self._poll_embed_window()
+                except RuntimeError:
+                    self._stop_embed_poll()
+
+            self._embed_poll.timeout.connect(_tick)
+            self._embed_poll.start()
+            QTimer.singleShot(0, self._poll_embed_window)
 
     def start_scrcpy(self):
         if self.proc and self.proc.state() == QProcess.Running:
@@ -726,6 +774,9 @@ class ScrcpyTab(QWidget):
             cmd.append("--turn-screen-off")
         if self.fullscreen_cb.isChecked():
             cmd.append("--fullscreen")
+        elif sys.platform == "win32" and self.embed_mirror_cb.isChecked():
+            # Hide off-screen until SetParent embeds (avoids a visible separate window flash).
+            cmd.extend(["--window-x", "-16000", "--window-y", "-16000"])
         rec_out = (self.record_path.text() or "").strip()
         if rec_out:
             cmd.extend(["--record", rec_out])
@@ -759,6 +810,21 @@ class ScrcpyTab(QWidget):
             if self.proc is not None:
                 prev = self.proc
                 self.proc = None
+                for sig in (
+                    prev.readyReadStandardOutput,
+                    prev.finished,
+                    prev.errorOccurred,
+                    prev.started,
+                ):
+                    try:
+                        sig.disconnect()
+                    except Exception:
+                        pass
+                if prev.state() == QProcess.Running:
+                    prev.terminate()
+                    if not prev.waitForFinished(2500):
+                        prev.kill()
+                        prev.waitForFinished(1500)
                 prev.deleteLater()
             self.proc = QProcess(self)
             self.proc.setProcessChannelMode(QProcess.MergedChannels)
@@ -768,34 +834,13 @@ class ScrcpyTab(QWidget):
             self.proc.readyReadStandardOutput.connect(self._on_proc_output)
             self.proc.finished.connect(self._on_proc_finished)
             self.proc.errorOccurred.connect(self._on_proc_error)
+            self.proc.started.connect(self._on_scrcpy_started)
             self.proc.start(_cmd[0], _cmd[1:])
-        def _on_started() -> None:
-            self.status.setText("Running")
-            self._sync_stop_hotkey(True)
-            self._stop_embed_poll()
-            if sys.platform == "win32" and not self.fullscreen_cb.isChecked() and self.embed_mirror_cb.isChecked():
-                self._embed_poll = QTimer(self)
-                self._embed_poll.setInterval(180)
-                n = [0]
-
-                def _tick():
-                    n[0] += 1
-                    if n[0] > 80:
-                        self._stop_embed_poll()
-                        self._append_log(
-                            "Screen: embedding timed out — mirror may still be open in a separate window."
-                        )
-                        return
-                    self._poll_embed_window()
-
-                self._embed_poll.timeout.connect(_tick)
-                self._embed_poll.start()
 
         launched = {"fallback": False}
 
         def _check_start() -> None:
             if self.proc and self.proc.state() == QProcess.Running:
-                _on_started()
                 return
             if launched["fallback"]:
                 self.status.setText("Failed to start")
@@ -805,6 +850,8 @@ class ScrcpyTab(QWidget):
                 return
             launched["fallback"] = True
             safe_cmd = [exe, "-s", serial, "--window-title", win_title, "--video-bit-rate", br]
+            if sys.platform == "win32" and self.embed_mirror_cb.isChecked():
+                safe_cmd.extend(["--window-x", "-16000", "--window-y", "-16000"])
             self._append_log("Screen: first start failed, retrying with safe fallback options.")
             _launch(safe_cmd)
             QTimer.singleShot(1300, _check_start)
@@ -877,7 +924,7 @@ class ScrcpyTab(QWidget):
                     pass
             self.proc.kill()
 
-    def shutdown(self):
+    def shutdown(self, *, fast: bool = False):
         self._sync_stop_hotkey(False)
         self._stop_embed_poll()
         if self._stop_poll_timer is not None:
@@ -890,10 +937,30 @@ class ScrcpyTab(QWidget):
             self._stop_force_kill_timer = None
         if self.proc and self.proc.state() == QProcess.Running:
             self._stop_requested = True
-            self.proc.terminate()
-            if not self.proc.waitForFinished(8000):
+            for sig in (self.proc.readyReadStandardOutput, self.proc.finished, self.proc.errorOccurred, self.proc.started):
+                try:
+                    sig.disconnect()
+                except Exception:
+                    pass
+            if fast and sys.platform == "win32":
+                try:
+                    pid = int(self.proc.processId())
+                    if pid > 0:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(pid), "/T", "/F"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                except Exception:
+                    pass
                 self.proc.kill()
-                self.proc.waitForFinished(1200)
+                self.proc.waitForFinished(400)
+            else:
+                self.proc.terminate()
+                if not self.proc.waitForFinished(8000):
+                    self.proc.kill()
+                    self.proc.waitForFinished(1200)
         self._clear_embed()
 
     def _choose_record_file(self) -> None:

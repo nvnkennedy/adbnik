@@ -51,6 +51,8 @@ class AppConfig:
     # Find files dialog: recent folder paths per side (local vs remote search)
     find_folder_history_local: List[str] = field(default_factory=list)
     find_folder_history_remote: List[str] = field(default_factory=list)
+    # Last app version for which the user confirmed welcome/setup (theme + paths). Shown again after upgrades.
+    last_acknowledged_version: str = ""
 
     @classmethod
     def load(cls) -> "AppConfig":

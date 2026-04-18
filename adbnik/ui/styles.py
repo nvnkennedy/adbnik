@@ -518,7 +518,8 @@ _LIGHT_STYLESHEET = """
     QPushButton#MobaToolBtn:hover {
         background: #34405a;
     }
-    QPlainTextEdit#MobaTerminalOutput {
+    QPlainTextEdit#MobaTerminalOutput,
+    QTextEdit#MobaTerminalOutput {
         background-color: #0d1117;
         color: #f0f3f6;
         border: 1px solid #30363d;
@@ -530,7 +531,8 @@ _LIGHT_STYLESHEET = """
         selection-background-color: #1f6feb;
         selection-color: #ffffff;
     }
-    QPlainTextEdit#MobaTerminalOutput:focus {
+    QPlainTextEdit#MobaTerminalOutput:focus,
+    QTextEdit#MobaTerminalOutput:focus {
         border: 1px solid #58a6ff;
     }
     QLabel#TerminalSessionFooter {
