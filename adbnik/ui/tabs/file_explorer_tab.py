@@ -11,10 +11,15 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
-from ftplib import error_perm
+from ftplib import FTP, error_perm
 from pathlib import Path
-from stat import S_ISDIR, S_ISREG
-from typing import Callable, Dict, List, Optional, Tuple
+from stat import S_ISREG
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+# File-type bits (avoid stat.S_IFMT on SFTP modes — Python 3.13+ can raise "mode out of range" for 0xFFFFFFFF etc.)
+_S_IFDIR = 0o040000
+_S_IFLNK = 0o120000
+_S_IFMT_MASK = 0o170000
 
 from PyQt5.QtCore import (
     QByteArray,
@@ -32,7 +37,7 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import QDesktopServices, QDrag, QFont, QIcon, QKeySequence
 
 from ... import APP_TITLE
-from ...session import ConnectionKind, SessionProfile
+from ...session import ConnectionKind, SessionProfile, normalize_tcp_port
 from ...config import AppConfig
 from ..combo_utils import ExpandAllComboBox
 from ..icon_utils import icon_home_folder, icon_nav_up, icon_root_drive
@@ -81,7 +86,14 @@ from ...services.commands import (
     run_adb_with_line_callback,
     unregister_adb_process,
 )
-from ...services.remote_clients import connect_ftp, connect_sftp, disconnect_ftp, disconnect_sftp
+from ...services.remote_clients import (
+    connect_ftp,
+    connect_sftp,
+    disconnect_ftp,
+    disconnect_sftp,
+    sftp_first_listable_path,
+    sftp_listdir_attr_safe,
+)
 
 # Windows/macOS shell icons by extension for remote listings (no real local path).
 _remote_ext_icon_cache: Dict[str, QIcon] = {}
@@ -90,6 +102,121 @@ _MAX_FIND_FOLDER_HISTORY = 24
 
 # Remote table → local table drag (pull); custom MIME, not file:// URLs.
 MIME_REMOTE_PULL = "application/x-adbnik-remote-pull"
+
+
+def _sftp_is_dir(st_mode: Optional[int]) -> bool:
+    """Some embedded SFTP servers report modes that trigger ValueError in stat.S_ISDIR (e.g. Python 3.13+)."""
+    if st_mode is None:
+        return False
+    try:
+        m = int(st_mode) & 0xFFFFFFFF
+    except (TypeError, ValueError):
+        return False
+    return (m & _S_IFMT_MASK) == _S_IFDIR
+
+
+def _sftp_entry_is_dir(sftp, parent: str, a) -> bool:
+    """True for directories and for symlinks that point to directories (common for /data, /sbin, /tmp on embedded)."""
+    if getattr(a, "st_mode", None) is None:
+        return False
+    try:
+        m = int(a.st_mode) & 0xFFFFFFFF
+    except (TypeError, ValueError):
+        return False
+    if (m & _S_IFMT_MASK) == _S_IFDIR:
+        return True
+    if (m & _S_IFMT_MASK) == _S_IFLNK:
+        full = posixpath.join(parent.rstrip("/") or "/", a.filename).replace("\\", "/")
+        try:
+            st = sftp.stat(full)
+            return _sftp_stat_is_dir(st)
+        except (OSError, IOError, Exception):
+            return False
+    return False
+
+
+def _sftp_perm_str(st_mode: Optional[int]) -> str:
+    if st_mode is None:
+        return ""
+    try:
+        m = int(st_mode) & 0xFFFFFFFF
+        return f"{m & 0o777:03o}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _sftp_stat_is_dir(st) -> bool:
+    """Directory check without stat.S_ISDIR (embedded SFTP can return modes that raise 'mode out of range')."""
+    try:
+        m = int(getattr(st, "st_mode", 0)) & 0xFFFFFFFF
+    except (TypeError, ValueError):
+        return False
+    return (m & _S_IFMT_MASK) == _S_IFDIR
+
+
+def _sftp_rm_rf(sftp: Any, path: str) -> None:
+    """Remove a remote file or directory tree (paramiko SFTPClient)."""
+    path = path.replace("\\", "/").rstrip("/")
+    if not path:
+        return
+    try:
+        st = sftp.stat(path)
+    except (OSError, IOError, Exception):
+        return
+    try:
+        mode = int(getattr(st, "st_mode", 0)) & 0xFFFFFFFF
+    except (TypeError, ValueError):
+        mode = 0
+    is_dir = (mode & _S_IFMT_MASK) == _S_IFDIR if mode else _sftp_stat_is_dir(st)
+    if is_dir:
+        for name in sftp.listdir(path):
+            child = posixpath.join(path, name).replace("\\", "/")
+            _sftp_rm_rf(sftp, child)
+        sftp.rmdir(path)
+    else:
+        sftp.remove(path)
+
+
+def _ftp_rm_rf(ftp: FTP, full_path: str) -> None:
+    """Remove a remote file or directory tree (ftplib)."""
+    full_path = full_path.replace("\\", "/").rstrip("/")
+    if not full_path:
+        return
+    parent = posixpath.dirname(full_path) or "/"
+    base = posixpath.basename(full_path)
+    ftp.cwd(parent)
+    try:
+        ftp.cwd(base)
+    except error_perm:
+        ftp.delete(base)
+        return
+    for n in ftp.nlst():
+        if n in (".", ".."):
+            continue
+        _ftp_rm_rf(ftp, posixpath.join(full_path, n).replace("\\", "/"))
+    ftp.cwd(parent)
+    ftp.rmd(base)
+
+
+def _sftp_abs_remote_path(path: str, cwd: str) -> str:
+    """Ensure a path passed to paramiko is absolute (embedded UIs sometimes omit leading '/')."""
+    p = (path or "").replace("\\", "/").strip()
+    c = (cwd or "/").replace("\\", "/").strip() or "/"
+    if not p:
+        return posixpath.normpath(c) or "/"
+    if p.startswith("/"):
+        out = posixpath.normpath(p)
+    else:
+        base = c.rstrip("/") or ""
+        out = posixpath.normpath(f"{base}/{p}" if base else f"/{p}")
+    return (out or "/").replace("\\", "/")
+
+
+def _safe_mode_oct(mode: object) -> str:
+    try:
+        return oct(int(mode) & 0xFFFFFFFF)
+    except (TypeError, ValueError, OverflowError):
+        return "—"
 
 
 def _push_find_folder_history(cfg: Optional[AppConfig], side: str, folder: str) -> None:
@@ -174,6 +301,46 @@ class RemoteItem:
     group: str
     size: str
     modified: str
+
+
+def _ftp_remote_item_mlsd(name: str, facts: dict, full: str) -> tuple:
+    """Build RemoteItem from MLSD facts (size, permissions, modify time)."""
+    typ = (facts.get("type") or "file").lower()
+    is_dir = typ in ("dir", "cdir", "pdir")
+    perm = (facts.get("unix.mode") or facts.get("perm") or "").strip()
+    sz_raw = facts.get("size", "")
+    sz = "0" if is_dir else (str(sz_raw) if sz_raw else "0")
+    mt = ""
+    mod = facts.get("modify", "")
+    if isinstance(mod, str) and len(mod) >= 14:
+        try:
+            mt = datetime.strptime(mod[:14], "%Y%m%d%H%M%S").strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            mt = mod[:19]
+    return (RemoteItem(name, is_dir, perm, "", "", sz, mt), full)
+
+
+def _ftp_remote_item_nlst(ftp: FTP, name: str, full: str) -> tuple:
+    """Best-effort size/dir when server only supports NLST."""
+    try:
+        s = ftp.size(name)
+        return (RemoteItem(name, False, "", "", "", str(s), ""), full)
+    except Exception:
+        pass
+    try:
+        cur = ftp.pwd()
+        try:
+            ftp.cwd(name)
+            ftp.cwd(cur)
+            return (RemoteItem(name, True, "", "", "", "0", ""), full)
+        except Exception:
+            try:
+                ftp.cwd(cur)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return (RemoteItem(name, False, "", "", "", "?", ""), full)
 
 
 def _fmt_local_listing_size(path: Path) -> str:
@@ -784,35 +951,40 @@ def _parse_ls_line(line: str) -> Optional[RemoteItem]:
 def _fill_remote_table(
     table: QTableWidget, rows: List[tuple], style, icon_provider: QFileIconProvider
 ) -> None:
-    table.setSortingEnabled(False)
-    table.setIconSize(QSize(24, 24))
-    table.setRowCount(len(rows))
-    for i, (parsed, full_path) in enumerate(rows):
-        icon = _icon_for_remote_name(parsed.name, parsed.is_dir, icon_provider, style)
-        name_item = _SortTableItem(parsed.name, icon, sort_key=_remote_name_sort_key(parsed))
-        name_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        table.setItem(i, 0, name_item)
-        if parsed.name == "..":
-            size_cell = "—"
-        elif parsed.is_dir:
-            size_cell = "…"
-        else:
-            raw = (parsed.size or "").strip()
-            try:
-                size_cell = _human_bytes(int(raw))
-            except ValueError:
-                size_cell = raw if raw else "—"
-        table.setItem(i, 1, _SortTableItem(size_cell, sort_key=_remote_size_sort_key(parsed)))
-        table.setItem(i, 2, _SortTableItem(parsed.permissions, sort_key=parsed.permissions))
-        table.setItem(
-            i,
-            3,
-            _SortTableItem(parsed.modified, sort_key=_remote_mtime_sort_key(parsed)),
-        )
-        typ = _remote_type_label(parsed.name, parsed.is_dir)
-        table.setItem(i, 4, _SortTableItem(typ, sort_key=typ.lower()))
-        table.item(i, 0).setData(Qt.UserRole, {"path": full_path, "is_dir": parsed.is_dir})
-    table.setSortingEnabled(True)
+    table.setUpdatesEnabled(False)
+    try:
+        table.setSortingEnabled(False)
+        table.setIconSize(QSize(24, 24))
+        table.setRowCount(len(rows))
+        for i, (parsed, full_path) in enumerate(rows):
+            icon = _icon_for_remote_name(parsed.name, parsed.is_dir, icon_provider, style)
+            name_item = _SortTableItem(parsed.name, icon, sort_key=_remote_name_sort_key(parsed))
+            name_item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            table.setItem(i, 0, name_item)
+            if parsed.name == "..":
+                size_cell = "—"
+            elif parsed.is_dir:
+                size_cell = "…"
+            else:
+                raw = (parsed.size or "").strip()
+                try:
+                    size_cell = _human_bytes(int(raw))
+                except ValueError:
+                    size_cell = raw if raw else "—"
+            table.setItem(i, 1, _SortTableItem(size_cell, sort_key=_remote_size_sort_key(parsed)))
+            table.setItem(i, 2, _SortTableItem(parsed.permissions, sort_key=parsed.permissions))
+            table.setItem(
+                i,
+                3,
+                _SortTableItem(parsed.modified, sort_key=_remote_mtime_sort_key(parsed)),
+            )
+            typ = _remote_type_label(parsed.name, parsed.is_dir)
+            table.setItem(i, 4, _SortTableItem(typ, sort_key=typ.lower()))
+            table.item(i, 0).setData(Qt.UserRole, {"path": full_path, "is_dir": parsed.is_dir})
+        table.setSortingEnabled(True)
+        table.sortByColumn(0, Qt.AscendingOrder)
+    finally:
+        table.setUpdatesEnabled(True)
 
 
 class _FindFilesSearchThread(QThread):
@@ -1104,16 +1276,17 @@ class _RemoteTransferThread(QThread):
         def _cb(sent: int, size: int) -> None:
             pct = int((100 * sent) / max(size, 1)) if size else 0
             self._progress(idx, total, pct, f"Uploading {Path(local_file).name} ({pct}%)")
-        sftp.put(local_file, remote_file, callback=_cb)
+        # Larger SFTP chunks via remote_clients (MAX_REQUEST_SIZE); confirm=False skips post-stat verify for speed.
+        sftp.put(local_file, remote_file, callback=_cb, confirm=False)
 
     def _sftp_get(self, sftp, remote_path: str, local_path: str, idx: int, total: int) -> None:
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
         try:
             st = sftp.stat(remote_path)
-            if S_ISDIR(st.st_mode):
+            if _sftp_is_dir(st.st_mode):
                 root_local = Path(local_path)
                 root_local.mkdir(parents=True, exist_ok=True)
-                for a in sftp.listdir_attr(remote_path):
+                for a in sftp_listdir_attr_safe(sftp, remote_path):
                     if a.filename in (".", ".."):
                         continue
                     self._sftp_get(
@@ -1272,20 +1445,23 @@ class _RemoteListThread(QThread):
                     int(self._creds.get("port", 22) or 22),
                     self._creds.get("user", ""),
                     self._creds.get("password", ""),
-                    timeout=30,
+                    timeout=45,
                 )
                 if e or sftp is None:
                     self.done.emit(rows, e or "SFTP connection failed.")
                     return
                 try:
-                    attrs = sftp.listdir_attr(rp.rstrip("/") or "/")
-                    for a in sorted(attrs, key=lambda x: (not S_ISDIR(x.st_mode), x.filename.lower())):
+                    attrs = sftp_listdir_attr_safe(sftp, rp.rstrip("/") or "/")
+                    rp_base = rp.rstrip("/") or "/"
+                    for a in sorted(
+                        attrs, key=lambda x: (not _sftp_entry_is_dir(sftp, rp_base, x), x.filename.lower())
+                    ):
                         name = a.filename
                         if name in (".", ".."):
                             continue
-                        is_dir = S_ISDIR(a.st_mode)
+                        is_dir = _sftp_entry_is_dir(sftp, rp_base, a)
                         full = posixpath.join(rp.rstrip("/") or "/", name).replace("\\", "/")
-                        perm = oct(a.st_mode)[-4:] if a.st_mode else ""
+                        perm = _sftp_perm_str(a.st_mode)
                         sz = str(a.st_size)
                         mt = datetime.fromtimestamp(a.st_mtime).strftime("%Y-%m-%d %H:%M") if a.st_mtime else ""
                         rows.append((RemoteItem(name, is_dir, perm, "", "", sz, mt), full))
@@ -1299,7 +1475,7 @@ class _RemoteListThread(QThread):
                     int(self._creds.get("port", 21) or 21),
                     self._creds.get("user", ""),
                     self._creds.get("password", ""),
-                    timeout=30,
+                    timeout=45,
                 )
                 if e or ftp is None:
                     self.done.emit(rows, e or "FTP connection failed.")
@@ -1307,18 +1483,27 @@ class _RemoteListThread(QThread):
                 try:
                     ftp.cwd(rp.rstrip("/") or "/")
                     try:
-                        for name, facts in ftp.mlsd():
+                        raw_mlsd = list(ftp.mlsd())
+
+                        def _ftp_mlsd_sort_key(t: tuple) -> tuple:
+                            name, facts = t[0], t[1]
+                            if name in (".", ".."):
+                                return (0, name.lower())
+                            fd = facts if isinstance(facts, dict) else {}
+                            is_d = fd.get("type") == "dir"
+                            return (1 if is_d else 2, name.lower())
+
+                        for name, facts in sorted(raw_mlsd, key=_ftp_mlsd_sort_key):
                             if name in (".", ".."):
                                 continue
-                            is_dir = facts.get("type") == "dir"
                             full = posixpath.join(rp.rstrip("/") or "/", name).replace("\\", "/")
-                            rows.append((RemoteItem(name, is_dir, "", "", "", "<DIR>" if is_dir else "?", ""), full))
+                            rows.append(_ftp_remote_item_mlsd(name, facts, full))
                     except (error_perm, AttributeError):
-                        for name in ftp.nlst():
+                        for name in sorted(ftp.nlst(), key=str.lower):
                             if name in (".", ".."):
                                 continue
                             full = posixpath.join(rp.rstrip("/") or "/", name).replace("\\", "/")
-                            rows.append((RemoteItem(name, False, "", "", "", "?", ""), full))
+                            rows.append(_ftp_remote_item_nlst(ftp, name, full))
                     self.done.emit(rows, "")
                 finally:
                     disconnect_ftp(ftp)
@@ -1694,21 +1879,23 @@ class ExplorerSessionPage(QWidget):
         self._session_adb_serial = (session_adb_serial or "").strip()
         self._ssh_host = sftp_host
         self._ssh_user = sftp_user
-        self._ssh_port = int(sftp_port)
+        self._ssh_port = normalize_tcp_port(sftp_port, 22)
         self._ssh_password = sftp_password
         self._ftp_host = ftp_host
-        self._ftp_port = int(ftp_port)
+        self._ftp_port = normalize_tcp_port(ftp_port, 21)
         self._ftp_user = ftp_user
         self._ftp_password = ftp_password
+        self._sftp_transport = sftp_transport
+        self._sftp_client = sftp_client
+        self._ftp_client = ftp_client
         self.local_path = self._default_local_root()
         self.remote_path = "/sdcard" if kind == "adb" else "/"
+        if kind == "sftp" and self._sftp_client is not None:
+            self.remote_path = sftp_first_listable_path(self._sftp_client, self._ssh_user)
         self.icon_provider = QFileIconProvider()
         self._adb_last_error = ""
         self._sftp_last_error = ""
         self._ftp_last_error = ""
-        self._sftp_transport = sftp_transport
-        self._sftp_client = sftp_client
-        self._ftp_client = ftp_client
         self._last_refresh_note = ""
         self._last_error_popup_key = ""
         # When a file is opened in an external app (Word, PDF reader), sync saves back to the remote path.
@@ -1755,6 +1942,11 @@ class ExplorerSessionPage(QWidget):
             return str(Path.cwd().resolve())
         except OSError:
             return str(Path.home())
+
+    def has_active_file_transfer(self) -> bool:
+        adb = self._adb_transfer_thread is not None and self._adb_transfer_thread.isRunning()
+        rem = self._remote_transfer_thread is not None and self._remote_transfer_thread.isRunning()
+        return bool(adb or rem)
 
     def hideEvent(self, event) -> None:
         if self._adb_transfer_dialog is not None:
@@ -2508,7 +2700,7 @@ class ExplorerSessionPage(QWidget):
                         return
                     d = stack.pop()
                     try:
-                        for a in self._sftp_client.listdir_attr(d):
+                        for a in sftp_listdir_attr_safe(self._sftp_client, d):
                             if interrupt_check and interrupt_check():
                                 return
                             name = a.filename
@@ -2517,7 +2709,7 @@ class ExplorerSessionPage(QWidget):
                             full = posixpath.join(d, name).replace("\\", "/")
                             if needle_l in name.lower():
                                 out.append(full)
-                            if S_ISDIR(a.st_mode):
+                            if _sftp_entry_is_dir(self._sftp_client, d, a):
                                 stack.append(full)
                     except Exception:
                         continue
@@ -2680,12 +2872,12 @@ class ExplorerSessionPage(QWidget):
 
     def _sftp_pull_recursive(self, remote_path: str, local_path: str) -> None:
         assert self._sftp_client is not None
-        for a in self._sftp_client.listdir_attr(remote_path):
+        for a in sftp_listdir_attr_safe(self._sftp_client, remote_path):
             if a.filename in (".", ".."):
                 continue
             r = posixpath.join(remote_path, a.filename).replace("\\", "/")
             l = os.path.join(local_path, a.filename)
-            if S_ISDIR(a.st_mode):
+            if _sftp_entry_is_dir(self._sftp_client, remote_path, a):
                 os.makedirs(l, exist_ok=True)
                 self._sftp_pull_recursive(r, l)
             else:
@@ -2913,7 +3105,6 @@ class ExplorerSessionPage(QWidget):
         th.status.connect(self._on_adb_transfer_status)
         th.prep_done.connect(self._on_adb_prep_done)
         th.done.connect(self._on_adb_transfer_done)
-        th.finished.connect(th.deleteLater)
         self._adb_transfer_thread = th
         th.start()
         return True
@@ -3005,7 +3196,10 @@ class ExplorerSessionPage(QWidget):
             self._adb_transfer_dialog.close()
             self._adb_transfer_dialog.deleteLater()
             self._adb_transfer_dialog = None
+        th = self._adb_transfer_thread
         self._adb_transfer_thread = None
+        if th is not None:
+            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         self._adb_last_pct = -1
         self._adb_transfer_use_poll = False
         self._adb_transfer_cancel_ev = None
@@ -3201,7 +3395,6 @@ class ExplorerSessionPage(QWidget):
         )
         th.progress.connect(self._on_remote_transfer_progress)
         th.done.connect(self._on_remote_transfer_done)
-        th.finished.connect(th.deleteLater)
         self._remote_transfer_thread = th
         th.start()
         return True
@@ -3218,7 +3411,10 @@ class ExplorerSessionPage(QWidget):
             self._remote_transfer_dialog.close()
             self._remote_transfer_dialog.deleteLater()
             self._remote_transfer_dialog = None
+        th = self._remote_transfer_thread
         self._remote_transfer_thread = None
+        if th is not None:
+            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         if not ok:
             QMessageBox.warning(self, "Transfer", message or "Transfer failed.")
             return
@@ -3279,7 +3475,6 @@ class ExplorerSessionPage(QWidget):
         )
         th.progress.connect(self._on_delete_progress)
         th.done.connect(self._on_delete_job_done)
-        th.finished.connect(th.deleteLater)
         self._delete_thread = th
         th.start()
         return True
@@ -3315,8 +3510,11 @@ class ExplorerSessionPage(QWidget):
             self._delete_dialog.close()
             self._delete_dialog.deleteLater()
             self._delete_dialog = None
+        th = self._delete_thread
         self._delete_thread = None
         self._delete_cancel_ev = None
+        if th is not None:
+            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         cb = self._delete_done_cb
         self._delete_done_cb = None
         if cb:
@@ -3331,8 +3529,11 @@ class ExplorerSessionPage(QWidget):
         if self.kind == "adb":
             self.remote_path = "/sdcard"
         elif self.kind == "sftp":
-            u = (self._ssh_user or "").strip()
-            self.remote_path = f"/home/{u}" if u else "/"
+            if self._sftp_client is not None:
+                self.remote_path = sftp_first_listable_path(self._sftp_client, self._ssh_user)
+            else:
+                u = (self._ssh_user or "").strip()
+                self.remote_path = f"/home/{u}" if u else "/"
         else:
             self.remote_path = "/"
         self._set_remote_address(self.remote_path)
@@ -3436,6 +3637,7 @@ class ExplorerSessionPage(QWidget):
             self.local_table.setItem(i, 3, _SortTableItem(typ, sort_key=_local_type_sort_key(child)))
             self.local_table.item(i, 0).setData(Qt.UserRole, str(child))
         self.local_table.setSortingEnabled(True)
+        self.local_table.sortByColumn(0, Qt.AscendingOrder)
         self._last_refresh_note = datetime.now().strftime("%H:%M:%S")
         self._update_nav_buttons()
         self._notify_parent_status()
@@ -3548,12 +3750,14 @@ class ExplorerSessionPage(QWidget):
             creds=creds,
         )
         th.done.connect(self._on_remote_refresh_done)
-        th.finished.connect(th.deleteLater)
         self._remote_refresh_thread = th
         th.start()
 
     def _on_remote_refresh_done(self, rows, err: str) -> None:
+        th = self._remote_refresh_thread
         self._remote_refresh_thread = None
+        if th is not None:
+            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         _fill_remote_table(self.remote_table, rows or [], self.style(), self.icon_provider)
         msg = (err or "").strip()
         if self.kind == "adb":
@@ -3612,7 +3816,7 @@ class ExplorerSessionPage(QWidget):
             return
         path = self.remote_path.rstrip("/") or "/"
         try:
-            attrs = self._sftp_client.listdir_attr(path)
+            attrs = sftp_listdir_attr_safe(self._sftp_client, path)
         except Exception as exc:
             self.remote_table.setRowCount(0)
             self._sftp_last_error = str(exc)
@@ -3625,13 +3829,15 @@ class ExplorerSessionPage(QWidget):
         rows.append((RemoteItem("..", True, "", "", "", "", ""), parent))
         from datetime import datetime
 
-        for a in sorted(attrs, key=lambda x: (not S_ISDIR(x.st_mode), x.filename.lower())):
+        for a in sorted(
+            attrs, key=lambda x: (not _sftp_entry_is_dir(self._sftp_client, path, x), x.filename.lower())
+        ):
             name = a.filename
             if name in (".", ".."):
                 continue
-            is_dir = S_ISDIR(a.st_mode)
+            is_dir = _sftp_entry_is_dir(self._sftp_client, path, a)
             full = posixpath.join(path, name).replace("\\", "/")
-            perm = oct(a.st_mode)[-4:] if a.st_mode else ""
+            perm = _sftp_perm_str(a.st_mode)
             sz = str(a.st_size)
             mt = ""
             if a.st_mtime:
@@ -3661,15 +3867,14 @@ class ExplorerSessionPage(QWidget):
             for name, facts in self._ftp_client.mlsd():
                 if name in (".", ".."):
                     continue
-                is_dir = facts.get("type") == "dir"
                 full = posixpath.join(rp, name).replace("\\", "/")
-                rows.append((RemoteItem(name, is_dir, "", "", "", "<DIR>" if is_dir else "?", ""), full))
+                rows.append(_ftp_remote_item_mlsd(name, facts, full))
         except (error_perm, AttributeError):
             for name in self._ftp_client.nlst():
                 if name in (".", ".."):
                     continue
                 full = posixpath.join(rp, name).replace("\\", "/")
-                rows.append((RemoteItem(name, False, "", "", "", "?", ""), full))
+                rows.append(_ftp_remote_item_nlst(self._ftp_client, name, full))
         _fill_remote_table(self.remote_table, rows, self.style(), self.icon_provider)
 
     def on_remote_activated(self, item) -> None:
@@ -3875,7 +4080,7 @@ class ExplorerSessionPage(QWidget):
                     datetime.fromtimestamp(getattr(st, "st_ctime", st.st_mtime)).strftime("%Y-%m-%d %H:%M:%S"),
                 )
             )
-            rows.append(("Mode", oct(st.st_mode)))
+            rows.append(("Mode", _safe_mode_oct(st.st_mode)))
             _show_properties_dialog(self, "Properties — local", rows)
         except OSError as exc:
             QMessageBox.warning(self, "Properties", str(exc))
@@ -3910,7 +4115,7 @@ class ExplorerSessionPage(QWidget):
                 rows.append(("Size", _human_bytes(st.st_size)))
                 rows.append(("Size (bytes)", str(st.st_size)))
                 rows.append(("Modified", datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")))
-                rows.append(("Mode", oct(st.st_mode)))
+                rows.append(("Mode", _safe_mode_oct(getattr(st, "st_mode", 0))))
                 rows.append(("UID", str(getattr(st, "st_uid", "?"))))
                 rows.append(("GID", str(getattr(st, "st_gid", "?"))))
             except Exception as exc:
@@ -4709,11 +4914,9 @@ class ExplorerSessionPage(QWidget):
             return
         if self.kind == "sftp" and self._sftp_client:
             try:
-                self._log(f"Explorer: SFTP delete {info['path']}")
-                if info.get("is_dir"):
-                    self._sftp_client.rmdir(info["path"])
-                else:
-                    self._sftp_client.remove(info["path"])
+                rpath = _sftp_abs_remote_path(str(info["path"]), self.remote_path)
+                self._log(f"Explorer: SFTP delete {rpath}")
+                _sftp_rm_rf(self._sftp_client, rpath)
                 dlg.close()
                 self._log("Explorer: SFTP delete completed.")
                 self.refresh_remote()
@@ -4724,14 +4927,9 @@ class ExplorerSessionPage(QWidget):
             return
         if self.kind == "ftp" and self._ftp_client:
             try:
-                self._log(f"Explorer: FTP delete {info['path']}")
-                parent = posixpath.dirname(info["path"]) or "/"
-                fn = posixpath.basename(info["path"])
-                self._ftp_client.cwd(parent)
-                if info.get("is_dir"):
-                    self._ftp_client.rmd(fn)
-                else:
-                    self._ftp_client.delete(fn)
+                fpath = str(info["path"]).replace("\\", "/")
+                self._log(f"Explorer: FTP delete {fpath}")
+                _ftp_rm_rf(self._ftp_client, fpath)
                 dlg.close()
                 self.refresh_remote()
             except Exception as exc:
@@ -4751,7 +4949,7 @@ class ExplorerSessionPage(QWidget):
         if not ok or not name.strip():
             return
         base = self.remote_path.rstrip("/") or "/"
-        path = posixpath.join(base, name.strip()).replace("\\", "/")
+        joined = posixpath.join(base, name.strip()).replace("\\", "/")
 
         if self.kind == "adb":
             adb_path = f"{self.remote_path.rstrip('/')}/{name.strip()}".replace("//", "/")
@@ -4763,17 +4961,33 @@ class ExplorerSessionPage(QWidget):
             return
         if self.kind == "sftp" and self._sftp_client:
             try:
-                self._sftp_client.mkdir(path)
+                path = _sftp_abs_remote_path(joined, self.remote_path)
+                self._sftp_mkdir_p(path)
+                self._sftp_client.stat(path)
                 self.refresh_remote()
             except Exception as exc:
                 QMessageBox.warning(self, "New folder", str(exc))
             return
         if self.kind == "ftp" and self._ftp_client:
+            nm = name.strip()
+            saved = None
             try:
-                self._ftp_client.mkd(path)
+                saved = self._ftp_client.pwd()
+            except Exception:
+                pass
+            try:
+                rp = self.remote_path.rstrip("/") or "/"
+                self._ftp_client.cwd(rp)
+                self._ftp_client.mkd(nm)
                 self.refresh_remote()
             except Exception as exc:
                 QMessageBox.warning(self, "New folder", str(exc))
+            finally:
+                if saved is not None:
+                    try:
+                        self._ftp_client.cwd(saved)
+                    except Exception:
+                        pass
 
 
 class FileExplorerTab(QWidget):
@@ -4823,6 +5037,13 @@ class FileExplorerTab(QWidget):
             w = self.session_tabs.widget(i)
             if isinstance(w, ExplorerSessionPage):
                 w.disconnect_session()
+
+    def has_active_file_transfer(self) -> bool:
+        for i in range(self.session_tabs.count()):
+            w = self.session_tabs.widget(i)
+            if isinstance(w, ExplorerSessionPage) and w.has_active_file_transfer():
+                return True
+        return False
 
     def set_remote_device(self, serial: str) -> None:
         """Main bar device — used to pre-select the device in the Login dialog for new ADB tabs."""
@@ -4944,11 +5165,13 @@ class FileExplorerTab(QWidget):
         return super().eventFilter(obj, ev)
 
     def _open_login_dialog(self) -> None:
+        par = self.window()
         dlg = SessionLoginDialog(
             self.get_adb_path,
             self._get_default_ssh_host(),
             self._adb_serial or "",
-            self,
+            par if par is not None and par.width() >= 80 else None,
+            for_terminal=False,
             config=self._config,
             on_bookmarks_changed=None,
         )

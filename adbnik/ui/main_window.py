@@ -1,6 +1,7 @@
 import html
 import platform
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -93,10 +94,11 @@ class _AdbDeviceStatsThread(QThread):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config: AppConfig, *, first_launch: bool = False):
+    def __init__(self, config: AppConfig, *, first_launch: bool = False, is_upgrade: bool = False):
         super().__init__()
         self.config = config
         self._first_launch = first_launch
+        self._is_upgrade_welcome = bool(is_upgrade)
         self.setWindowTitle(APP_TITLE)
         self.setWindowIcon(create_app_icon(dark=bool(getattr(self.config, "dark_theme", False))))
         self.resize(1450, 900)
@@ -223,7 +225,37 @@ class MainWindow(QMainWindow):
         if hasattr(self, "file_explorer"):
             self.file_explorer.refresh_all_remotes()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._clamp_window_to_screen)
+
+    def _clamp_window_to_screen(self) -> None:
+        """Reduce bogus multi-monitor geometry warnings (e.g. DISPLAY49) by fitting the window to a real screen."""
+        try:
+            screen = QApplication.screenAt(self.frameGeometry().center())
+            if screen is None:
+                screen = QApplication.primaryScreen()
+            if screen is None:
+                return
+            ag = screen.availableGeometry()
+            fg = self.frameGeometry()
+            w = min(fg.width(), ag.width())
+            h = min(fg.height(), ag.height())
+            x = max(ag.left(), min(fg.x(), ag.right() - w + 1))
+            y = max(ag.top(), min(fg.y(), ag.bottom() - h + 1))
+            self.setGeometry(x, y, w, h)
+        except Exception:
+            pass
+
     def closeEvent(self, event):
+        if hasattr(self, "file_explorer") and self.file_explorer.has_active_file_transfer():
+            QMessageBox.information(
+                self,
+                "File transfer in progress",
+                "A file is still being pushed or pulled. Wait for the transfer to finish, then close again.",
+            )
+            event.ignore()
+            return
         try:
             kill_all_adb_subprocesses()
         except Exception:
@@ -235,10 +267,16 @@ class MainWindow(QMainWindow):
             self._adb_stats_timer.stop()
         if hasattr(self, "terminal"):
             self.terminal.shutdown_all_sessions()
+            if sys.platform == "win32":
+                time.sleep(0.2)
         if hasattr(self, "file_explorer"):
             self.file_explorer.disconnect_remote_services()
         if hasattr(self, "scrcpy"):
-            self.scrcpy.shutdown()
+            self.scrcpy.shutdown(fast=True)
+        if getattr(self, "_device_refresh_thread", None) and self._device_refresh_thread.isRunning():
+            self._device_refresh_thread.wait(5000)
+        if getattr(self, "_stats_refresh_thread", None) and self._stats_refresh_thread.isRunning():
+            self._stats_refresh_thread.wait(5000)
         super().closeEvent(event)
 
     def nativeEvent(self, eventType, message):
@@ -381,7 +419,7 @@ class MainWindow(QMainWindow):
         if not self._first_launch:
             return
         self._first_launch = False
-        dlg = FirstRunDialog(self.config, self)
+        dlg = FirstRunDialog(self.config, self, is_upgrade=self._is_upgrade_welcome)
         if dlg.exec_():
             self._apply_theme()
             if hasattr(self, "_action_dark"):
@@ -420,12 +458,14 @@ class MainWindow(QMainWindow):
         self._prev_selected_serial_for_refresh = self.terminal.current_adb_serial()
         th = _AdbDevicesRefreshThread(self.get_adb_path())
         th.done.connect(self._on_devices_refreshed)
-        th.finished.connect(th.deleteLater)
         self._device_refresh_thread = th
         th.start()
 
     def _on_devices_refreshed(self, pairs, adb_ok: bool) -> None:
+        th = self.sender()
         self._device_refresh_thread = None
+        if isinstance(th, QThread):
+            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         prev_selected_serial = getattr(self, "_prev_selected_serial_for_refresh", "")
         prev_sig = getattr(self, "_last_adb_device_sig", None)
         sig = tuple(pairs) if pairs else ()
@@ -555,12 +595,14 @@ class MainWindow(QMainWindow):
             return
         th = _AdbDeviceStatsThread(self.get_adb_path(), serial)
         th.done.connect(self._on_device_stats_ready)
-        th.finished.connect(th.deleteLater)
         self._stats_refresh_thread = th
         th.start()
 
     def _on_device_stats_ready(self, serial: str, raw: object, err: str) -> None:
+        th = self.sender()
         self._stats_refresh_thread = None
+        if isinstance(th, QThread):
+            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         current = (self.terminal.current_adb_serial() or "").strip() if hasattr(self, "terminal") else ""
         if serial and current and serial != current:
             return

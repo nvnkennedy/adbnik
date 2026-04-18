@@ -31,6 +31,17 @@ class SessionProfile:
     serial_baud: str = "115200"
 
 
+def normalize_tcp_port(value: object, default: int = 22) -> int:
+    """Valid TCP port 1–65535; anything else (including -1 from bad config) → default."""
+    try:
+        p = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    if 1 <= p <= 65535:
+        return p
+    return default
+
+
 def parse_user_at_host(text: str) -> Tuple[str, str]:
     """Split user@host into (user, host). If no @, returns ("", stripped host)."""
     t = (text or "").strip()
@@ -43,10 +54,26 @@ def parse_user_at_host(text: str) -> Tuple[str, str]:
 
 
 def ssh_command_args(profile: SessionProfile) -> list:
-    """Build `ssh` argv for interactive terminal (OpenSSH client)."""
+    """Build `ssh` argv for interactive terminal (OpenSSH client).
+
+    `-tt` forces a PTY even when stdin is not a TTY (e.g. QProcess), avoiding
+    "Pseudo-terminal will not be allocated because stdin is not a terminal."
+    `StrictHostKeyChecking=accept-new` avoids blocking on first-connect host-key prompts.
+    """
     host = (profile.ssh_host or "").strip()
     user = (profile.ssh_user or "").strip()
+    port = normalize_tcp_port(profile.ssh_port, 22)
+    common = [
+        "ssh",
+        "-tt",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=30",
+        "-p",
+        str(port),
+    ]
     if not host:
-        return ["ssh"]
+        return ["ssh", "-tt"]
     target = f"{user}@{host}" if user else host
-    return ["ssh", "-p", str(int(profile.ssh_port or 22)), target]
+    return [*common, target]

@@ -5,10 +5,11 @@ from dataclasses import dataclass
 from .. import APP_TITLE
 from typing import Any, Callable, Dict, List, Optional
 
-from PyQt5.QtCore import QSize, Qt
+from PyQt5.QtCore import QEventLoop, QTimer, QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QShowEvent
 from PyQt5.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -22,9 +23,14 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QProgressDialog,
+    QScrollArea,
+    QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
     QStyle,
+    QFrame,
 )
 
 # Self-contained so the Login window stays readable regardless of the main window theme.
@@ -103,6 +109,18 @@ QDialog#SessionLoginDialog QPushButton:hover {
 }
 QDialog#SessionLoginDialog QDialogButtonBox QPushButton {
     min-width: 72px;
+}
+QToolButton#SessionProtocolBtn {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 10px;
+    background-color: #f8fafc;
+    min-width: 76px;
+    font-size: 11px;
+}
+QToolButton#SessionProtocolBtn:checked {
+    border: 2px solid #f59e0b;
+    background-color: #eff6ff;
 }
 """
 
@@ -188,11 +206,31 @@ QDialog#SessionLoginDialog QPushButton:hover {
 QDialog#SessionLoginDialog QDialogButtonBox QPushButton {
     min-width: 72px;
 }
+QToolButton#SessionProtocolBtn {
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 10px;
+    background-color: #111827;
+    min-width: 76px;
+    font-size: 11px;
+    color: #e2e8f0;
+}
+QToolButton#SessionProtocolBtn:checked {
+    border: 2px solid #fbbf24;
+    background-color: #1e293b;
+}
 """
 
 from ..config import AppConfig
-from .icon_utils import bookmark_icon_from_entry
-from ..session import parse_user_at_host
+from .icon_utils import (
+    bookmark_icon_from_entry,
+    icon_adb_android,
+    icon_ftp_session,
+    icon_serial_port,
+    icon_sftp_session,
+    icon_ssh_session,
+)
+from ..session import normalize_tcp_port, parse_user_at_host
 from ..services.adb_devices import list_adb_devices
 from ..services.commands import run_adb
 from ..services.remote_clients import connect_ftp, connect_sftp
@@ -206,7 +244,7 @@ except Exception:
 
 @dataclass
 class SessionLoginOutcome:
-    kind: str = ""  # adb | sftp | ftp
+    kind: str = ""  # adb | ssh | sftp | ftp | serial | local_cmd | local_pwsh
     adb_serial: str = ""
     adb_display_label: str = ""
     sftp_transport: Any = None
@@ -228,6 +266,38 @@ def _bookmark_allowed_for_dialog(for_terminal: bool, kind: str) -> bool:
     if for_terminal:
         return kind in ("ssh", "adb", "serial", "local_cmd", "local_pwsh")
     return kind in ("sftp", "ftp", "adb")
+
+
+class _SftpConnectThread(QThread):
+    """Run paramiko SFTP connect off the UI thread so login stays responsive (timeouts, slow hosts)."""
+
+    finished_sig = pyqtSignal(object, object, str)
+
+    def __init__(self, host: str, port: int, user: str, password: str):
+        super().__init__(None)
+        self._host = host
+        self._port = port
+        self._user = user
+        self._password = password
+
+    def run(self) -> None:
+        t, sftp, err = connect_sftp(self._host, self._port, self._user, self._password, timeout=45)
+        self.finished_sig.emit(t, sftp, err or "")
+
+
+class _FtpConnectThread(QThread):
+    finished_sig = pyqtSignal(object, str)
+
+    def __init__(self, host: str, port: int, user: str, password: str):
+        super().__init__(None)
+        self._host = host
+        self._port = port
+        self._user = user
+        self._password = password
+
+    def run(self) -> None:
+        ftp, err = connect_ftp(self._host, self._port, self._user, self._password, timeout=45)
+        self.finished_sig.emit(ftp, err or "")
 
 
 class SessionLoginDialog(QDialog):
@@ -252,9 +322,10 @@ class SessionLoginDialog(QDialog):
         self._outcome: Optional[SessionLoginOutcome] = None
         self._preferred_adb_serial = (preferred_adb_serial or "").strip()
         self.setObjectName("SessionLoginDialog")
-        self.setWindowTitle(f"Connect — {APP_TITLE}")
+        self.setWindowTitle(f"Session settings — {APP_TITLE}")
         self.setModal(True)
-        self.resize(720, 420)
+        self.setMinimumSize(720 if not for_terminal else 520, 520 if not for_terminal else 400)
+        self.resize(940 if not for_terminal else 780, 640 if not for_terminal else 480)
         self._build_ui(default_ssh_host, preferred_adb_serial)
         dark = bool(getattr(self._config, "dark_theme", False))
         self.setStyleSheet(_LOGIN_DIALOG_DARK_STYLESHEET if dark else _LOGIN_DIALOG_STYLESHEET)
@@ -262,12 +333,78 @@ class SessionLoginDialog(QDialog):
     def outcome(self) -> Optional[SessionLoginOutcome]:
         return self._outcome
 
+    def _connect_sftp_blocking(self, host: str, port: int, user: str, password: str):
+        # Parent=None avoids QWidgetWindow geometry errors when the caller widget has no valid size yet.
+        dlg = QProgressDialog("Connecting via SFTP…", None, 0, 0, None)
+        dlg.setWindowTitle(APP_TITLE)
+        dlg.setWindowModality(Qt.ApplicationModal)
+        dlg.setMinimumDuration(0)
+        dlg.setCancelButton(None)
+        dlg.show()
+        QApplication.processEvents()
+        th = _SftpConnectThread(host, port, user, password)
+        loop = QEventLoop()
+        box = [None, None, ""]
+
+        def _done_sftp(t, sftp, err):
+            box[0], box[1], box[2] = t, sftp, err
+            loop.quit()
+
+        th.finished_sig.connect(_done_sftp)
+        th.start()
+        loop.exec_()
+        dlg.close()
+        dlg.deleteLater()
+        th.wait(60000)
+        return box[0], box[1], box[2]
+
+    def _connect_ftp_blocking(self, host: str, port: int, user: str, password: str):
+        dlg = QProgressDialog("Connecting via FTP…", None, 0, 0, None)
+        dlg.setWindowTitle(APP_TITLE)
+        dlg.setWindowModality(Qt.ApplicationModal)
+        dlg.setMinimumDuration(0)
+        dlg.setCancelButton(None)
+        dlg.show()
+        QApplication.processEvents()
+        th = _FtpConnectThread(host, port, user, password)
+        loop = QEventLoop()
+        box = [None, ""]
+
+        def _done_ftp(ftp, err):
+            box[0], box[1] = ftp, err
+            loop.quit()
+
+        th.finished_sig.connect(_done_ftp)
+        th.start()
+        loop.exec_()
+        dlg.close()
+        dlg.deleteLater()
+        th.wait(60000)
+        return box[0], box[1]
+
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
+        QTimer.singleShot(0, self._ensure_safe_geometry)
         if hasattr(self, "device_combo") and getattr(self, "adb_box", None) and self.adb_box.isVisible():
             cur_data = self.device_combo.currentData()
             pref = str(cur_data).strip() if cur_data is not None else ""
             self._fill_device_combo(pref or self._preferred_adb_serial)
+
+    def _ensure_safe_geometry(self) -> None:
+        """Keep the dialog on-screen without shrinking inner fields (avoids truncated controls)."""
+        try:
+            if not self.isVisible():
+                return
+            scr = QApplication.primaryScreen()
+            if scr is None:
+                return
+            g = scr.availableGeometry()
+            fg = self.frameGeometry()
+            if fg.right() > g.right() or fg.bottom() > g.bottom() or fg.left() < g.left() or fg.top() < g.top():
+                fg.moveCenter(g.center())
+                self.move(fg.topLeft())
+        except Exception:
+            pass
 
     def _refresh_devices_clicked(self) -> None:
         cur_data = self.device_combo.currentData()
@@ -340,8 +477,8 @@ class SessionLoginDialog(QDialog):
                 self.accept()
                 return
         self._apply_bookmark_to_fields(bm)
+        k = bm.get("kind")
         if not self._for_terminal:
-            k = bm.get("kind")
             if k in ("sftp", "ftp") and not self.password_edit.text().strip():
                 pwd, ok = QInputDialog.getText(
                     self,
@@ -352,12 +489,22 @@ class SessionLoginDialog(QDialog):
                 if not ok:
                     return
                 self.password_edit.setText(pwd)
+        elif self._for_terminal and k in ("ssh", "sftp") and not self.password_edit.text().strip():
+            pwd, ok = QInputDialog.getText(
+                self,
+                "Password",
+                "Password for SSH (not stored in saved bookmarks):",
+                QLineEdit.Password,
+            )
+            if not ok:
+                return
+            self.password_edit.setText(pwd)
         self._try_login(skip_bookmark_save=True)
 
     def _apply_bookmark_to_fields(self, bm: Dict[str, Any]) -> None:
         k = bm.get("kind")
         if k == "adb":
-            self.protocol_combo.setCurrentText("Android (ADB)")
+            self._set_protocol_key("adb")
             serial = (bm.get("adb_serial") or "").strip()
             for i in range(self.device_combo.count()):
                 if self.device_combo.itemData(i) == serial:
@@ -368,7 +515,7 @@ class SessionLoginDialog(QDialog):
                     self.device_combo.insertItem(0, bm.get("adb_label") or serial, serial)
                     self.device_combo.setCurrentIndex(0)
         elif k == "ssh" and self._for_terminal:
-            self.protocol_combo.setCurrentText("SFTP")
+            self._set_protocol_key("ssh")
             self.host_edit.setText(bm.get("ssh_host", ""))
             try:
                 p = int(bm.get("ssh_port") or 22)
@@ -377,8 +524,19 @@ class SessionLoginDialog(QDialog):
             self.port_edit.setText(str(p))
             self.user_edit.setText(bm.get("ssh_user", ""))
             self.password_edit.clear()
+        elif k == "sftp" and self._for_terminal:
+            # Legacy bookmarks created when terminal SSH was labeled SFTP
+            self._set_protocol_key("ssh")
+            self.host_edit.setText(bm.get("ssh_host", bm.get("sftp_host", "")))
+            try:
+                p = int(bm.get("ssh_port", bm.get("sftp_port")) or 22)
+            except (TypeError, ValueError):
+                p = 22
+            self.port_edit.setText(str(p))
+            self.user_edit.setText(bm.get("ssh_user", bm.get("sftp_user", "")))
+            self.password_edit.clear()
         elif k == "sftp" and not self._for_terminal:
-            self.protocol_combo.setCurrentText("SFTP")
+            self._set_protocol_key("sftp")
             self.host_edit.setText(bm.get("sftp_host", bm.get("ssh_host", "")))
             try:
                 p = int(bm.get("sftp_port", bm.get("ssh_port")) or 22)
@@ -388,7 +546,7 @@ class SessionLoginDialog(QDialog):
             self.user_edit.setText(bm.get("sftp_user", bm.get("ssh_user", "")))
             self.password_edit.clear()
         elif k == "ftp" and not self._for_terminal:
-            self.protocol_combo.setCurrentText("FTP")
+            self._set_protocol_key("ftp")
             self.host_edit.setText(bm.get("ftp_host", ""))
             try:
                 p = int(bm.get("ftp_port") or 21)
@@ -398,7 +556,7 @@ class SessionLoginDialog(QDialog):
             self.user_edit.setText(bm.get("ftp_user", ""))
             self.password_edit.clear()
         elif k == "serial" and self._for_terminal:
-            self.protocol_combo.setCurrentText("Serial")
+            self._set_protocol_key("serial")
             serial_port = (bm.get("serial_port") or "").strip() or "COM3"
             idx = self.serial_port_combo.findText(serial_port)
             if idx < 0:
@@ -476,6 +634,68 @@ class SessionLoginDialog(QDialog):
             bm.pop("icon", None)
         self._upsert_bookmark(bm)
 
+    def _set_protocol_key(self, key: str) -> None:
+        self._protocol_key = key
+        if hasattr(self, "_protocol_buttons"):
+            for k, btn in self._protocol_buttons.items():
+                btn.setChecked(k == key)
+        self._apply_protocol_visibility()
+
+    def _apply_protocol_visibility(self) -> None:
+        key = getattr(self, "_protocol_key", "adb")
+        is_adb = key == "adb"
+        is_serial = key == "serial"
+        is_ftp = key == "ftp"
+        is_net = key in ("ssh", "sftp", "ftp")
+        self.network_box.setVisible(is_net)
+        self.adb_box.setVisible(is_adb)
+        self.serial_box.setVisible(is_serial)
+        if is_net:
+            self.port_edit.setText("21" if is_ftp else "22")
+        if key == "ssh":
+            self.network_box.setTitle("SSH session")
+        elif key == "sftp":
+            self.network_box.setTitle("SFTP session")
+        elif key == "ftp":
+            self.network_box.setTitle("FTP session")
+        else:
+            self.network_box.setTitle("Session")
+
+    def _build_protocol_bar(self, form_host: QVBoxLayout) -> None:
+        self._protocol_buttons = {}
+        self._protocol_key = "adb"
+        bar = QWidget()
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(0, 4, 0, 10)
+        row.setSpacing(10)
+        if self._for_terminal:
+            defs = [
+                ("adb", "Android", icon_adb_android()),
+                ("ssh", "SSH", icon_ssh_session()),
+                ("serial", "Serial", icon_serial_port()),
+            ]
+        else:
+            defs = [
+                ("adb", "Android", icon_adb_android()),
+                ("sftp", "SFTP", icon_sftp_session()),
+                ("ftp", "FTP", icon_ftp_session()),
+            ]
+        for key, label, icon in defs:
+            btn = QToolButton()
+            btn.setObjectName("SessionProtocolBtn")
+            btn.setCheckable(True)
+            btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            btn.setIconSize(QSize(44, 44))
+            if icon is not None and not icon.isNull():
+                btn.setIcon(icon)
+            btn.setText(label)
+            btn.setToolTip(label)
+            btn.clicked.connect(lambda _checked=False, k=key: self._set_protocol_key(k))
+            self._protocol_buttons[key] = btn
+            row.addWidget(btn)
+        row.addStretch(1)
+        form_host.addWidget(bar)
+
     def _build_ui(self, default_ssh_host: str, preferred_adb_serial: str) -> None:
         root = QVBoxLayout(self)
 
@@ -506,40 +726,29 @@ class SessionLoginDialog(QDialog):
             left.addWidget(rm)
             outer.addLayout(left)
 
-        form_host = QVBoxLayout()
-        if self._for_terminal:
-            intro = QLabel(
-                "Choose SFTP, Android (ADB), or Serial. Enter connection details, or pick a bookmark on the left. "
-                "Double-click a bookmark to connect; use Load into form to edit fields first."
-            )
-            intro.setObjectName("LoginDialogIntro")
-            intro.setWordWrap(True)
-            form_host.addWidget(intro)
-        else:
-            intro2 = QLabel(
-                "Connect to SFTP, FTP, or Android (ADB). "
-                "Double-click a bookmark to connect; use Load into form to copy details into the fields first."
-            )
-            intro2.setObjectName("LoginDialogIntro")
-            intro2.setWordWrap(True)
-            form_host.addWidget(intro2)
-
-        self.protocol_combo = ExpandAllComboBox()
-        self.protocol_combo.setMaxVisibleItems(12)
-        if self._for_terminal:
-            self.protocol_combo.addItems(["SFTP", "Android (ADB)", "Serial"])
-        else:
-            self.protocol_combo.addItems(["SFTP", "FTP", "Android (ADB)"])
-        self.protocol_combo.currentIndexChanged.connect(self._on_protocol_changed)
-        form_host.addWidget(self.protocol_combo)
+        form_inner = QWidget()
+        form_host = QVBoxLayout(form_inner)
+        form_host.setContentsMargins(4, 4, 8, 8)
+        form_host.setSpacing(10)
+        intro = QLabel(
+            "Choose a session type below, then enter details. Saved sessions are on the left."
+            if self._for_terminal
+            else "Choose Android, SFTP, or FTP, then enter host and credentials. Saved sessions are on the left."
+        )
+        intro.setObjectName("LoginDialogIntro")
+        intro.setWordWrap(True)
+        form_host.addWidget(intro)
+        self._build_protocol_bar(form_host)
 
         self.network_box = QGroupBox("Session")
         net_form = QFormLayout(self.network_box)
         du, dh = parse_user_at_host(default_ssh_host)
         self.host_edit = QLineEdit(dh)
         self.host_edit.setPlaceholderText("Host name")
+        self.host_edit.setMinimumWidth(360)
+        self.host_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.port_edit = QLineEdit("22")
-        self.port_edit.setMaximumWidth(72)
+        self.port_edit.setFixedWidth(88)
         self.user_edit = QLineEdit(du)
         self.user_edit.setPlaceholderText("User name")
         self.password_edit = QLineEdit()
@@ -634,7 +843,12 @@ class SessionLoginDialog(QDialog):
         self.bookmark_icon_combo.setEnabled(False)
         self._bookmark_icon_lbl.setEnabled(False)
 
-        outer.addLayout(form_host, 1)
+        scroll_form = QScrollArea()
+        scroll_form.setWidgetResizable(True)
+        scroll_form.setFrameShape(QFrame.NoFrame)
+        scroll_form.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_form.setWidget(form_inner)
+        outer.addWidget(scroll_form, 1)
         root.addLayout(outer)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -648,22 +862,18 @@ class SessionLoginDialog(QDialog):
             cancel_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogCancelButton))
         root.addWidget(buttons)
 
-        self._on_protocol_changed(0)
+        self._set_protocol_key("adb")
         if self._initial_protocol:
-            idx = self.protocol_combo.findText(self._initial_protocol)
-            if idx >= 0:
-                self.protocol_combo.setCurrentIndex(idx)
-
-    def _on_protocol_changed(self, _index: int) -> None:
-        proto = self.protocol_combo.currentText()
-        is_adb = proto == "Android (ADB)"
-        is_serial = proto == "Serial"
-        is_ftp = proto == "FTP"
-        self.network_box.setVisible((not is_adb) and (not is_serial))
-        self.adb_box.setVisible(is_adb)
-        self.serial_box.setVisible(is_serial)
-        if (not is_adb) and (not is_serial):
-            self.port_edit.setText("21" if is_ftp else "22")
+            m = {
+                "Android (ADB)": "adb",
+                "SSH": "ssh",
+                "SFTP": "ssh" if self._for_terminal else "sftp",
+                "FTP": "ftp",
+                "Serial": "serial",
+            }
+            k = m.get(self._initial_protocol)
+            if k and k in getattr(self, "_protocol_buttons", {}):
+                self._set_protocol_key(k)
 
     def _serial_from_device_selection(self) -> str:
         data = self.device_combo.currentData()
@@ -673,8 +883,8 @@ class SessionLoginDialog(QDialog):
         return t.split()[0] if t else ""
 
     def _try_login(self, skip_bookmark_save: bool = False) -> None:
-        proto = self.protocol_combo.currentText()
-        if proto == "Android (ADB)":
+        key = getattr(self, "_protocol_key", "adb")
+        if key == "adb":
             text = self.device_combo.currentText().strip()
             if not text or "No device" in text or "not found" in text.lower() or "ADB not found" in text:
                 QMessageBox.warning(self, "Login", "Select a device, or fix ADB (USB / Preferences).")
@@ -696,7 +906,7 @@ class SessionLoginDialog(QDialog):
             self.accept()
             return
 
-        if proto == "Serial":
+        if key == "serial":
             port = (self.serial_port_combo.currentText() or "").strip() or "COM3"
             baud = (self.serial_baud_combo.currentText() or "").strip() or "115200"
             self._outcome = SessionLoginOutcome(
@@ -717,35 +927,37 @@ class SessionLoginDialog(QDialog):
             QMessageBox.warning(self, "Login", "Enter host name.")
             return
         try:
-            port = int(self.port_edit.text().strip() or ("21" if proto == "FTP" else "22"))
+            port = int(self.port_edit.text().strip() or ("21" if key == "ftp" else "22"))
         except ValueError:
-            port = 21 if proto == "FTP" else 22
+            port = 21 if key == "ftp" else 22
+        port = normalize_tcp_port(port, 21 if key == "ftp" else 22)
         user = self.user_edit.text().strip()
         password = self.password_edit.text()
 
-        if proto == "SFTP":
-            if self._for_terminal:
-                self._outcome = SessionLoginOutcome(
-                    kind="sftp",
-                    sftp_transport=None,
-                    sftp_client=None,
-                    sftp_host=host,
-                    sftp_user=user,
-                    sftp_port=port,
-                    sftp_password=password,
+        if key == "ssh" and self._for_terminal:
+            self._outcome = SessionLoginOutcome(
+                kind="ssh",
+                sftp_transport=None,
+                sftp_client=None,
+                sftp_host=host,
+                sftp_user=user,
+                sftp_port=port,
+                sftp_password=password,
+            )
+            if not skip_bookmark_save:
+                self._maybe_save_bookmark(
+                    "ssh",
+                    {
+                        "ssh_host": host,
+                        "ssh_user": user,
+                        "ssh_port": port,
+                    },
                 )
-                if not skip_bookmark_save:
-                    self._maybe_save_bookmark(
-                        "ssh",
-                        {
-                            "ssh_host": host,
-                            "ssh_user": user,
-                            "ssh_port": port,
-                        },
-                    )
-                self.accept()
-                return
-            t, sftp, err = connect_sftp(host, port, user, password)
+            self.accept()
+            return
+
+        if key == "sftp" and not self._for_terminal:
+            t, sftp, err = self._connect_sftp_blocking(host, port, user, password)
             if err or sftp is None:
                 QMessageBox.warning(self, "SFTP", err or "Connection failed.")
                 return
@@ -770,8 +982,8 @@ class SessionLoginDialog(QDialog):
             self.accept()
             return
 
-        if proto == "FTP":
-            ftp, err = connect_ftp(host, port, user, password)
+        if key == "ftp":
+            ftp, err = self._connect_ftp_blocking(host, port, user, password)
             if err or ftp is None:
                 QMessageBox.warning(self, "FTP", err or "Connection failed.")
                 return

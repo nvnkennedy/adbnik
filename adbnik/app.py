@@ -3,7 +3,7 @@ import sys
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QStyleFactory
 
-from . import APP_TITLE
+from . import APP_TITLE, __version__
 from .config import AppConfig, has_existing_config_file
 from .ui.app_icon import create_app_icon
 from .ui.main_window import MainWindow
@@ -37,10 +37,16 @@ def main():
     except AttributeError:
         pass
 
-    fresh_config = not has_existing_config_file()
     config = AppConfig.load()
+    fresh_config = not has_existing_config_file()
+    upgraded = (
+        not fresh_config
+        and (getattr(config, "last_acknowledged_version", "") or "") != (__version__ or "")
+    )
+    # First install, or upgraded build: show welcome / theme / paths once user confirms (or skip).
+    need_welcome = fresh_config or upgraded
     app.setWindowIcon(create_app_icon(dark=bool(config.dark_theme)))
 
-    window = MainWindow(config, first_launch=fresh_config)
+    window = MainWindow(config, first_launch=need_welcome, is_upgrade=upgraded)
     window.show()
     sys.exit(app.exec_())
