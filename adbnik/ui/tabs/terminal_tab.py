@@ -640,12 +640,19 @@ class SessionWidget(QWidget):
             "permissionerror",
             "permission denied",
             "access is denied",
+            "access denied",
             "could not open port",
+            "could not open",
             "serial.serialutil.serialexception",
             "being used by another process",
             "errno 13",
             "failed to open port",
             "could not exclusively lock",
+            "winerror 5",
+            "winerror 32",
+            "unable to open",
+            "port is busy",
+            "device is being used",
         )
         return any(n in tl for n in needles)
 
@@ -655,7 +662,7 @@ class SessionWidget(QWidget):
             return
         if self._serial_auto_retries_used >= 2:
             return
-        if time.monotonic() - self._serial_start_monotonic > 30.0:
+        if time.monotonic() - self._serial_start_monotonic > 120.0:
             return
         if not self._serial_port_busy_text(raw):
             return
@@ -675,6 +682,10 @@ class SessionWidget(QWidget):
         if not self._is_serial_session:
             return
         if self._serial_auto_retries_used >= 2:
+            self._append_plain_ui(
+                "\n[serial] Port is still busy after automatic retries. Close any other terminal "
+                "using this COM port, unplug/replug the adapter, then open a new serial tab.\n"
+            )
             return
         self._serial_auto_retries_used += 1
         self._append_plain_ui(

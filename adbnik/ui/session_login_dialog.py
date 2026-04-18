@@ -356,6 +356,8 @@ class SessionLoginDialog(QDialog):
         dlg.close()
         dlg.deleteLater()
         th.wait(60000)
+        th.deleteLater()
+        QApplication.processEvents()
         return box[0], box[1], box[2]
 
     def _connect_ftp_blocking(self, host: str, port: int, user: str, password: str):
@@ -380,6 +382,8 @@ class SessionLoginDialog(QDialog):
         dlg.close()
         dlg.deleteLater()
         th.wait(60000)
+        th.deleteLater()
+        QApplication.processEvents()
         return box[0], box[1]
 
     def showEvent(self, event: QShowEvent) -> None:
