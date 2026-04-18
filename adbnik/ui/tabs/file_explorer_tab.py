@@ -1830,7 +1830,10 @@ class FindFilesDialog(QDialog):
     def _on_search_thread_done(self) -> None:
         self._btn_search.setEnabled(True)
         self._btn_search.setText("Search")
+        th = self.sender()
         self._search_thread = None
+        if isinstance(th, QThread):
+            th.deleteLater()
 
     def _go_selected(self) -> None:
         it = self._list.currentItem()
@@ -3105,6 +3108,7 @@ class ExplorerSessionPage(QWidget):
         th.status.connect(self._on_adb_transfer_status)
         th.prep_done.connect(self._on_adb_prep_done)
         th.done.connect(self._on_adb_transfer_done)
+        th.finished.connect(th.deleteLater)
         self._adb_transfer_thread = th
         th.start()
         return True
@@ -3196,10 +3200,7 @@ class ExplorerSessionPage(QWidget):
             self._adb_transfer_dialog.close()
             self._adb_transfer_dialog.deleteLater()
             self._adb_transfer_dialog = None
-        th = self._adb_transfer_thread
         self._adb_transfer_thread = None
-        if th is not None:
-            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         self._adb_last_pct = -1
         self._adb_transfer_use_poll = False
         self._adb_transfer_cancel_ev = None
@@ -3395,6 +3396,7 @@ class ExplorerSessionPage(QWidget):
         )
         th.progress.connect(self._on_remote_transfer_progress)
         th.done.connect(self._on_remote_transfer_done)
+        th.finished.connect(th.deleteLater)
         self._remote_transfer_thread = th
         th.start()
         return True
@@ -3411,10 +3413,7 @@ class ExplorerSessionPage(QWidget):
             self._remote_transfer_dialog.close()
             self._remote_transfer_dialog.deleteLater()
             self._remote_transfer_dialog = None
-        th = self._remote_transfer_thread
         self._remote_transfer_thread = None
-        if th is not None:
-            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         if not ok:
             QMessageBox.warning(self, "Transfer", message or "Transfer failed.")
             return
@@ -3475,6 +3474,7 @@ class ExplorerSessionPage(QWidget):
         )
         th.progress.connect(self._on_delete_progress)
         th.done.connect(self._on_delete_job_done)
+        th.finished.connect(th.deleteLater)
         self._delete_thread = th
         th.start()
         return True
@@ -3510,11 +3510,8 @@ class ExplorerSessionPage(QWidget):
             self._delete_dialog.close()
             self._delete_dialog.deleteLater()
             self._delete_dialog = None
-        th = self._delete_thread
         self._delete_thread = None
         self._delete_cancel_ev = None
-        if th is not None:
-            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         cb = self._delete_done_cb
         self._delete_done_cb = None
         if cb:
@@ -3750,14 +3747,12 @@ class ExplorerSessionPage(QWidget):
             creds=creds,
         )
         th.done.connect(self._on_remote_refresh_done)
+        th.finished.connect(th.deleteLater)
         self._remote_refresh_thread = th
         th.start()
 
     def _on_remote_refresh_done(self, rows, err: str) -> None:
-        th = self._remote_refresh_thread
         self._remote_refresh_thread = None
-        if th is not None:
-            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         _fill_remote_table(self.remote_table, rows or [], self.style(), self.icon_provider)
         msg = (err or "").strip()
         if self.kind == "adb":

@@ -458,14 +458,12 @@ class MainWindow(QMainWindow):
         self._prev_selected_serial_for_refresh = self.terminal.current_adb_serial()
         th = _AdbDevicesRefreshThread(self.get_adb_path())
         th.done.connect(self._on_devices_refreshed)
+        th.finished.connect(th.deleteLater)
         self._device_refresh_thread = th
         th.start()
 
     def _on_devices_refreshed(self, pairs, adb_ok: bool) -> None:
-        th = self.sender()
         self._device_refresh_thread = None
-        if isinstance(th, QThread):
-            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         prev_selected_serial = getattr(self, "_prev_selected_serial_for_refresh", "")
         prev_sig = getattr(self, "_last_adb_device_sig", None)
         sig = tuple(pairs) if pairs else ()
@@ -595,14 +593,12 @@ class MainWindow(QMainWindow):
             return
         th = _AdbDeviceStatsThread(self.get_adb_path(), serial)
         th.done.connect(self._on_device_stats_ready)
+        th.finished.connect(th.deleteLater)
         self._stats_refresh_thread = th
         th.start()
 
     def _on_device_stats_ready(self, serial: str, raw: object, err: str) -> None:
-        th = self.sender()
         self._stats_refresh_thread = None
-        if isinstance(th, QThread):
-            QTimer.singleShot(0, lambda t=th: t.deleteLater())
         current = (self.terminal.current_adb_serial() or "").strip() if hasattr(self, "terminal") else ""
         if serial and current and serial != current:
             return
