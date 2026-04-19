@@ -271,11 +271,11 @@ def strip_ansi_for_display(text: str) -> str:
     """Remove ANSI/OSC for plain terminal view (high-throughput SSH/ADB). Keeps UI responsive."""
     if not text:
         return text
-    # EL / ED: stripping to empty glues runs (``lsbin``). A newline adds extra blank rows; a space
-    # keeps separation without another full line break.
-    text = re.sub(r"\x1b\[[0-?]*[ -/]*K", " ", text)
-    text = re.sub(r"\x1b\[[0-?]*[ -/]*J", " ", text)
-    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    # SGR (colors / ``0m`` reset): strip entirely.
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*m", "", text)
+    # Every other CSI (cursor moves, EL/ED, modes, etc.): one space. Removing them bare collapses
+    # layout the TTY applied with cursor motion (``ls`` + CUF + ``bin`` → ``lsbin`` after first line).
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", " ", text)
     text = _OSC_STRIP_FAST.sub("", text)
     text = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", text)
     text = re.sub(r"(?<!\x1b)\[0\.39m", "", text)

@@ -1790,9 +1790,10 @@ class SessionWidget(QWidget):
     def _send_line(self, line: str) -> None:
         if self.proc.state() != QProcess.Running:
             return
-        # Empty Enter on SSH/ADB/serial: add one visual newline so the next PTY/miniterm chunk does not glue to the prompt.
-        # Done here (not in ShellPlainTextEdit.commit) so local echo removal and PTY timing stay consistent.
-        if (self._is_remote_pty_shell or self._is_serial_session) and not (line or "").strip():
+        # Empty Enter on serial: one visual newline so the next UART chunk does not glue to the prompt.
+        # SSH/ADB: do not inject — the PTY echoes line discipline; an extra \\n here stacked with echo looked like
+        # blank line / input / blank line per Enter.
+        if self._is_serial_session and not (line or "").strip():
             self._append_plain_ui("\n")
         stripped = (line or "").strip().lower()
         if self._shell_profile in ("cmd", "powershell") and stripped in ("python", "py", "python.exe"):

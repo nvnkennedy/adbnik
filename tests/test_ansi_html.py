@@ -92,3 +92,10 @@ def test_strip_ansi_erase_line_not_glue_ls_bin():
     s = strip_ansi_for_display("ls\x1b[Kbin")
     assert "lsbin" not in s
     assert "ls" in s and "bin" in s
+
+
+def test_strip_ansi_cursor_forward_not_glue_ls_bin():
+    """CUF (cursor forward) is common in columnar listings; stripping bare caused ``lsbin``."""
+    s = strip_ansi_for_display("ls\x1b[20Cbin")
+    assert "lsbin" not in s
+    assert "ls" in s and "bin" in s
