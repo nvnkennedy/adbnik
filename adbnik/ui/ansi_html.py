@@ -182,6 +182,42 @@ def normalize_remote_pty_plain_text(text: str) -> str:
     return text
 
 
+# SSH / Android adb shell: next chunk may start with a prompt while the scrollback tail has no ``\n``
+# (PTY often omits a line break between the last column of ``ls`` and the next prompt).
+_REMOTE_CHUNK_STARTS_WITH_PROMPT = re.compile(
+    r"^\s*(?:\d+\|)?"
+    r"(?:"
+    r"[\w.-]+@[^:\s]+:[^\n]*?[$#>]\s*"  # user@host:path# or $ (with or without space before #/$)
+    r"|"
+    r"[\w][\w.+-]*:\/\s*\$\s*"  # Android …:/ $
+    r"|"
+    r"[\w][\w.+-]*:\/\S*\s*#\s*"  # Android …:/path#
+    r")"
+)
+
+# Last line is ``…# ls`` / ``…$ mount`` style: prompt plus echoed command, but no newline before output.
+_TAIL_ENDS_WITH_PROMPT_AND_ECHOED_CMD = re.compile(r"(?:^|\n)[^\n]*[$#>]\s+\S+[^\n]*$")
+
+
+def ensure_remote_pty_visual_line_breaks(tail_before_chunk: str, chunk: str) -> str:
+    """
+    Insert a leading newline when the PTY glued two logical lines into one QTextEdit line.
+
+    Used only for SSH/ADB plain-text streaming. Safe to no-op when ``tail_before_chunk`` already
+    ends with ``\\n``.
+    """
+    if not chunk:
+        return chunk
+    if tail_before_chunk.endswith("\n"):
+        return chunk
+    first_line = chunk.split("\n", 1)[0]
+    if _REMOTE_CHUNK_STARTS_WITH_PROMPT.match(first_line):
+        return "\n" + chunk
+    if _TAIL_ENDS_WITH_PROMPT_AND_ECHOED_CMD.search(tail_before_chunk):
+        return "\n" + chunk
+    return chunk
+
+
 def preprocess_escape_noise(data: str) -> str:
     """Fix ESC/CSI split across newlines and orphan escape lines (SSH, serial, embedded Linux logs)."""
     data = preprocess_pty_stream(data)

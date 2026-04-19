@@ -2,6 +2,7 @@
 
 from adbnik.ui.ansi_html import (
     AnsiToHtmlConverter,
+    ensure_remote_pty_visual_line_breaks,
     normalize_remote_pty_plain_text,
     preprocess_escape_noise,
     preprocess_pty_stream,
@@ -14,6 +15,29 @@ def test_normalize_remote_pty_plain_text_maps_cr():
     assert normalize_remote_pty_plain_text("ls\rbin") == "ls\nbin"
     assert normalize_remote_pty_plain_text("a\r\nb") == "a\nb"
     assert normalize_remote_pty_plain_text("\n" * 10) == "\n" * 7
+
+
+def test_ensure_remote_pty_visual_line_breaks_prompt_after_output():
+    tail = "acct bin vendor_dlkm"
+    chunk = "i3_max_civic_vendor_star3_5:/ $ "
+    out = ensure_remote_pty_visual_line_breaks(tail, chunk)
+    assert out.startswith("\n") and "i3_max" in out
+
+
+def test_ensure_remote_pty_visual_line_breaks_ssh_prompt():
+    tail = "some output"
+    chunk = "root@169.254.17.90:~# "
+    assert ensure_remote_pty_visual_line_breaks(tail, chunk).startswith("\n")
+
+
+def test_ensure_remote_pty_visual_line_breaks_after_echoed_command():
+    tail = "root@host:~# ls"
+    chunk = "bin\ndata\n"
+    assert ensure_remote_pty_visual_line_breaks(tail, chunk).startswith("\n")
+
+
+def test_ensure_remote_pty_visual_line_breaks_noop_when_tail_has_newline():
+    assert ensure_remote_pty_visual_line_breaks("ok\n", "bin") == "bin"
 
 
 def test_embedded_terminal_ignores_background_colors():

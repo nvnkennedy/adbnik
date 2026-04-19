@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.9] - 2026-04-20
+
+### Fixed
+
+- **SSH / ADB terminal:** When the PTY did not send a newline between the end of command output and the next prompt (or between an echoed command and the following output), lines could appear **glued** (e.g. ``vendor_dlkm`` + next prompt on one row, or ``# ls`` + ``bin`` as ``lsbin``). The stream now inserts a **newline** before a chunk that **starts like a shell prompt** or when the scrollback tail **ends with prompt + echoed command** without a trailing newline.
+- **Commands → SSH:** Quick commands are sent to a **running SSH terminal tab**, not whichever session tab is active (so they no longer run in an ADB or local shell tab by mistake). If the active tab is SSH, that tab is used; otherwise the first running SSH tab is focused and receives the line.
+
 ## [1.3.8] - 2026-04-20
 
 ### Fixed
