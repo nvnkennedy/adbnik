@@ -4,4 +4,5 @@ include pyproject.toml
 include docs/index.html
 include docs/.nojekyll
 recursive-include docs/css *.css
+recursive-include docs/guide *.html
 recursive-include docs/screenshots *.png

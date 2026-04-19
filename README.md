@@ -28,6 +28,14 @@
 
 ---
 
+## User guide
+
+Step-by-step documentation for the **Terminal**, **File Explorer**, and **Screen Control** tabs (menus, toolbars, keyboard shortcuts, and scrcpy options):
+
+**https://nvnkennedy.github.io/adbnik/guide/**
+
+---
+
 ## Requirements
 
 - **Python 3.9+** (64-bit recommended on Windows)
@@ -114,6 +122,7 @@ On Windows, list interpreters with `py -0p`.
 | | |
 |--|--|
 | **Product site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) — overview and links |
+| **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/) — Terminal, File Explorer, Screen Control |
 | **Source code** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
 | **Releases** | [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases) |
 
