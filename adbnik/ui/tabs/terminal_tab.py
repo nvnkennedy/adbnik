@@ -708,6 +708,15 @@ class ShellPlainTextEdit(QTextEdit):
         if ensure_visible:
             self.ensureCursorVisible()
 
+    def sync_input_anchor_to_end(self) -> None:
+        """Place the input cursor and anchor at the document end (e.g. after menu-injected SSH commands)."""
+        cur = self.textCursor()
+        cur.movePosition(QTextCursor.End)
+        self.setTextCursor(cur)
+        self._anchor = cur.position()
+        self._reset_history_browse()
+        self.ensureCursorVisible()
+
     def _reset_history_browse(self) -> None:
         self._hist_browse_idx = None
         self._hist_stash = ""
@@ -1886,13 +1895,10 @@ class SessionWidget(QWidget):
     def send_line(self, line: str) -> None:
         """Send a full line to the shell (same as pressing Enter after typing)."""
         raw = (line or "").rstrip("\n")
-        # Menu / quick-command injection: ensure the buffer ends with a newline so PTY echo and the next
-        # prompt do not stick to the previous line (e.g. ".../mnt" + "# " from root prompt).
-        if self._is_remote_pty_shell and raw.strip():
-            doc = self.output.toPlainText()
-            if doc and not doc.endswith("\n"):
-                self._append_plain_ui("\n")
         self._send_line(raw)
+        # Menu / SSH quick commands: after the shell echoes, move the typing point to the real prompt line.
+        if self._is_ssh_session and raw.strip():
+            QTimer.singleShot(180, self.output.sync_input_anchor_to_end)
 
     def _tighten_pty_chunk(self, text: str) -> str:
         """Collapse stacked newlines from PTY/serial (embedded shells often emit extra LFs)."""

@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.2] - 2026-04-19
+
+### Fixed
+
+- **File Explorer (SFTP/FTP):** Drag-and-drop pull now opens downloaded file(s) like the Pull button: the transfer thread reports pulled file paths, and the UI opens them after a short deferred pass (same timing fix as refresh settling).
+- **SSH quick commands:** Removed the extra injected newline before menu-sent lines (which produced stray `#` / blank lines). After sending, the input cursor and anchor move to the document end on a short delay so the caret sits on the new prompt line after the shell responds.
+
 ## [1.3.1] - 2026-04-19
 
 ### Fixed
