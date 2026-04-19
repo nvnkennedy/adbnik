@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.6] - 2026-04-20
+
+### Fixed
+
+- **SSH / ADB terminal:** Lone `\r` and erase-line / erase-display ANSI codes are mapped to a **space** instead of a **newline**, so echoed input and the next output stay visually separated without extra blank lines. (Newlines still come from real `\n` / `\r\n` from the PTY.)
+- **Serial console:** Removed the remote-PTY newline normalizer from the UART path so serial output matches prior density (no extra line breaks from `\r` → `\n`).
+
 ## [1.3.5] - 2026-04-20
 
 ### Fixed

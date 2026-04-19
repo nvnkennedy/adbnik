@@ -167,15 +167,15 @@ def preprocess_pty_stream(data: str) -> str:
 
 def normalize_remote_pty_plain_text(text: str) -> str:
     """
-    Map PTY carriage returns for QTextEdit plain-text rendering.
+    Map PTY carriage returns for SSH/ADB plain-text rendering only (not used for serial UART).
 
-    A real terminal applies lone ``\\r`` as “return to column 0” (overwrite). QTextEdit cannot do that
-    without a full emulator; mapping ``\\r`` to ``\\n`` keeps lines separated and avoids glued tokens
-    (e.g. ``ls`` + ``bin``). Spinner redraws may still emit many ``\\r``; cap long runs of blank lines.
+    Mapping lone ``\\r`` to ``\\n`` adds a blank line for every redraw (noisy). Using a **space**
+    separates tokens (avoids ``lsbin``) without vertical spam. ``\\r\\n`` stays a single newline.
+    Long runs of blank lines (spinners) are still capped.
     """
     if not text:
         return text
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", " ")
     text = re.sub(r"\n{8,}", "\n\n\n\n\n\n\n", text)
     return text
 
@@ -271,10 +271,10 @@ def strip_ansi_for_display(text: str) -> str:
     """Remove ANSI/OSC for plain terminal view (high-throughput SSH/ADB). Keeps UI responsive."""
     if not text:
         return text
-    # EL (erase in line) and ED (erase in display): stripping these to empty merges runs that the TTY
-    # kept apart (common after the first prompt: echo + EL + next output → ``lsbin`` if removed bare).
-    text = re.sub(r"\x1b\[[0-?]*[ -/]*K", "\n", text)
-    text = re.sub(r"\x1b\[[0-?]*[ -/]*J", "\n", text)
+    # EL / ED: stripping to empty glues runs (``lsbin``). A newline adds extra blank rows; a space
+    # keeps separation without another full line break.
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*K", " ", text)
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*J", " ", text)
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     text = _OSC_STRIP_FAST.sub("", text)
     text = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", text)
