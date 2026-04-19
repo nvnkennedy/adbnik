@@ -2,7 +2,7 @@
 
 from adbnik.ui.ansi_html import (
     AnsiToHtmlConverter,
-    emulate_terminal_carriage_return,
+    normalize_remote_pty_plain_text,
     preprocess_escape_noise,
     preprocess_pty_stream,
     preprocess_serial_stream,
@@ -10,10 +10,10 @@ from adbnik.ui.ansi_html import (
 )
 
 
-def test_emulate_cr_overwrite_not_glue():
-    assert emulate_terminal_carriage_return("ls\rbin") == "bin"
-    assert emulate_terminal_carriage_return("a\r\nb") == "a\nb"
-    assert emulate_terminal_carriage_return("hello\rworld") == "world"
+def test_normalize_remote_pty_plain_text_maps_cr():
+    assert normalize_remote_pty_plain_text("ls\rbin") == "ls\nbin"
+    assert normalize_remote_pty_plain_text("a\r\nb") == "a\nb"
+    assert normalize_remote_pty_plain_text("\n" * 10) == "\n" * 7
 
 
 def test_embedded_terminal_ignores_background_colors():
