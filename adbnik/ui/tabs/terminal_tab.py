@@ -1923,7 +1923,6 @@ class SessionWidget(QWidget):
             self._serial_maybe_retry_on_text(data)
         if self._is_serial_session:
             data = preprocess_serial_stream(data)
-            data = normalize_remote_pty_plain_text(data)
             data = _filter_serial_miniterm_banner(data)
         else:
             # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
