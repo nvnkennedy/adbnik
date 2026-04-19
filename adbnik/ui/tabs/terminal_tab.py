@@ -44,6 +44,7 @@ from PyQt5.QtWidgets import (
 from ...config import AppConfig
 from ..ansi_html import (
     AnsiToHtmlConverter,
+    emulate_terminal_carriage_return,
     preprocess_escape_noise,
     preprocess_serial_stream,
     strip_ansi_for_display,
@@ -1892,13 +1893,13 @@ class SessionWidget(QWidget):
             except OSError:
                 pass
 
-    def send_line(self, line: str) -> None:
+    def send_line(self, line: str, *, sync_anchor_after: bool = False) -> None:
         """Send a full line to the shell (same as pressing Enter after typing)."""
         raw = (line or "").rstrip("\n")
         self._send_line(raw)
-        # Menu / SSH quick commands: after the shell echoes, move the typing point to the real prompt line.
-        if self._is_ssh_session and raw.strip():
-            QTimer.singleShot(180, self.output.sync_input_anchor_to_end)
+        # Optional: menu-injected SSH lines — nudge the typing anchor after the PTY catches up (see main_window).
+        if sync_anchor_after and self._is_ssh_session and raw.strip():
+            QTimer.singleShot(120, self.output.sync_input_anchor_to_end)
 
     def _tighten_pty_chunk(self, text: str) -> str:
         """Collapse stacked newlines from PTY/serial (embedded shells often emit extra LFs)."""
@@ -1922,6 +1923,7 @@ class SessionWidget(QWidget):
             self._serial_maybe_retry_on_text(data)
         if self._is_serial_session:
             data = preprocess_serial_stream(data)
+            data = emulate_terminal_carriage_return(data)
             data = _filter_serial_miniterm_banner(data)
         else:
             # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
@@ -1953,10 +1955,7 @@ class SessionWidget(QWidget):
             plain = strip_ansi_for_display(data)
             if not plain:
                 return
-            plain = plain.replace("\r\n", "\n")
-            # Treat lone CR as a line break. Stripping CR produced glued text (e.g. "ls" + output "bin" → "lsbin").
-            # Progress indicators that rely on in-place CR redraw may gain extra lines; readability is preferred.
-            plain = plain.replace("\r", "\n")
+            plain = emulate_terminal_carriage_return(plain)
             plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]
@@ -3015,7 +3014,7 @@ class TerminalTab(QWidget):
                 "Open a terminal session tab first (e.g. Session → SSH → New SSH session).",
             )
             return False
-        w.send_line(line)
+        w.send_line(line, sync_anchor_after=True)
         self.tabs.setCurrentWidget(w)
         return True
 

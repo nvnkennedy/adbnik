@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.3] - 2026-04-19
+
+### Fixed
+
+- **SSH / ADB / serial terminal:** Carriage return is handled as **return-to-start-of-line** (overwrite) instead of mapping every lone `\r` to a newline. That removes the blank-line spam from progress-style output, avoids glued tokens without relying on extra `\n` injection, and keeps spacing consistent with normal TTY behavior.
+- **SSH quick commands:** `send_line(..., sync_anchor_after=True)` is only used for **Commands → SSH** menu lines; the default path no longer schedules a delayed anchor sync for unrelated callers.
+- **File Explorer (SFTP/FTP):** The transfer `done` handler no longer depends on `sender()` (unreliable with queued cross-thread signals). The emitting thread is captured in the connection so **open after pull** runs reliably for drag-and-drop and batch transfers. Pulled **folders** are opened in the system file manager when included in the completion list.
+
 ## [1.3.2] - 2026-04-19
 
 ### Fixed

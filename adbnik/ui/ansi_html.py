@@ -144,7 +144,8 @@ def preprocess_pty_stream(data: str) -> str:
     """Normalize line endings; fix dropped ESC before CSI (%[); drop NUL/BEL; keep TAB/newline."""
     if not data:
         return data
-    data = data.replace("\r\n", "\n").replace("\r", "\n")
+    # CRLF only — lone CR is left for emulate_terminal_carriage_return() (SSH/ADB/serial display).
+    data = data.replace("\r\n", "\n")
     # UART / tooling sometimes drops ESC (0x1b) so CSI shows as %[ …
     data = re.sub(r"(?<!\x1b)%\[", "\x1b[", data)
     # Saved logs / some terminals show ESC as two chars ^[ — restore real ESC for SGR
@@ -162,6 +163,38 @@ def preprocess_pty_stream(data: str) -> str:
     # Merge runs of blank lines after stripping
     data = re.sub(r"\n{2,}", "\n", data)
     return data
+
+
+def emulate_terminal_carriage_return(text: str) -> str:
+    """
+    Apply Unix TTY semantics for bare CR: return to start of current line (overwrite), not an extra newline.
+    CRLF is already normalized to LF by preprocess_pty_stream. Strips bare CR that would otherwise glue
+    tokens (e.g. ``ls`` + ``bin``) or spam blank lines if each CR were mapped to LF.
+    """
+    if not text:
+        return text
+    lines: List[str] = []
+    cur: List[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if i + 1 < n and text[i] == "\r" and text[i + 1] == "\n":
+            lines.append("".join(cur))
+            cur = []
+            i += 2
+        elif text[i] == "\r":
+            cur = []
+            i += 1
+        elif text[i] == "\n":
+            lines.append("".join(cur))
+            cur = []
+            i += 1
+        else:
+            cur.append(text[i])
+            i += 1
+    if cur or not lines:
+        lines.append("".join(cur))
+    return "\n".join(lines)
 
 
 def preprocess_escape_noise(data: str) -> str:
