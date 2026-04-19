@@ -2449,12 +2449,6 @@ class ExplorerSessionPage(QWidget):
             self._explorer_hdr = QLabel(f"FTP — {self._ftp_host}:{self._ftp_port}")
             self._explorer_hdr.setObjectName("ExplorerSessionHint")
             root.addWidget(self._explorer_hdr)
-        start_hint = QLabel(
-            "How to start: create/login a session, browse folders, then use Pull or Push for transfer."
-        )
-        start_hint.setObjectName("ExplorerSessionHint")
-        start_hint.setWordWrap(True)
-        root.addWidget(start_hint)
 
         transfer_col = QFrame()
         transfer_col.setObjectName("ExplorerTransferStrip")
@@ -3728,6 +3722,9 @@ class ExplorerSessionPage(QWidget):
             self.refresh_local()
             if last_name:
                 self._select_local_basename(last_name)
+            lp = Path(self.local_path) / last_name if last_name else None
+            if lp and lp.is_file():
+                self._launch_local_file(lp)
         self._log(f"Explorer: {self.kind.upper()} {self._remote_transfer_mode} complete — {message}")
 
     def _start_delete_job(
@@ -4953,12 +4950,6 @@ class ExplorerSessionPage(QWidget):
                 explicit_final_name=pulled_name,
             )
             return
-        if self.kind in ("sftp", "ftp"):
-            self._start_remote_transfer(
-                mode="pull",
-                items=[{"remote": str(info.get("path", "")), "is_dir": bool(info.get("is_dir"))}],
-            )
-            return
 
         if info.get("is_dir"):
             if self.kind == "sftp" and self._sftp_client:
@@ -5034,6 +5025,8 @@ class ExplorerSessionPage(QWidget):
                     )
                 if select_basename:
                     self._select_local_basename(pulled_name)
+                if os.path.isfile(dest):
+                    self._launch_local_file(Path(dest))
             except Exception as exc:
                 self._log(f"Explorer: SFTP pull error: {exc}")
                 QMessageBox.warning(
@@ -5065,6 +5058,8 @@ class ExplorerSessionPage(QWidget):
                     )
                 if select_basename:
                     self._select_local_basename(pulled_name)
+                if os.path.isfile(dest):
+                    self._launch_local_file(Path(dest))
             except Exception as exc:
                 QMessageBox.warning(
                     self,
@@ -5614,10 +5609,7 @@ class FileExplorerTab(QWidget):
         self.session_tabs.tabCloseRequested.connect(self._on_tab_close_requested)
         self._empty_state = QLabel(
             "No explorer session is open.\n\n"
-            "How to start:\n"
-            "1) Click New session...\n"
-            "2) Select ADB / SFTP / FTP and login\n"
-            "3) Local (left) and remote (right) panes will open in the session tab"
+            "Use New session… to connect (ADB, SFTP, or FTP). The user guide on the website has full steps."
         )
         self._empty_state.setAlignment(Qt.AlignCenter)
         self._empty_state.setObjectName("ExplorerSessionHint")

@@ -539,13 +539,10 @@ class ScrcpyTab(QWidget):
         el.setContentsMargins(0, 0, 0, 0)
 
         self._placeholder = QLabel(
-            "How to start Screen Control:\n"
-            "1) Select a device.\n"
-            "2) Configure Bit rate, Max size, and Max FPS.\n"
-            "3) Choose options (audio/fullscreen/embed) if needed.\n"
-            "4) Click Start.\n"
-            "5) Click Stop to end mirroring.\n\n"
-            "Preview appears here after mirror starts."
+            "Mirror preview area.\n\n"
+            "Pick a device and options on the left, then Start. "
+            "See the project user guide for details.\n\n"
+            "When mirroring, the phone screen appears here (or in a separate window if embed is off)."
         )
         self._placeholder.setWordWrap(True)
         self._placeholder.setAlignment(Qt.AlignCenter)
@@ -573,13 +570,10 @@ class ScrcpyTab(QWidget):
                 if w is not None:
                     w.deleteLater()
             self._placeholder = QLabel(
-                "How to start Screen Control:\n"
-                "1) Select a device.\n"
-                "2) Configure Bit rate, Max size, and Max FPS.\n"
-                "3) Choose options (audio/fullscreen/embed) if needed.\n"
-                "4) Click Start.\n"
-                "5) Click Stop to end mirroring.\n\n"
-                "Preview appears here after mirror starts."
+                "Mirror preview area.\n\n"
+                "Pick a device and options on the left, then Start. "
+                "See the project user guide for details.\n\n"
+                "When mirroring, the phone screen appears here (or in a separate window if embed is off)."
             )
             self._placeholder.setWordWrap(True)
             self._placeholder.setAlignment(Qt.AlignCenter)

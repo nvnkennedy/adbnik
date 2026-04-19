@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.0] - 2026-04-19
+
+### Fixed
+
+- **SSH / ADB plain-text terminal:** Lone carriage returns from the PTY are treated as line breaks so command output no longer glues to the typed command (e.g. `ls` + `bin` no longer appears as `lsbin`).
+- **SSH quick commands (Commands → SSH):** Injected lines force a clean line before sending so the remote prompt character does not stick to the end of the command.
+- **File Explorer (SFTP/FTP):** Single-file pull uses the active session again (a mistaken early return had sent all SFTP/FTP pulls through a secondary connection and skipped the inline path). After a successful single-file pull, the file is opened with the default app when possible; batch pull opens the last file if it is a file.
+
+### Changed
+
+- **Terminal tabs:** Session tab labels are color-coded (ADB green, SSH blue, serial yellow, local shells light gray). ADB shell tabs use the Android-style bookmark icon; **Session → ADB** and **Commands → ADB** menus use the same icon.
+- **Bookmarks:** Sidebar bookmark names turn **green** when a matching session tab is open and **red** when it is not.
+- **Hints:** Shortened or removed long “how to start” blocks on Terminal, File Explorer, and Screen Control (details live in the user guide).
+- **Application log:** Timestamp includes the date; rows are easier to scan with light- and dark-theme colors and a short placeholder explaining tags.
+
 ## [1.2.0] - 2026-04-19
 
 ### Added
