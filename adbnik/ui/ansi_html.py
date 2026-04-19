@@ -160,7 +160,7 @@ def preprocess_pty_stream(data: str) -> str:
     # Remove lines that contain only whitespace and ANSI SGR sequences (common in embedded logs)
     data = re.sub(r"(?m)^(?:\s|\x1b\[[0-9;]*m)+\s*$", "", data)
     # Merge runs of blank lines after stripping
-    data = re.sub(r"\n{3,}", "\n\n", data)
+    data = re.sub(r"\n{2,}", "\n", data)
     return data
 
 
@@ -188,7 +188,7 @@ def preprocess_escape_noise(data: str) -> str:
     data = re.sub(r"(?m)^\s*\[\s*$", "", data)
     # Qt may paint bare 0x1b as a visible "ESC" glyph; drop lone ESC not starting CSI (\x1b[) or OSC (\x1b]).
     data = re.sub(r"\x1b(?![\[\]])", "", data)
-    data = re.sub(r"\n{3,}", "\n\n", data)
+    data = re.sub(r"\n{2,}", "\n", data)
     return data
 
 
@@ -217,7 +217,7 @@ def preprocess_serial_stream(data: str) -> str:
     data = re.sub(r"(?m)^(?:\s|\x1b\[[0-9;]*m|\[(?:0;)?39m|\[39m|\[0m)+\s*$", "", data)
     # Newline sandwiched between resets (still doubles vertical space)
     data = re.sub(r"\n(?:\s*\x1b\[[0-9;]*m)+\s*\n", "\n", data)
-    data = re.sub(r"\n{3,}", "\n\n", data)
+    data = re.sub(r"\n{2,}", "\n", data)
     # Last resort: QTextEdit can still paint U+001B as a visible "ESC" — remove any survivors.
     data = data.replace("\x1b", "").replace("\u009b", "").replace("\u241b", "")
     # Orphan ``0;39m`` without ``[`` (UART bit errors)

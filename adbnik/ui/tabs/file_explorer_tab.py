@@ -150,6 +150,28 @@ def _ftp_safe_delete_file(ftp: FTP, filename: str) -> None:
     _ftp_void(ftp, "DELE " + _ftp_quote_token(filename))
 
 
+def _sftp_mkdir_p_impl(sftp: Any, remote_dir: str) -> None:
+    """Create each path segment; only ignores 'already exists' on mkdir."""
+    r = remote_dir.replace("\\", "/").rstrip("/")
+    if not r or r == "/":
+        return
+    acc = ""
+    for p in [x for x in r.split("/") if x]:
+        acc = f"{acc}/{p}" if acc else f"/{p}"
+        try:
+            sftp.stat(acc)
+            continue
+        except (OSError, IOError) as e:
+            en = getattr(e, "errno", None)
+            if en not in (errno.ENOENT, 2) and en is not None:
+                raise OSError(f"SFTP stat {acc!r}: {e}") from e
+        try:
+            sftp.mkdir(acc)
+        except (OSError, IOError) as e:
+            if not _sftp_is_exists_err(e):
+                raise
+
+
 def _sftp_is_exists_err(exc: BaseException) -> bool:
     en = getattr(exc, "errno", None)
     if en in (errno.EEXIST, 17):
@@ -247,6 +269,9 @@ def _sftp_rm_rf(sftp: Any, path: str) -> None:
         try:
             sftp.rmdir(path)
         except (OSError, IOError, Exception) as e:
+            en = getattr(e, "errno", None)
+            if en in (errno.ENOENT, 2) or "no such file" in str(e).lower():
+                return
             raise OSError(f"SFTP rmdir failed for {path!r}: {e}") from e
 
 
@@ -1390,22 +1415,7 @@ class _RemoteTransferThread(QThread):
         sftp.get(remote_path, local_path, callback=_cb)
 
     def _sftp_mkdir_p(self, sftp, remote_dir: str) -> None:
-        r = remote_dir.replace("\\", "/").rstrip("/")
-        if not r or r == "/":
-            return
-        acc = ""
-        for p in [x for x in r.split("/") if x]:
-            acc = f"{acc}/{p}" if acc else f"/{p}"
-            try:
-                sftp.stat(acc)
-                continue
-            except Exception:
-                pass
-            try:
-                sftp.mkdir(acc)
-            except Exception as e:
-                if not _sftp_is_exists_err(e):
-                    raise
+        _sftp_mkdir_p_impl(sftp, remote_dir)
 
     def _ftp_put(self, ftp, local_path: str, remote_dir: str, idx: int, total: int) -> None:
         if Path(local_path).is_dir():
@@ -2953,23 +2963,7 @@ class ExplorerSessionPage(QWidget):
 
     def _sftp_mkdir_p(self, remote_dir: str) -> None:
         assert self._sftp_client is not None
-        r = remote_dir.replace("\\", "/").rstrip("/")
-        if not r or r == "/":
-            return
-        parts = [p for p in r.split("/") if p]
-        acc = ""
-        for p in parts:
-            acc = f"{acc}/{p}" if acc else f"/{p}"
-            try:
-                self._sftp_client.stat(acc)
-                continue
-            except (OSError, IOError):
-                pass
-            try:
-                self._sftp_client.mkdir(acc)
-            except (OSError, IOError) as e:
-                if not _sftp_is_exists_err(e):
-                    raise
+        _sftp_mkdir_p_impl(self._sftp_client, remote_dir)
 
     def _sftp_put_tree(self, local_root: Path, remote_parent: str) -> bool:
         assert self._sftp_client is not None
