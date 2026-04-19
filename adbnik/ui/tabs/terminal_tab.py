@@ -17,7 +17,7 @@ from ...services.commands import run_adb
 from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 
 from PyQt5.QtCore import QEventLoop, QProcessEnvironment, QSize, Qt, QProcess, QTimer, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QFont, QKeySequence, QTextCharFormat, QTextCursor
+from PyQt5.QtGui import QBrush, QColor, QFont, QKeySequence, QTextCharFormat, QTextCursor, QTextOption
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -551,7 +551,9 @@ class ShellPlainTextEdit(QTextEdit):
         self.setCursorWidth(2)
         self.setUndoRedoEnabled(False)
         self.setAcceptRichText(True)
-        self.setLineWrapMode(QTextEdit.NoWrap)
+        # Wrap at pane width — avoids a permanent horizontal scrollbar; long lines still readable.
+        self.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.setWordWrapMode(QTextOption.WrapAnywhere)
         self.setTabChangesFocus(False)
         try:
             self.document().setMaximumBlockCount(60000)
@@ -1164,7 +1166,7 @@ class SessionWidget(QWidget):
                     f"\n[serial] Reset {com} via Device Manager class APIs (disable/enable). "
                     f"Waiting before reopening the port…\n"
                 )
-                time.sleep(2.5)
+                time.sleep(1.0)
 
         self._ansi.reset()
         self._trim_first_pty_chunk = bool(self._banner)
@@ -1189,15 +1191,15 @@ class SessionWidget(QWidget):
         self.output.setObjectName("MobaTerminalOutput")
         self.output.setFont(QFont("Consolas", 10))
         self.output.set_terminal_font_size(10)
-        self.output.setLineWrapMode(QTextEdit.NoWrap)
         # Block limit is set on QTextDocument inside ShellPlainTextEdit (QTextEdit has no setMaximumBlockCount).
         self.output.set_on_commit(self._send_line)
         self.output.setContextMenuPolicy(Qt.DefaultContextMenu)
         self.output.set_on_save_buffer(self._save_buffer_as)
         self.output.set_on_tab_key(self._send_tab_to_shell)
         self.output.set_session_running(lambda: self.proc.state() == QProcess.Running)
-        self.output.set_skip_bridging_newline(lambda: self._is_serial_session)
-        self.output.set_remote_pty_relaxed_bridging(self._is_remote_pty_shell)
+        # Remote shells echo line endings; a synthetic newline after send duplicates prompts and blanks (SSH/ADB/serial).
+        self.output.set_skip_bridging_newline(lambda: self._is_serial_session or self._is_remote_pty_shell)
+        self.output.set_remote_pty_relaxed_bridging(False)
         self.output.set_on_clear_buffer(self._on_terminal_cleared)
         # Reliable font zoom shortcuts on terminal widget.
         self._zoom_in_sc = QShortcut(QKeySequence.ZoomIn, self.output)
@@ -1777,10 +1779,10 @@ class SessionWidget(QWidget):
         self._send_line((line or "").rstrip("\n"))
 
     def _tighten_pty_chunk(self, text: str) -> str:
-        """Collapse runaway blank lines (ADB/SSH/serial) without merging every pair (avoids choppy slog2info-style streams)."""
+        """Collapse stacked newlines from PTY/serial (embedded shells often emit extra LFs)."""
         if not text:
             return text
-        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"\n{2,}", "\n", text)
         text = text.replace(r"\ ", " ")
         if self._tail_cache.endswith("\n") and text.startswith("\n"):
             text = text[1:]
@@ -1797,7 +1799,6 @@ class SessionWidget(QWidget):
         else:
             # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
             data = preprocess_escape_noise(data)
-        data = re.sub(r"\n{3,}", "\n\n", data)
         if self._trim_first_pty_chunk:
             data = data.lstrip("\n")
             if not data:
@@ -1825,9 +1826,10 @@ class SessionWidget(QWidget):
             plain = strip_ansi_for_display(data)
             if not plain:
                 return
-            # CRLF → LF; lone CR (progress / same-line redraw e.g. slog2info) must NOT become LF or lines break mid-token.
+            # CRLF → LF; lone CR = same-line redraw (slog2info / spinners) — strip, do not convert to LF.
             plain = plain.replace("\r\n", "\n")
             plain = plain.replace("\r", "")
+            plain = re.sub(r"\n{2,}", "\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]
             self._pending_chunks.append(plain)
@@ -1894,7 +1896,7 @@ class SessionWidget(QWidget):
                     ensure_visible=(self._remote_ui_tick % every == 0),
                 )
                 self._sync_python_repl_mode()
-                if self._remote_ui_tick % 5 == 0:
+                if self._remote_ui_tick % 24 == 0:
                     QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
             else:
                 self._append_output_html(text)

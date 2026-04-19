@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [0.7.0] - 2026-04-19
+
+### Fixed
+
+- **SSH / ADB / serial terminals:** Stopped inserting a **synthetic newline after every Enter** on remote PTY sessions (shell already echoes line endings) — removes stacked `#` prompts, split commands, and double-spaced `ls` output. Tightened newline collapsing in the PTY path and in ANSI/serial preprocessors.
+- **Serial UART logs:** Fewer blank lines between log records; PnP COM reset wait shortened slightly.
+- **SFTP:** `rmdir` treats **ENOENT** as success (race / already removed). **`mkdir -p`** uses one shared implementation that only ignores true “exists” errors and surfaces bad `stat` results.
+- **Horizontal scrolling:** Terminal uses **word wrap at widget width** instead of `NoWrap`.
+- **Idle “Not responding”:** **ADB device + stats timers pause** when the app is in the **background**; device stats label updates are scheduled with **`qt_thread_updater.call_latest`**. Less frequent `processEvents` during remote PTY flush.
+
 ## [0.6.0] - 2026-04-19
 
 ### Fixed

@@ -130,10 +130,24 @@ class MainWindow(QMainWindow):
         self._adb_stats_timer.timeout.connect(self.refresh_device_stats)
         self._adb_stats_timer.start()
         self._scrcpy_hotkey_registered = False
+        _app = QApplication.instance()
+        if _app is not None:
+            _app.applicationStateChanged.connect(self._on_application_state_changed)
 
     def showEvent(self, event):
         super().showEvent(event)
         # Avoid duplicate startup refresh work; timer + initial call handle it.
+
+    def _on_application_state_changed(self, state: Qt.ApplicationState) -> None:
+        """Pause ADB timers in the background to cut idle CPU and reduce long-session UI stalls."""
+        if state != Qt.ApplicationActive:
+            self._adb_poll_timer.stop()
+            self._adb_stats_timer.stop()
+        else:
+            self._adb_poll_timer.start()
+            self._adb_stats_timer.start()
+            self.refresh_devices()
+            self.refresh_device_stats()
 
     def append_log(self, message: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
@@ -627,7 +641,12 @@ class MainWindow(QMainWindow):
             self._apply_device_stats("Uptime -- · CPU -- · RAM --")
         else:
             txt = self._parse_device_stats(serial, str(raw or ""))
-            self._apply_device_stats(txt)
+            try:
+                from qt_thread_updater import call_latest
+
+                call_latest(self._apply_device_stats, txt)
+            except Exception:
+                self._apply_device_stats(txt)
         if self._stats_refresh_pending:
             self._stats_refresh_pending = False
             self.refresh_device_stats()
