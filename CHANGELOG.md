@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.0.0] - 2026-04-19
+
+First stable release under semantic versioning.
+
+### Added
+
+- **Windows `adbnik-setup`:** After `pip install adbnik`, run `adbnik-setup` to place an **Adbnik** shortcut (chosen folder, same Python as `pip`, app icon cached under `%LOCALAPPDATA%\Adbnik\`). Options: `--folder`, `--name`.
+- **File explorer:** **Rename** (context menu, toolbar, **F2**) for local and remote items (ADB `mv`, SFTP/FTP rename). **Backspace** navigates up in the panes but **does not** steal keys while renaming or typing in **New file/folder** dialogs (dialogs parented to the main window).
+- **Terminal:** Tab bar **Increase / Decrease / Reset font size** applies to **existing** scrollback (HTML output), not only new text.
+
+### Changed
+
+- **README** and **PyPI** metadata: production-oriented copy; distinct **Homepage**, **Repository**, **Documentation**, and **Changelog** URLs; name etymology (**ADB** + **-nik**, as in *technik*).
+
+### Fixed
+
+- **Explorer:** **Backspace** no longer conflicts with **QInputDialog** text fields when the dialog was parented to the session page.
+
 ## [0.7.0] - 2026-04-19
 
 ### Fixed

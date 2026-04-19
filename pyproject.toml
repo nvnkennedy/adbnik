@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adbnik"
-version = "0.7.0"
-description = "Adbnik — ADB device workspace: shell, APK install, SSH, serial, files, USB screen (PyQt5 desktop)."
+version = "1.0.0"
+description = "PyQt5 desktop workspace for Android ADB, SSH/serial terminals, SFTP/FTP file transfer, and screen-mirroring integration."
 readme = "README.md"
 # Use the LICENSE file so PyPI can show full text ("View license"); `text = "MIT"` alone is too minimal and often breaks that page.
 license = { file = "LICENSE" }
@@ -16,7 +16,7 @@ authors = [{ name = "Adbnik contributors" }]
 keywords = ["android", "adb", "apk", "ssh", "serial", "scrcpy", "pyqt5", "sftp", "desktop", "screen-mirroring"]
 classifiers = [
   "License :: OSI Approved :: MIT License",
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: X11 Applications :: Qt",
   "Environment :: Win32 (MS Windows)",
   "Intended Audience :: Developers",
@@ -42,12 +42,13 @@ build = ["pyinstaller>=6.0,<7.0"]
 
 [project.scripts]
 adbnik = "adbnik.app:main"
+adbnik-setup = "adbnik.setup_shortcut:main"
 
 [project.urls]
 Homepage = "https://nvnkennedy.github.io/adbnik/"
 Repository = "https://github.com/nvnkennedy/adbnik"
-Documentation = "https://github.com/nvnkennedy/adbnik#readme"
-"PyPI" = "https://pypi.org/project/adbnik/"
+Documentation = "https://github.com/nvnkennedy/adbnik/blob/main/README.md"
+Changelog = "https://github.com/nvnkennedy/adbnik/releases"
 
 [tool.setuptools.packages.find]
 where = ["."]

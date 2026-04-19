@@ -180,6 +180,9 @@ def preprocess_escape_noise(data: str) -> str:
     # Orphan reset lines: [0;39m], [39m], [0m] when ESC was dropped or split across lines
     data = re.sub(r"(?m)^\s*\[(?:0;)?39m\s*$", "", data)
     data = re.sub(r"(?m)^\s*\[0m\s*$", "", data)
+    # Whole line is only bare ``0;39m`` / ``0.39m`` (UART split CSI)
+    data = re.sub(r"(?m)^\s*0;39m\s*$", "", data)
+    data = re.sub(r"(?m)^\s*0\.39m\s*$", "", data, flags=re.I)
     # CSI SGR without leading ESC (UART / logging dropped 0x1b) — strip anywhere
     data = re.sub(r"(?<!\x1b)\[(?:\d{1,4};)*\d{1,4}m", "", data)
     data = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", data)
@@ -213,15 +216,24 @@ def preprocess_serial_stream(data: str) -> str:
     data = re.sub(r"(?<!\x1b)\[0\.39m", "", data)
     data = re.sub(r"(?<!\x1b)\[39m", "", data)
     data = re.sub(r"(?<!\x1b)\[0m\b", "", data)
+    # Bare fragments without ``[`` (split UART / corrupted CSI)
+    data = re.sub(r"(?<![\[\x1b])0\.39m", "", data, flags=re.I)
+    data = re.sub(r"(?<![\[\x1b])0;39m", "", data)
     # Lines that contain only SGR noise
-    data = re.sub(r"(?m)^(?:\s|\x1b\[[0-9;]*m|\[(?:0;)?39m|\[39m|\[0m)+\s*$", "", data)
+    data = re.sub(
+        r"(?m)^(?:\s|\x1b\[[0-9;]*m|\[(?:0;)?39m|\[39m|\[0m|0;39m|0\.39m)+\s*$",
+        "",
+        data,
+        flags=re.I,
+    )
     # Newline sandwiched between resets (still doubles vertical space)
     data = re.sub(r"\n(?:\s*\x1b\[[0-9;]*m)+\s*\n", "\n", data)
     data = re.sub(r"\n{2,}", "\n", data)
     # Last resort: QTextEdit can still paint U+001B as a visible "ESC" — remove any survivors.
     data = data.replace("\x1b", "").replace("\u009b", "").replace("\u241b", "")
-    # Orphan ``0;39m`` without ``[`` (UART bit errors)
+    # Orphan ``0;39m`` / ``0.39m`` without ``[`` (UART bit errors)
     data = data.replace("0;39m", "").replace("[0;39m", "")
+    data = re.sub(r"(?<![\[\x1b])0\.39m", "", data, flags=re.I)
     return data
 
 
@@ -248,6 +260,8 @@ def strip_ansi_for_display(text: str) -> str:
     text = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", text)
     text = re.sub(r"(?<!\x1b)\[0\.39m", "", text)
     text = text.replace("0;39m", "").replace("[0;39m", "")
+    text = re.sub(r"(?<![\[\x1b])0\.39m", "", text, flags=re.I)
+    text = re.sub(r"(?<![\[\x1b])0;39m", "", text)
     text = text.replace("\x1b", "").replace("\u009b", "")
     return text
 

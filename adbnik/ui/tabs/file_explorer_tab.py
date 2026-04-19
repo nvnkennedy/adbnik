@@ -1,10 +1,10 @@
 import errno
-import hashlib
 import io
 import json
 import os
 import posixpath
 import re
+import shlex
 import sys
 import threading
 import time
@@ -113,6 +113,71 @@ def _ftp_quote_token(name: str) -> str:
     if any(c in s for c in ' \t"'):
         return '"' + s.replace('"', '""') + '"'
     return s
+
+
+# SSH_FX_* (paramiko SFTP) — errno on IOError; see RFC 4254 / OpenSSH sftp-common.h
+_SFTP_FX_MEANING: Dict[int, str] = {
+    0: "OK",
+    1: "End of file",
+    2: "No such file or directory",
+    3: "Permission denied",
+    4: "Failure (generic server error)",
+    5: "Bad message",
+    6: "No connection",
+    7: "Connection lost",
+    8: "Operation unsupported",
+    9: "Invalid handle",
+    10: "No such path (directory component missing)",
+    11: "File already exists",
+    12: "Write protect",
+    13: "No such file system",
+    14: "Unknown error from storage back-end",
+    15: "Lock conflict",
+    16: "Directory not empty",
+    17: "Not a directory",
+    18: "Invalid filename / invalid characters",
+    19: "Text file busy",
+    20: "Byte range lock conflict",
+}
+
+
+def _remote_fs_error_message(
+    exc: BaseException,
+    *,
+    ftp: Optional[FTP] = None,
+    sftp: bool = False,
+) -> str:
+    """Human-readable error for SFTP/FTP/OS failures; includes the last FTP server line when available."""
+    parts: List[str] = []
+    main = str(exc).strip()
+    if main:
+        parts.append(main)
+    st = getattr(exc, "strerror", None)
+    if st:
+        ss = str(st).strip()
+        if ss and ss not in main:
+            parts.append(ss)
+    errno_v = getattr(exc, "errno", None)
+    if errno_v is not None:
+        es = f"errno={errno_v}"
+        if es not in main:
+            parts.append(es)
+        if sftp:
+            fx = _SFTP_FX_MEANING.get(int(errno_v))
+            if fx and fx not in main:
+                parts.append(f"SFTP: {fx} (status code {errno_v})")
+    fn = getattr(exc, "filename", None)
+    if fn:
+        fs = str(fn).strip()
+        if fs and fs not in main:
+            parts.append(f"Path: {fs}")
+    if ftp is not None:
+        lr = getattr(ftp, "lastresp", None)
+        if lr:
+            s = str(lr).strip()
+            if s and s not in main:
+                parts.append(f"FTP: {s}")
+    return "\n".join(parts) if parts else type(exc).__name__
 
 
 def _ftp_void(ftp: FTP, cmd: str) -> str:
@@ -326,6 +391,15 @@ def _safe_mode_oct(mode: object) -> str:
         return oct(int(mode) & 0xFFFFFFFF)
     except (TypeError, ValueError, OverflowError):
         return "—"
+
+
+def _validated_rename_basename(name: str) -> Optional[str]:
+    n = (name or "").strip()
+    if not n or n in (".", ".."):
+        return None
+    if any(c in n for c in "/\\:\x00"):
+        return None
+    return n
 
 
 def _push_find_folder_history(cfg: Optional[AppConfig], side: str, folder: str) -> None:
@@ -815,6 +889,9 @@ class LocalFileTable(QTableWidget):
             ev.key() == Qt.Key_Backspace
             and not (ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
         ):
+            if self.state() == QAbstractItemView.EditingState:
+                super().keyPressEvent(ev)
+                return
             if self._on_backspace_up:
                 self._on_backspace_up()
             else:
@@ -948,6 +1025,9 @@ class RemoteFileTable(QTableWidget):
             ev.key() == Qt.Key_Backspace
             and not (ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
         ):
+            if self.state() == QAbstractItemView.EditingState:
+                super().keyPressEvent(ev)
+                return
             if self._on_backspace_up:
                 self._on_backspace_up()
             else:
@@ -1286,7 +1366,7 @@ class _RemoteTransferThread(QThread):
             else:
                 self.done.emit(False, "", f"Unsupported transfer kind: {self._kind}")
         except Exception as exc:
-            self.done.emit(False, "", str(exc))
+            self.done.emit(False, "", _remote_fs_error_message(exc, sftp=(self._kind == "sftp")))
 
     def _progress(self, idx: int, total: int, pct: int, msg: str) -> None:
         base = int((idx * 100) / max(total, 1))
@@ -1310,23 +1390,27 @@ class _RemoteTransferThread(QThread):
         total = max(len(self._items), 1)
         try:
             for idx, it in enumerate(self._items):
-                if self._mode == "push":
-                    lp = Path(str(it.get("local", "")))
-                    if not lp.exists():
-                        continue
-                    rp = posixpath.join(self._remote_path.rstrip("/"), lp.name).replace("\\", "/")
-                    self._sftp_put(sftp, str(lp), rp, idx, total)
-                    last = lp.name
-                    ok += 1
-                else:
-                    rp = str(it.get("remote", "")).replace("\\", "/")
-                    if not rp:
-                        continue
-                    name = posixpath.basename(rp.rstrip("/")) or "item"
-                    lp = str(Path(self._local_path) / name)
-                    self._sftp_get(sftp, rp, lp, idx, total)
-                    last = name
-                    ok += 1
+                try:
+                    if self._mode == "push":
+                        lp = Path(str(it.get("local", "")))
+                        if not lp.exists():
+                            continue
+                        rp = posixpath.join(self._remote_path.rstrip("/"), lp.name).replace("\\", "/")
+                        self._sftp_put(sftp, str(lp), rp, idx, total)
+                        last = lp.name
+                        ok += 1
+                    else:
+                        rp = str(it.get("remote", "")).replace("\\", "/")
+                        if not rp:
+                            continue
+                        name = posixpath.basename(rp.rstrip("/")) or "item"
+                        lp = str(Path(self._local_path) / name)
+                        self._sftp_get(sftp, rp, lp, idx, total)
+                        last = name
+                        ok += 1
+                except Exception as exc:
+                    self.done.emit(False, "", _remote_fs_error_message(exc, sftp=True))
+                    return
             self.done.emit(True, last, f"Transferred {ok} item(s).")
         finally:
             disconnect_sftp(t, sftp)
@@ -1347,22 +1431,26 @@ class _RemoteTransferThread(QThread):
         total = max(len(self._items), 1)
         try:
             for idx, it in enumerate(self._items):
-                if self._mode == "push":
-                    lp = Path(str(it.get("local", "")))
-                    if not lp.exists():
-                        continue
-                    self._ftp_put(ftp, str(lp), self._remote_path, idx, total)
-                    last = lp.name
-                    ok += 1
-                else:
-                    rp = str(it.get("remote", "")).replace("\\", "/")
-                    if not rp:
-                        continue
-                    name = posixpath.basename(rp.rstrip("/")) or "item"
-                    lp = str(Path(self._local_path) / name)
-                    self._ftp_get(ftp, rp, lp, idx, total, is_dir=bool(it.get("is_dir")))
-                    last = name
-                    ok += 1
+                try:
+                    if self._mode == "push":
+                        lp = Path(str(it.get("local", "")))
+                        if not lp.exists():
+                            continue
+                        self._ftp_put(ftp, str(lp), self._remote_path, idx, total)
+                        last = lp.name
+                        ok += 1
+                    else:
+                        rp = str(it.get("remote", "")).replace("\\", "/")
+                        if not rp:
+                            continue
+                        name = posixpath.basename(rp.rstrip("/")) or "item"
+                        lp = str(Path(self._local_path) / name)
+                        self._ftp_get(ftp, rp, lp, idx, total, is_dir=bool(it.get("is_dir")))
+                        last = name
+                        ok += 1
+                except Exception as exc:
+                    self.done.emit(False, "", _remote_fs_error_message(exc, ftp=ftp))
+                    return
             self.done.emit(True, last, f"Transferred {ok} item(s).")
         finally:
             disconnect_ftp(ftp)
@@ -1511,13 +1599,27 @@ class _RemoteTransferThread(QThread):
 class _RemoteListThread(QThread):
     done = pyqtSignal(object, str)
 
-    def __init__(self, *, kind: str, adb_path: str, adb_args: List[str], remote_path: str, creds: dict):
+    def __init__(
+        self,
+        *,
+        kind: str,
+        adb_path: str,
+        adb_args: List[str],
+        remote_path: str,
+        creds: dict,
+        sftp_transport: Any = None,
+        sftp_client: Any = None,
+        ftp_client: Any = None,
+    ):
         super().__init__(None)
         self._kind = kind
         self._adb_path = adb_path
         self._adb_args = list(adb_args)
         self._remote_path = remote_path
         self._creds = dict(creds or {})
+        self._borrowed_sftp_transport = sftp_transport
+        self._borrowed_sftp_client = sftp_client
+        self._borrowed_ftp_client = ftp_client
 
     def run(self) -> None:
         rows = []
@@ -1544,16 +1646,21 @@ class _RemoteListThread(QThread):
                 self.done.emit(rows, "")
                 return
             if self._kind == "sftp":
-                t, sftp, e = connect_sftp(
-                    self._creds.get("host", ""),
-                    int(self._creds.get("port", 22) or 22),
-                    self._creds.get("user", ""),
-                    self._creds.get("password", ""),
-                    timeout=45,
-                )
-                if e or sftp is None:
-                    self.done.emit(rows, e or "SFTP connection failed.")
-                    return
+                borrowed = self._borrowed_sftp_client is not None
+                if borrowed:
+                    t = self._borrowed_sftp_transport
+                    sftp = self._borrowed_sftp_client
+                else:
+                    t, sftp, e = connect_sftp(
+                        self._creds.get("host", ""),
+                        int(self._creds.get("port", 22) or 22),
+                        self._creds.get("user", ""),
+                        self._creds.get("password", ""),
+                        timeout=45,
+                    )
+                    if e or sftp is None:
+                        self.done.emit(rows, e or "SFTP connection failed.")
+                        return
                 try:
                     attrs = sftp_listdir_attr_safe(sftp, rp.rstrip("/") or "/")
                     rp_base = rp.rstrip("/") or "/"
@@ -1571,19 +1678,24 @@ class _RemoteListThread(QThread):
                         rows.append((RemoteItem(name, is_dir, perm, "", "", sz, mt), full))
                     self.done.emit(rows, "")
                 finally:
-                    disconnect_sftp(t, sftp)
+                    if not borrowed:
+                        disconnect_sftp(t, sftp)
                 return
             if self._kind == "ftp":
-                ftp, e = connect_ftp(
-                    self._creds.get("host", ""),
-                    int(self._creds.get("port", 21) or 21),
-                    self._creds.get("user", ""),
-                    self._creds.get("password", ""),
-                    timeout=45,
-                )
-                if e or ftp is None:
-                    self.done.emit(rows, e or "FTP connection failed.")
-                    return
+                borrowed_ftp = self._borrowed_ftp_client is not None
+                if borrowed_ftp:
+                    ftp = self._borrowed_ftp_client
+                else:
+                    ftp, e = connect_ftp(
+                        self._creds.get("host", ""),
+                        int(self._creds.get("port", 21) or 21),
+                        self._creds.get("user", ""),
+                        self._creds.get("password", ""),
+                        timeout=45,
+                    )
+                    if e or ftp is None:
+                        self.done.emit(rows, e or "FTP connection failed.")
+                        return
                 try:
                     _ftp_safe_cwd(ftp, rp.rstrip("/") or "/")
                     try:
@@ -1610,7 +1722,8 @@ class _RemoteListThread(QThread):
                             rows.append(_ftp_remote_item_nlst(ftp, name, full))
                     self.done.emit(rows, "")
                 finally:
-                    disconnect_ftp(ftp)
+                    if not borrowed_ftp:
+                        disconnect_ftp(ftp)
                 return
             self.done.emit(rows, f"Unsupported remote kind: {self._kind}")
         except Exception as exc:
@@ -1794,7 +1907,14 @@ class _SftpFtpDeleteThread(QThread):
                 return
             self.done.emit(True, "")
         except Exception as exc:
-            self.done.emit(False, str(exc))
+            self.done.emit(
+                False,
+                _remote_fs_error_message(
+                    exc,
+                    ftp=self._ftp if self._kind == "ftp" else None,
+                    sftp=(self._kind == "sftp"),
+                ),
+            )
 
 
 _FIND_FILES_DIALOG_QSS_DARK = """
@@ -2061,9 +2181,6 @@ class ExplorerSessionPage(QWidget):
         self._remote_history: List[str] = []
         self._build_ui()
         QApplication.instance().installEventFilter(self)
-        self._backspace_page_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self)
-        self._backspace_page_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        self._backspace_page_shortcut.activated.connect(self._handle_backspace_nav)
         self.refresh_local()
         self.refresh_remote()
 
@@ -2119,8 +2236,36 @@ class ExplorerSessionPage(QWidget):
             w = w.parentWidget()
         return False
 
+    def _is_editing_table_item(self, fw: Any) -> bool:
+        """True while renaming / inline-editing a file or folder name in a table."""
+        if fw is None or not isinstance(fw, QLineEdit):
+            return False
+        for table in (self.local_table, self.remote_table):
+            try:
+                if table.state() == QAbstractItemView.EditingState and self._is_descendant_of(fw, table):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _dlg_parent(self) -> QWidget:
+        """Parent for input dialogs — top-level window so shortcuts on the session page do not steal keys."""
+        w = self.window()
+        return w if isinstance(w, QWidget) else self
+
+    def _should_skip_backspace_nav(self, fw: Any) -> bool:
+        """Backspace should edit text (table rename, modal name fields), not navigate up a folder."""
+        if self._is_editing_table_item(fw):
+            return True
+        modal = QApplication.activeModalWidget()
+        if modal is not None and fw is not None and self._is_descendant_of(fw, modal):
+            return True
+        return False
+
     def _handle_backspace_nav(self) -> bool:
         fw = QApplication.focusWidget()
+        if self._should_skip_backspace_nav(fw):
+            return False
         if fw is None:
             if self._last_active_side == "remote":
                 self.remote_up()
@@ -2156,6 +2301,8 @@ class ExplorerSessionPage(QWidget):
             mods = ev.modifiers()
             if not (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
                 fw = QApplication.focusWidget()
+                if self._should_skip_backspace_nav(fw):
+                    return super().eventFilter(obj, ev)
                 if fw is not None and self._is_descendant_of(fw, self) and self._handle_backspace_nav():
                     ev.accept()
                     return True
@@ -2173,6 +2320,9 @@ class ExplorerSessionPage(QWidget):
 
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key_Backspace and not (ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
+            if self._should_skip_backspace_nav(QApplication.focusWidget()):
+                super().keyPressEvent(ev)
+                return
             if self._handle_backspace_nav():
                 ev.accept()
                 return
@@ -2394,6 +2544,7 @@ class ExplorerSessionPage(QWidget):
             ("Create new empty file here", QStyle.SP_FileDialogStart, self.new_local_file, "ExplorerNewFileBtn"),
             ("Open with default application", QStyle.SP_DialogOpenButton, self.open_local, "WinScpIconBtn"),
             ("Edit in text editor", QStyle.SP_FileDialogDetailedView, self.edit_local, "ExplorerEditBtn"),
+            ("Rename", QStyle.SP_FileDialogContentsView, self.rename_local, "WinScpIconBtn"),
             ("Delete", QStyle.SP_TrashIcon, self.delete_local, "WinScpIconBtn"),
             ("Properties", QStyle.SP_FileDialogInfoView, self.local_properties, "WinScpIconBtn"),
         ]:
@@ -2489,6 +2640,7 @@ class ExplorerSessionPage(QWidget):
             ("Create new empty file here", QStyle.SP_FileDialogStart, self.new_remote_file, "ExplorerNewFileBtn"),
             ("Open with default application (download first)", QStyle.SP_DialogOpenButton, self.open_remote, "WinScpIconBtn"),
             ("Edit in text editor", QStyle.SP_FileDialogDetailedView, self.edit_remote, "ExplorerEditBtn"),
+            ("Rename", QStyle.SP_FileDialogContentsView, self.rename_selected_remote, "WinScpIconBtn"),
             ("Delete", QStyle.SP_TrashIcon, self.delete_selected_remote, "WinScpIconBtn"),
             ("Properties", QStyle.SP_FileDialogInfoView, self.remote_properties, "WinScpIconBtn"),
         ]:
@@ -2541,11 +2693,10 @@ class ExplorerSessionPage(QWidget):
             self.remote_address.lineEdit().installEventFilter(self)
         QShortcut(QKeySequence(Qt.Key_F5), self.local_table, self.refresh_local)
         QShortcut(QKeySequence(Qt.Key_Delete), self.local_table, self.delete_local)
+        QShortcut(QKeySequence(Qt.Key_F2), self.local_table, self.rename_local)
         QShortcut(QKeySequence(Qt.Key_F5), self.remote_table, self.refresh_remote)
         QShortcut(QKeySequence(Qt.Key_Delete), self.remote_table, self.delete_selected_remote)
-        self._backspace_nav_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self)
-        self._backspace_nav_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        self._backspace_nav_shortcut.activated.connect(self._handle_backspace_nav)
+        QShortcut(QKeySequence(Qt.Key_F2), self.remote_table, self.rename_selected_remote)
 
         header_grid = QGridLayout()
         header_grid.setContentsMargins(0, 0, 0, 0)
@@ -2620,6 +2771,11 @@ class ExplorerSessionPage(QWidget):
         a_edit = m.addAction("Edit in text editor")
         a_edit.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
         a_edit.triggered.connect(self.edit_local)
+        a_ren = m.addAction("Rename")
+        a_ren.setIcon(self.style().standardIcon(QStyle.SP_FileDialogContentsView))
+        a_ren.setShortcut(QKeySequence(Qt.Key_F2))
+        a_ren.setShortcutVisibleInContextMenu(True)
+        a_ren.triggered.connect(self.rename_local)
         a_del = m.addAction("Delete")
         a_del.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
         a_del.triggered.connect(self.delete_local)
@@ -2658,6 +2814,11 @@ class ExplorerSessionPage(QWidget):
         a_edit = m.addAction("Edit in text editor")
         a_edit.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
         a_edit.triggered.connect(self.edit_remote)
+        a_renr = m.addAction("Rename")
+        a_renr.setIcon(self.style().standardIcon(QStyle.SP_FileDialogContentsView))
+        a_renr.setShortcut(QKeySequence(Qt.Key_F2))
+        a_renr.setShortcutVisibleInContextMenu(True)
+        a_renr.triggered.connect(self.rename_selected_remote)
         a_del = m.addAction("Delete")
         a_del.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
         a_del.triggered.connect(self.delete_selected_remote)
@@ -3890,6 +4051,9 @@ class ExplorerSessionPage(QWidget):
             adb_args=self._adb_prefix(),
             remote_path=self.remote_path,
             creds=creds,
+            sftp_transport=self._sftp_transport if self.kind == "sftp" else None,
+            sftp_client=self._sftp_client if self.kind == "sftp" else None,
+            ftp_client=self._ftp_client if self.kind == "ftp" else None,
         )
         th.done.connect(self._on_remote_refresh_done)
         th.finished.connect(th.deleteLater)
@@ -4068,7 +4232,7 @@ class ExplorerSessionPage(QWidget):
         dlg.exec_()
 
     def new_local_file(self) -> None:
-        name, ok = QInputDialog.getText(self, "New file", "File name:")
+        name, ok = QInputDialog.getText(self._dlg_parent(), "New file", "File name:")
         if not ok or not name.strip():
             return
         p = Path(self.local_path) / name.strip()
@@ -4082,7 +4246,7 @@ class ExplorerSessionPage(QWidget):
             QMessageBox.warning(self, "New file", str(exc))
 
     def new_local_folder(self) -> None:
-        name, ok = QInputDialog.getText(self, "New folder", "Folder name:")
+        name, ok = QInputDialog.getText(self._dlg_parent(), "New folder", "Folder name:")
         if not ok or not name.strip():
             return
         p = Path(self.local_path) / name.strip()
@@ -4184,6 +4348,36 @@ class ExplorerSessionPage(QWidget):
             return
         QMessageBox.warning(self, "Delete", err or "Delete failed.")
 
+    def rename_local(self) -> None:
+        path = self._selected_local()
+        if not path:
+            QMessageBox.information(self, "Rename", "Select a local file or folder first.")
+            return
+        p = Path(path)
+        if not p.exists():
+            return
+        old_name = p.name
+        name, ok = QInputDialog.getText(self._dlg_parent(), "Rename", "New name:", text=old_name)
+        if not ok:
+            return
+        new_name = _validated_rename_basename(name)
+        if new_name is None:
+            QMessageBox.warning(self, "Rename", "Invalid name.")
+            return
+        if new_name == old_name:
+            return
+        dest = p.parent / new_name
+        if dest.exists():
+            QMessageBox.warning(self, "Rename", "A file or folder with that name already exists.")
+            return
+        try:
+            p.rename(dest)
+        except OSError as exc:
+            QMessageBox.warning(self, "Rename", str(exc))
+            return
+        self.refresh_local()
+        self._select_local_basename(new_name)
+
     def local_properties(self) -> None:
         path = self._selected_local()
         if not path:
@@ -4277,7 +4471,7 @@ class ExplorerSessionPage(QWidget):
         _show_properties_dialog(self, "Properties — remote", rows)
 
     def new_remote_file(self) -> None:
-        name, ok = QInputDialog.getText(self, "New file", "File name:")
+        name, ok = QInputDialog.getText(self._dlg_parent(), "New file", "File name:")
         if not ok or not name.strip():
             return
         base = self.remote_path.rstrip("/") or "/"
@@ -4295,7 +4489,7 @@ class ExplorerSessionPage(QWidget):
                 self._sftp_client.putfo(io.BytesIO(b""), path)
                 self.refresh_remote()
             except Exception as exc:
-                QMessageBox.warning(self, "New file", str(exc))
+                QMessageBox.warning(self, "New file", _remote_fs_error_message(exc, sftp=True))
             return
         if self.kind == "ftp" and self._ftp_client:
             try:
@@ -4303,7 +4497,11 @@ class ExplorerSessionPage(QWidget):
                 self._ftp_client.storbinary(f"STOR {_ftp_quote_token(name.strip())}", io.BytesIO(b""))
                 self.refresh_remote()
             except Exception as exc:
-                QMessageBox.warning(self, "New file", str(exc))
+                QMessageBox.warning(
+                    self,
+                    "New file",
+                    _remote_fs_error_message(exc, ftp=self._ftp_client, sftp=False),
+                )
 
     def edit_remote(self) -> None:
         info = self._selected_remote()
@@ -4440,21 +4638,30 @@ class ExplorerSessionPage(QWidget):
                 return True
             except Exception as exc:
                 if not quiet:
-                    QMessageBox.warning(self, "Save to remote", str(exc))
+                    QMessageBox.warning(
+                        self,
+                        "Save to remote",
+                        _remote_fs_error_message(
+                            exc,
+                            ftp=self._ftp_client if self.kind == "ftp" else None,
+                            sftp=self.kind == "sftp",
+                        ),
+                    )
                 return False
         return False
 
     def _norm_local_path(self, path: str) -> str:
         return os.path.normcase(os.path.normpath(path))
 
-    def _stable_open_cache_path(self, remote_path: str) -> str:
-        """Same local path for each remote file so re-open always pulls/overwrites one cache (device stays in sync after upload)."""
-        serial = _first_serial_token(self.get_device_serial()) or _first_serial_token(self._session_adb_serial) or "default"
-        key = f"{self.kind}|{serial}|{remote_path}"
-        h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
-        root = Path(tempfile.gettempdir()) / "adbnik_open_cache" / h
-        root.mkdir(parents=True, exist_ok=True)
-        return str(root / posixpath.basename(remote_path))
+    def _local_open_dest_for_remote_file(self, remote_path: str) -> str:
+        """Path under the current local explorer folder (matches pull / WinSCP-style expectations)."""
+        base = posixpath.basename(remote_path.rstrip("/")) or "file"
+        parent = Path(self.local_path)
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        return str(parent / base)
 
     def _register_external_open_sync(self, local_path: str, remote_path: str) -> None:
         """Watch file and its folder (atomic saves); push back to `remote_path` on change."""
@@ -4567,8 +4774,10 @@ class ExplorerSessionPage(QWidget):
         t.start()
 
     def _open_remote_default_app(self, remote_path: str) -> None:
-        """Download to a stable cache path and open with the default app; saves sync back automatically."""
-        dest = self._stable_open_cache_path(remote_path)
+        """Download into the current local folder and open with the default app; saves sync back automatically."""
+        if not self._ensure_local_pull_target_or_warn():
+            return
+        dest = self._local_open_dest_for_remote_file(remote_path)
         try:
             if self.kind == "adb":
                 code, msg = self._adb_progress_exec(
@@ -4602,11 +4811,20 @@ class ExplorerSessionPage(QWidget):
             if not QDesktopServices.openUrl(url):
                 QMessageBox.warning(self, "Open", "No default application for this file type.")
         except Exception as exc:
-            QMessageBox.warning(self, "Open", str(exc))
+            QMessageBox.warning(
+                self,
+                "Open",
+                _remote_fs_error_message(
+                    exc,
+                    ftp=self._ftp_client if self.kind == "ftp" else None,
+                    sftp=self.kind == "sftp",
+                ),
+            )
 
     def _open_remote_editor(self, remote_path: str) -> None:
-        tmpdir = tempfile.mkdtemp(prefix="rw_edit_")
-        dest = os.path.join(tmpdir, posixpath.basename(remote_path))
+        if not self._ensure_local_pull_target_or_warn():
+            return
+        dest = self._local_open_dest_for_remote_file(remote_path)
         try:
             if self.kind == "adb":
                 self._log(f"Explorer: pull for edit ← {remote_path}")
@@ -4656,12 +4874,15 @@ class ExplorerSessionPage(QWidget):
                 return
             self.refresh_remote()
         except Exception as exc:
-            QMessageBox.warning(self, "Edit", str(exc))
-        finally:
-            try:
-                shutil.rmtree(tmpdir, ignore_errors=True)
-            except OSError:
-                pass
+            QMessageBox.warning(
+                self,
+                "Edit",
+                _remote_fs_error_message(
+                    exc,
+                    ftp=self._ftp_client if self.kind == "ftp" else None,
+                    sftp=self.kind == "sftp",
+                ),
+            )
 
     # --- toolbar actions (this session only) ---
     def _selected_local(self) -> Optional[str]:
@@ -4762,7 +4983,11 @@ class ExplorerSessionPage(QWidget):
                 except Exception as exc:
                     dlg.close()
                     self._log(f"Explorer: SFTP pull error: {exc}")
-                    QMessageBox.warning(self, "Pull", str(exc))
+                    QMessageBox.warning(
+                        self,
+                        "Pull",
+                        _remote_fs_error_message(exc, sftp=self.kind == "sftp"),
+                    )
                 return
             if self.kind == "ftp" and self._ftp_client:
                 try:
@@ -4785,7 +5010,11 @@ class ExplorerSessionPage(QWidget):
                         self._select_local_basename(pulled_name)
                 except Exception as exc:
                     dlg.close()
-                    QMessageBox.warning(self, "Pull", str(exc))
+                    QMessageBox.warning(
+                        self,
+                        "Pull",
+                        _remote_fs_error_message(exc, ftp=self._ftp_client, sftp=False),
+                    )
                 return
             QMessageBox.information(self, "Pull", "Folder download is not available for this session type.")
             return
@@ -4807,7 +5036,11 @@ class ExplorerSessionPage(QWidget):
                     self._select_local_basename(pulled_name)
             except Exception as exc:
                 self._log(f"Explorer: SFTP pull error: {exc}")
-                QMessageBox.warning(self, "Pull", str(exc))
+                QMessageBox.warning(
+                    self,
+                    "Pull",
+                    _remote_fs_error_message(exc, sftp=self.kind == "sftp"),
+                )
             return
         if self.kind == "ftp" and self._ftp_client:
             try:
@@ -4833,7 +5066,11 @@ class ExplorerSessionPage(QWidget):
                 if select_basename:
                     self._select_local_basename(pulled_name)
             except Exception as exc:
-                QMessageBox.warning(self, "Pull", str(exc))
+                QMessageBox.warning(
+                    self,
+                    "Pull",
+                    _remote_fs_error_message(exc, ftp=self._ftp_client, sftp=False),
+                )
 
     def pull_selected(self) -> None:
         info = self._selected_remote()
@@ -4909,7 +5146,11 @@ class ExplorerSessionPage(QWidget):
                     except Exception as exc:
                         dlg.close()
                         self._log(f"Explorer: SFTP push error: {exc}")
-                        QMessageBox.warning(self, "Push", str(exc))
+                        QMessageBox.warning(
+                            self,
+                            "Push",
+                            _remote_fs_error_message(exc, sftp=self.kind == "sftp"),
+                        )
                         return
                     continue
                 if self.kind == "ftp" and self._ftp_client:
@@ -4925,7 +5166,11 @@ class ExplorerSessionPage(QWidget):
                         dlg.close()
                     except Exception as exc:
                         dlg.close()
-                        QMessageBox.warning(self, "Push", str(exc))
+                        QMessageBox.warning(
+                            self,
+                            "Push",
+                            _remote_fs_error_message(exc, ftp=self._ftp_client, sftp=False),
+                        )
                         return
                     continue
                 continue
@@ -4966,7 +5211,11 @@ class ExplorerSessionPage(QWidget):
                     last_pushed = name
                 except Exception as exc:
                     self._log(f"Explorer: SFTP push error: {exc}")
-                    QMessageBox.warning(self, "Push", str(exc))
+                    QMessageBox.warning(
+                        self,
+                        "Push",
+                        _remote_fs_error_message(exc, sftp=self.kind == "sftp"),
+                    )
                     return
                 continue
             if self.kind == "ftp" and self._ftp_client:
@@ -4993,7 +5242,11 @@ class ExplorerSessionPage(QWidget):
                     n_ok += 1
                     last_pushed = name
                 except Exception as exc:
-                    QMessageBox.warning(self, "Push", str(exc))
+                    QMessageBox.warning(
+                        self,
+                        "Push",
+                        _remote_fs_error_message(exc, ftp=self._ftp_client, sftp=False),
+                    )
                     return
         if n_ok:
             self._log(
@@ -5129,8 +5382,71 @@ class ExplorerSessionPage(QWidget):
         except Exception:
             self.refresh_remote()
 
+    def rename_selected_remote(self) -> None:
+        info = self._selected_remote()
+        if not info:
+            QMessageBox.information(self, "Rename", "Select a remote file or folder first.")
+            return
+        row = self.remote_table.currentRow()
+        name_it = self.remote_table.item(row, 0)
+        if name_it and name_it.text() == "..":
+            return
+        old_path = str(info["path"]).replace("\\", "/")
+        old_base = posixpath.basename(old_path.rstrip("/")) or old_path
+        name, ok = QInputDialog.getText(self._dlg_parent(), "Rename", "New name:", text=old_base)
+        if not ok:
+            return
+        new_name = _validated_rename_basename(name)
+        if new_name is None:
+            QMessageBox.warning(self, "Rename", "Invalid name.")
+            return
+        if new_name == old_base:
+            return
+        parent = posixpath.dirname(old_path.rstrip("/"))
+        new_path = (posixpath.join(parent, new_name) if parent else new_name).replace("\\", "/")
+
+        if self.kind == "adb":
+            self._log(f"Explorer: rename remote {old_path} -> {new_path}")
+            oq = shlex.quote(old_path)
+            nq = shlex.quote(new_path)
+            code, _, stderr = run_adb(
+                self.get_adb_path(),
+                [*self._adb_prefix(), "shell", f"mv {oq} {nq}"],
+            )
+            if code == 0:
+                self.refresh_remote()
+                self._select_remote_basename(new_name)
+            else:
+                QMessageBox.warning(self, "Rename", stderr or "Failed.")
+            return
+        if self.kind == "sftp" and self._sftp_client:
+            try:
+                old_abs = _sftp_abs_remote_path(old_path, self.remote_path)
+                parent_abs = posixpath.dirname(old_abs.rstrip("/")) or "/"
+                new_abs = posixpath.join(parent_abs, new_name).replace("\\", "/")
+                if not new_abs.startswith("/"):
+                    new_abs = "/" + new_abs
+                self._sftp_client.rename(old_abs, new_abs)
+                self.refresh_remote()
+                self._select_remote_basename(new_name)
+            except Exception as exc:
+                QMessageBox.warning(self, "Rename", _remote_fs_error_message(exc, sftp=True))
+            return
+        if self.kind == "ftp" and self._ftp_client:
+            try:
+                self._ftp_client.rename(old_path, new_path)
+                self.refresh_remote()
+                self._select_remote_basename(new_name)
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    "Rename",
+                    _remote_fs_error_message(exc, ftp=self._ftp_client, sftp=False),
+                )
+            return
+
     def make_remote_folder(self) -> None:
-        name, ok = QInputDialog.getText(self, "New folder", "Folder name:")
+        name, ok = QInputDialog.getText(self._dlg_parent(), "New folder", "Folder name:")
         if not ok or not name.strip():
             return
         base = self.remote_path.rstrip("/") or "/"
@@ -5151,7 +5467,7 @@ class ExplorerSessionPage(QWidget):
                 self._sftp_client.stat(path)
                 self.refresh_remote()
             except Exception as exc:
-                QMessageBox.warning(self, "New folder", str(exc))
+                QMessageBox.warning(self, "New folder", _remote_fs_error_message(exc, sftp=True))
             return
         if self.kind == "ftp" and self._ftp_client:
             nm = name.strip()
@@ -5166,7 +5482,11 @@ class ExplorerSessionPage(QWidget):
                 _ftp_safe_mkd(self._ftp_client, nm)
                 self.refresh_remote()
             except Exception as exc:
-                QMessageBox.warning(self, "New folder", str(exc))
+                QMessageBox.warning(
+                    self,
+                    "New folder",
+                    _remote_fs_error_message(exc, ftp=self._ftp_client, sftp=False),
+                )
             finally:
                 if saved is not None:
                     try:
@@ -5318,15 +5638,6 @@ class FileExplorerTab(QWidget):
         self.status_conn_label.setObjectName("WinScpStatusConn")
         sl.addWidget(self.status_conn_label)
         root.addWidget(self.status_bar)
-        self._backspace_global_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self)
-        self._backspace_global_shortcut.setContext(Qt.ApplicationShortcut)
-        self._backspace_global_shortcut.activated.connect(self._on_backspace_global)
-
-    def _on_backspace_global(self) -> None:
-        page = self._current_page()
-        if not page:
-            return
-        page._handle_backspace_nav()
 
     @staticmethod
     def _is_descendant_of(widget: Optional[QWidget], parent: Optional[QWidget]) -> bool:
@@ -5343,6 +5654,8 @@ class FileExplorerTab(QWidget):
             if page is None:
                 return super().eventFilter(obj, ev)
             fw = QApplication.focusWidget()
+            if page._should_skip_backspace_nav(fw):
+                return super().eventFilter(obj, ev)
             if fw is not None and self._is_descendant_of(fw, page):
                 page._handle_backspace_nav()
                 ev.accept()
