@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.1] - 2026-04-19
+
+### Fixed
+
+- **Terminal:** `TerminalTab` no longer calls `_reload_bookmark_sidebar()` before `self.tabs` is created (avoid `AttributeError: ... has no attribute 'tabs'` on startup). Guard added in `_refresh_bookmark_open_indicators` for safety.
+
 ## [1.3.0] - 2026-04-19
 
 ### Fixed
