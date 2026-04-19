@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.0.2] - 2026-04-19
+
+### Changed
+
+- **Project website** (GitHub Pages): New production-style landing page under `docs/` — responsive layout, feature overview, install snippet, screenshots, and footer links. Add `.nojekyll` so static assets deploy correctly.
+
+## [1.0.1] - 2026-04-19
+
+### Fixed
+
+- **Windows `adbnik-setup`:** Interactive runs no longer show a black console window before the folder dialog (`FreeConsole`); errors use a message box. Use `adbnik-setup --folder ...` when you need printed output in a terminal.
+
 ## [1.0.0] - 2026-04-19
 
 First stable release under semantic versioning.

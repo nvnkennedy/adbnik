@@ -65,9 +65,9 @@ Pinned interpreter example:
 adbnik-setup
 ```
 
-A folder dialog opens (starting on your Desktop); choose where to put **`Adbnik.lnk`**. The shortcut uses **this Python** (`python -m adbnik`) and the same **app icon** as the window. Icon files are cached under `%LOCALAPPDATA%\Adbnik\`.
+A folder dialog opens (starting on your Desktop); choose where to put **`Adbnik.lnk`**. No extra console window is shown—only the dialogs. The shortcut uses **this Python** (`python -m adbnik`) and the same **app icon** as the window. Icon files are cached under `%LOCALAPPDATA%\Adbnik\`.
 
-Non-interactive example (e.g. script or batch file):
+Non-interactive example (e.g. script or batch file, **with** console output):
 
 ```bat
 adbnik-setup --folder "%USERPROFILE%\Desktop"

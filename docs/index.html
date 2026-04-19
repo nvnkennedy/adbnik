@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Adbnik — desktop workspace for Android ADB, SSH and serial terminals, SFTP/FTP file transfer, and screen mirroring. Python · PyQt5 · MIT." />
+  <meta name="theme-color" content="#070b12" />
+  <meta property="og:title" content="Adbnik" />
+  <meta property="og:description" content="One window for ADB shells, SSH, serial, files, and screen control." />
+  <meta property="og:type" content="website" />
+  <title>Adbnik — Android &amp; device workspace</title>
+  <link rel="stylesheet" href="css/site.css" />
+  <link rel="icon" href="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" type="image/png" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./">
+        <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="40" height="40" alt="" />
+        <span>Adbnik</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="#screens">Screens</a>
+        <a href="https://github.com/nvnkennedy/adbnik/blob/main/README.md">Docs</a>
+        <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">PyPI</a>
+        <a class="btn btn-ghost" href="https://github.com/nvnkennedy/adbnik">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap">
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="section-label">Desktop · Windows · Linux · macOS</p>
+        <h1 id="hero-title">Your workspace for Android debugging and remote ops</h1>
+        <p class="hero-lead">
+          <strong>Adbnik</strong> is a PyQt5 application: <strong>ADB</strong> sessions and device tools,
+          <strong>SSH</strong> and <strong>serial</strong> terminals, <strong>local ↔ remote files</strong>
+          (device, SFTP, FTP), and <strong>screen mirroring</strong> integration—organized in one place.
+          External tools (<code style="font-size:0.95em">adb</code>, <code style="font-size:0.95em">ssh</code>, <code style="font-size:0.95em">scrcpy</code>) come from your system; configure paths in preferences if needed.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">Install from PyPI</a>
+          <a class="btn btn-ghost" href="https://github.com/nvnkennedy/adbnik/releases">Release notes</a>
+        </div>
+        <div class="badge-row" aria-label="Highlights">
+          <span class="badge">Python 3.9+</span>
+          <span class="badge">MIT License</span>
+          <span class="badge">PyQt5</span>
+        </div>
+      </section>
+
+      <section id="features" aria-labelledby="feat-title">
+        <p class="section-label">Capabilities</p>
+        <h2 id="feat-title">What you get</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>ADB</h3>
+            <p>Device list, shell tabs, APK install flow, bookmarks, and quick actions.</p>
+          </article>
+          <article class="card">
+            <h3>SSH</h3>
+            <p>Full-screen terminal using your system OpenSSH client.</p>
+          </article>
+          <article class="card">
+            <h3>Serial</h3>
+            <p>COM port and baud configuration in the UI.</p>
+          </article>
+          <article class="card">
+            <h3>Files</h3>
+            <p>Dual-pane explorer: local disk ↔ Android / SFTP / FTP.</p>
+          </article>
+          <article class="card">
+            <h3>Screen</h3>
+            <p>Start and manage mirroring with your chosen executable (e.g. scrcpy).</p>
+          </article>
+          <article class="card">
+            <h3>Windows shortcut</h3>
+            <p>After install, run <code style="font-size:0.9em">adbnik-setup</code> to place a desktop shortcut with the app icon.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="install" aria-labelledby="install-title">
+        <p class="section-label">Quick start</p>
+        <h2 id="install-title">Install</h2>
+        <div class="install-block">
+          <div class="install-head">pip</div>
+          <pre class="code" id="pip-cmd">py -m pip install --upgrade adbnik
+py -m adbnik</pre>
+        </div>
+        <p class="install-note">
+          Use the same interpreter for <strong>pip</strong> and <strong>launch</strong>. Full instructions and troubleshooting are in the
+          <a href="https://github.com/nvnkennedy/adbnik/blob/main/README.md">README</a>.
+        </p>
+      </section>
+
+      <section id="screens" aria-labelledby="shots-title">
+        <p class="section-label">Interface</p>
+        <h2 id="shots-title">Screens</h2>
+        <div class="shots">
+          <figure class="shot">
+            <img
+              src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/01-main-window.png"
+              alt="Adbnik main window with tabs for terminal, files, and screen"
+              width="1280"
+              height="720"
+              loading="lazy"
+            />
+            <figcaption>Main window</figcaption>
+          </figure>
+          <figure class="shot">
+            <img
+              src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/02-terminal.png"
+              alt="Terminal tab with shell output"
+              width="1280"
+              height="720"
+              loading="lazy"
+            />
+            <figcaption>Terminal</figcaption>
+          </figure>
+          <figure class="shot">
+            <img
+              src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/03-file-explorer.png"
+              alt="File explorer with local and remote panes"
+              width="1280"
+              height="720"
+              loading="lazy"
+            />
+            <figcaption>File explorer</figcaption>
+          </figure>
+          <figure class="shot">
+            <img
+              src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/04-screen-control.png"
+              alt="Screen control tab"
+              width="1280"
+              height="720"
+              loading="lazy"
+            />
+            <figcaption>Screen control</figcaption>
+          </figure>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <h3>Project</h3>
+          <ul>
+            <li><a href="https://github.com/nvnkennedy/adbnik">Source</a></li>
+            <li><a href="https://github.com/nvnkennedy/adbnik/releases">Releases</a></li>
+            <li><a href="https://pypi.org/project/adbnik/">PyPI package</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Documentation</h3>
+          <ul>
+            <li><a href="https://github.com/nvnkennedy/adbnik/blob/main/README.md">README</a></li>
+            <li><a href="https://github.com/nvnkennedy/adbnik/blob/main/CHANGELOG.md">Changelog</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Name</h3>
+          <p style="margin:0;font-size:0.875rem;color:var(--muted);max-width:28rem">
+            <strong>Adbnik</strong> combines <strong>ADB</strong> with a <strong>-nik</strong> suffix (as in <em>technik</em>)—built for hands-on device work.
+          </p>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        MIT License · <a href="https://github.com/nvnkennedy/adbnik/blob/main/LICENSE">License file</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
