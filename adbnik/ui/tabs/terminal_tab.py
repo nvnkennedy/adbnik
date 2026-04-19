@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from ...session import ConnectionKind, SessionProfile, normalize_tcp_port, ssh_command_args
 from ...services.adb_devices import friendly_name_for_serial
@@ -17,7 +17,7 @@ from ...services.commands import run_adb
 from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 
 from PyQt5.QtCore import QEventLoop, QProcessEnvironment, QSize, Qt, QProcess, QTimer, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QFont, QKeySequence, QTextCharFormat, QTextCursor, QTextOption
+from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QTextCharFormat, QTextCursor, QTextOption
 from PyQt5.QtWidgets import (
     QAction,
     QAbstractItemView,
@@ -49,7 +49,14 @@ from ..ansi_html import (
     strip_ansi_for_display,
 )
 from ..combo_utils import ExpandAllComboBox
-from ..icon_utils import bookmark_icon_from_entry, icon_windows_cmd_console, icon_windows_powershell
+from ..icon_utils import (
+    bookmark_icon_from_entry,
+    icon_adb_android,
+    icon_serial_port,
+    icon_ssh_session,
+    icon_windows_cmd_console,
+    icon_windows_powershell,
+)
 
 # SSH/ADB use plain QTextCursor.insertText (not insertHtml); larger cap, still bounded per timer tick.
 # Smaller chunks + slightly faster timer yield smoother tab switches under heavy streams.
@@ -76,6 +83,31 @@ def _serial_from_combo_text(text: str) -> str:
     if not t or t.startswith("No ") or "not found" in t.lower():
         return ""
     return t.split()[0]
+
+
+def bookmark_entry_fingerprint(bm: dict) -> str:
+    """Stable key for a saved bookmark (matches SessionWidget.session_bookmark_fingerprint)."""
+    if not isinstance(bm, dict):
+        return ""
+    k = str(bm.get("kind", "")).lower()
+    if k == "adb":
+        return f"adb:{(bm.get('adb_serial') or '').strip()}"
+    if k == "ssh":
+        host = (bm.get("ssh_host") or "").strip().lower()
+        user = (bm.get("ssh_user") or "").strip().lower()
+        try:
+            port = int(bm.get("ssh_port") or 22)
+        except (TypeError, ValueError):
+            port = 22
+        tgt = f"{user}@{host}" if user else host
+        return f"ssh:{tgt}:{port}"
+    if k == "serial":
+        return f"serial:{str(bm.get('serial_port') or '').strip().upper()}"
+    if k == "local_cmd":
+        return "local_cmd"
+    if k == "local_pwsh":
+        return "local_pwsh"
+    return ""
 
 
 def adb_interactive_shell_command(adb_path: str, serial: Optional[str] = None) -> List[str]:
@@ -1066,6 +1098,23 @@ class SessionWidget(QWidget):
     def _is_serial_session(self) -> bool:
         return "serial.tools.miniterm" in " ".join(str(x) for x in self.command).lower()
 
+    def session_bookmark_fingerprint(self) -> str:
+        """If this session matches a sidebar bookmark, return the same key as bookmark_entry_fingerprint."""
+        if self._is_adb_shell:
+            s = self._adb_shell_serial()
+            return f"adb:{s}" if s else ""
+        if self._is_ssh_session:
+            _exe, port, target = self._ssh_parse_connection()
+            return f"ssh:{target}:{port}" if target else ""
+        if self._is_serial_session:
+            com = self._serial_com_port_from_command()
+            return f"serial:{com.upper()}" if com else ""
+        if self._shell_profile == "cmd":
+            return "local_cmd"
+        if self._shell_profile == "powershell":
+            return "local_pwsh"
+        return ""
+
     def _pending_flush_backlog(self) -> int:
         return sum(len(x) for x in self._pending_chunks)
 
@@ -1836,7 +1885,14 @@ class SessionWidget(QWidget):
 
     def send_line(self, line: str) -> None:
         """Send a full line to the shell (same as pressing Enter after typing)."""
-        self._send_line((line or "").rstrip("\n"))
+        raw = (line or "").rstrip("\n")
+        # Menu / quick-command injection: ensure the buffer ends with a newline so PTY echo and the next
+        # prompt do not stick to the previous line (e.g. ".../mnt" + "# " from root prompt).
+        if self._is_remote_pty_shell and raw.strip():
+            doc = self.output.toPlainText()
+            if doc and not doc.endswith("\n"):
+                self._append_plain_ui("\n")
+        self._send_line(raw)
 
     def _tighten_pty_chunk(self, text: str) -> str:
         """Collapse stacked newlines from PTY/serial (embedded shells often emit extra LFs)."""
@@ -1892,12 +1948,9 @@ class SessionWidget(QWidget):
             if not plain:
                 return
             plain = plain.replace("\r\n", "\n")
-            if self._is_adb_shell:
-                # Android/device shells often use CR as line ending; dropping CR glued prompt + output on one line.
-                plain = plain.replace("\r", "\n")
-            else:
-                # SSH: lone CR = same-line redraw (slog2info / spinners) — strip, do not convert to LF.
-                plain = plain.replace("\r", "")
+            # Treat lone CR as a line break. Stripping CR produced glued text (e.g. "ls" + output "bin" → "lsbin").
+            # Progress indicators that rely on in-place CR redraw may gain extra lines; readability is preferred.
+            plain = plain.replace("\r", "\n")
             plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]
@@ -2347,12 +2400,6 @@ class TerminalTab(QWidget):
         top_toolbar.addWidget(b_new)
         top_toolbar.addStretch(1)
         layout.addLayout(top_toolbar)
-        start_hint = QLabel(
-            "How to start: click New Session, choose protocol/details, then open the terminal tab."
-        )
-        start_hint.setObjectName("MobaTabCtrlLabel")
-        start_hint.setWordWrap(True)
-        layout.addWidget(start_hint)
 
         split = QSplitter()
         layout.addWidget(split, 1)
@@ -2426,6 +2473,7 @@ class TerminalTab(QWidget):
         tb.setContextMenuPolicy(Qt.CustomContextMenu)
         tb.customContextMenuRequested.connect(self._on_terminal_tab_bar_context_menu)
         self.tabs.tabCloseRequested.connect(self._on_tab_close)
+        self.tabs.currentChanged.connect(lambda _i: self._refresh_bookmark_open_indicators())
         right_layout.addWidget(self.tabs, 1)
 
         self._status_label = QLabel("Ready")
@@ -2514,6 +2562,7 @@ class TerminalTab(QWidget):
             it.setIcon(bookmark_icon_from_entry(bm, self))
             it.setData(Qt.UserRole, bm)
             self.bookmark_list.addItem(it)
+        self._refresh_bookmark_open_indicators()
 
     def _on_bookmark_double_clicked(self, item: QListWidgetItem) -> None:
         bm = item.data(Qt.UserRole)
@@ -2723,6 +2772,7 @@ class TerminalTab(QWidget):
         self.tabs.removeTab(index)
         if self.tabs.count() == 0:
             self._add_placeholder_tab()
+        self._refresh_bookmark_open_indicators()
 
     def _on_terminal_tab_bar_context_menu(self, pos) -> None:
         """Moba-style: right-click a session tab for close / close others / close to the side."""
@@ -2874,8 +2924,64 @@ class TerminalTab(QWidget):
             shell_profile=shell_profile,
             path_extra_dirs=path_extra_dirs,
         )
+        tab_icon = QIcon()
+        if widget._is_adb_shell:
+            tab_icon = icon_adb_android()
+        elif widget._is_ssh_session:
+            tab_icon = icon_ssh_session()
+        elif widget._is_serial_session:
+            tab_icon = icon_serial_port()
         idx = self.tabs.addTab(widget, label)
+        if tab_icon and not tab_icon.isNull():
+            self.tabs.setTabIcon(idx, tab_icon)
+        self._apply_terminal_tab_colors(idx, widget)
         self.tabs.setCurrentIndex(idx)
+        self._refresh_bookmark_open_indicators()
+
+    def _apply_terminal_tab_colors(self, index: int, widget: "SessionWidget") -> None:
+        """Color session tab labels: ADB green, SSH blue, serial yellow, local shells light gray."""
+        bar = self.tabs.tabBar()
+        if not hasattr(bar, "setTabTextColor"):
+            return
+        if not isinstance(widget, SessionWidget):
+            return
+        w = widget
+        if w._is_adb_shell:
+            c = QColor("#22c55e")
+        elif w._is_ssh_session:
+            c = QColor("#38bdf8")
+        elif w._is_serial_session:
+            c = QColor("#eab308")
+        else:
+            c = QColor("#cbd5e1")
+        bar.setTabTextColor(index, c)
+
+    def _open_bookmark_fingerprints(self) -> Set[str]:
+        """Fingerprints for sessions that match a bookmark (same host/serial/etc.)."""
+        out: Set[str] = set()
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if isinstance(w, SessionWidget):
+                fp = w.session_bookmark_fingerprint()
+                if fp:
+                    out.add(fp)
+        return out
+
+    def _refresh_bookmark_open_indicators(self) -> None:
+        """Sidebar bookmark labels: green when a matching tab is open, red when not."""
+        active = self._open_bookmark_fingerprints()
+        for row in range(self.bookmark_list.count()):
+            it = self.bookmark_list.item(row)
+            if it is None:
+                continue
+            bm = it.data(Qt.UserRole)
+            fp = bookmark_entry_fingerprint(bm) if isinstance(bm, dict) else ""
+            if not fp:
+                continue
+            if fp in active:
+                it.setForeground(QBrush(QColor("#22c55e")))
+            else:
+                it.setForeground(QBrush(QColor("#b91c1c")))
 
     def close_session(self):
         idx = self.tabs.currentIndex()

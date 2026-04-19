@@ -44,6 +44,7 @@ from .app_icon import create_app_icon
 from .first_run_dialog import FirstRunDialog
 from .preferences_dialog import PreferencesDialog
 from .styles import get_stylesheet
+from .icon_utils import icon_adb_android
 from .tabs.file_explorer_tab import FileExplorerTab
 from .tabs.scrcpy_tab import ScrcpyTab
 from .tabs.terminal_tab import TerminalTab
@@ -154,29 +155,37 @@ class MainWindow(QMainWindow):
             self.refresh_device_stats()
 
     def append_log(self, message: str) -> None:
-        ts = datetime.now().strftime("%H:%M:%S")
+        dark = bool(getattr(self.config, "dark_theme", False))
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg_l = (message or "").lower()
-        color = "#cbd5e1"
+        color = "#e2e8f0" if dark else "#0f172a"
         level = "INFO"
-        badge_bg = "#334155"
+        badge_bg = "#334155" if dark else "#e2e8f0"
+        badge_fg = "#f8fafc" if dark else "#0f172a"
+        ts_color = "#94a3b8" if dark else "#64748b"
         if any(k in msg_l for k in ("error", "failed", "warning", "denied", "not found", "timed out")):
-            color = "#ef4444"
+            color = "#fca5a5" if dark else "#b91c1c"
             level = "ERR"
-            badge_bg = "#991b1b"
+            badge_bg = "#991b1b" if dark else "#fee2e2"
+            badge_fg = "#fef2f2" if dark else "#7f1d1d"
         elif any(k in msg_l for k in ("saved", "ok", "success", "running", "started", "connected")):
-            color = "#22c55e"
+            color = "#86efac" if dark else "#15803d"
             level = "OK"
-            badge_bg = "#166534"
+            badge_bg = "#166534" if dark else "#dcfce7"
+            badge_fg = "#f0fdf4" if dark else "#14532d"
         elif any(k in msg_l for k in ("refresh", "adb:", "screen:", "session")):
-            color = "#38bdf8"
+            color = "#7dd3fc" if dark else "#0369a1"
             level = "INFO"
-            badge_bg = "#1e3a8a"
+            badge_bg = "#1e3a8a" if dark else "#e0f2fe"
+            badge_fg = "#eff6ff" if dark else "#0c4a6e"
         safe_msg = html.escape(message)
         line = (
-            f'<span style="color:#94a3b8;">[{ts}]</span> '
-            f'<span style="background:{badge_bg}; color:#f8fafc; padding:1px 6px; border-radius:4px; '
-            f'font-weight:700; letter-spacing:0.3px;">{level}</span> '
-            f'<span style="color:{color}; font-weight:600;">{safe_msg}</span>'
+            f'<div style="margin:2px 0 4px 0;">'
+            f'<span style="color:{ts_color}; font-size:11px;">{ts}</span> '
+            f'<span style="background:{badge_bg}; color:{badge_fg}; padding:1px 6px; border-radius:4px; '
+            f'font-size:11px; font-weight:700;">{level}</span>'
+            f'<span style="color:{color}; margin-left:6px;">{safe_msg}</span>'
+            f"</div>"
         )
         self.log_view.append(line)
         self.log_view.moveCursor(QTextCursor.End)
@@ -426,7 +435,9 @@ class MainWindow(QMainWindow):
         self.log_view.setOpenExternalLinks(True)
         self.log_view.document().setMaximumBlockCount(4000)
         self.log_view.setFont(QFont("Consolas", 9))
-        self.log_view.setPlaceholderText("Application log — transfers, errors, and status appear here.")
+        self.log_view.setPlaceholderText(
+            "Application log — newest lines at the bottom. Tags: OK (green), ERR (red), INFO (blue)."
+        )
         self.log_view.setMinimumHeight(120)
         self.log_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.log_view.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -705,7 +716,7 @@ class MainWindow(QMainWindow):
 
         session = bar.addMenu("&Session")
         adb_menu = session.addMenu("ADB")
-        adb_menu.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        adb_menu.setIcon(icon_adb_android())
         a_refresh = QAction("Refresh / reload remote", self)
         a_refresh.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         a_refresh.setShortcut(QKeySequence("F5"))
@@ -720,7 +731,7 @@ class MainWindow(QMainWindow):
         a_restart.triggered.connect(self._menu_session_restart_server)
         adb_menu.addAction(a_restart)
         a_adb_shell = QAction("Open &ADB shell (Terminal tab)", self)
-        a_adb_shell.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        a_adb_shell.setIcon(icon_adb_android())
         a_adb_shell.triggered.connect(self._menu_session_adb_shell)
         adb_menu.addAction(a_adb_shell)
         a_install_apk = QAction("Install &APK on selected device…", self)
@@ -743,7 +754,7 @@ class MainWindow(QMainWindow):
 
         commands = bar.addMenu("&Commands")
         adb_cmd = commands.addMenu("ADB")
-        adb_cmd.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        adb_cmd.setIcon(icon_adb_android())
         a_root = QAction("ADB &root", self)
         a_root.setIcon(self.style().standardIcon(QStyle.SP_VistaShield))
         a_root.triggered.connect(self._menu_cmd_adb_root)
