@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.8] - 2026-04-20
+
+### Fixed
+
+- **SSH / ADB terminal:** Lone PTY carriage returns are mapped to **newlines** again (not spaces). Treating ``\\r`` as a space had glued prompts and output onto one line (e.g. repeated ``#`` on the same row) and produced an on/off “stuck together” look as chunks alternated. Real line breaks still come from ``\\r\\n`` / ``\\n``; long runs of blank lines from redraws remain capped.
+
 ## [1.3.7] - 2026-04-20
 
 ### Fixed

@@ -169,13 +169,15 @@ def normalize_remote_pty_plain_text(text: str) -> str:
     """
     Map PTY carriage returns for SSH/ADB plain-text rendering only (not used for serial UART).
 
-    Mapping lone ``\\r`` to ``\\n`` adds a blank line for every redraw (noisy). Using a **space**
-    separates tokens (avoids ``lsbin``) without vertical spam. ``\\r\\n`` stays a single newline.
-    Long runs of blank lines (spinners) are still capped.
+    QTextEdit cannot emulate TTY ``\\r`` (return to column 0). Mapping lone ``\\r`` to ``\\n``
+    keeps each prompt and command on its own line; mapping to **space** (v1.3.6) glued lines so
+    root prompts looked like ``# # # #`` on one row. ``\\r\\n`` stays a single newline. Cursor
+    motion is already spaced in ``strip_ansi_for_display``, so tokens like ``ls`` + ``bin`` do not
+    merge. Long runs of blank lines (spinners / redraws) are still capped.
     """
     if not text:
         return text
-    text = text.replace("\r\n", "\n").replace("\r", " ")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"\n{8,}", "\n\n\n\n\n\n\n", text)
     return text
 
