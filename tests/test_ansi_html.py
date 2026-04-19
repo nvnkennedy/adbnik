@@ -85,3 +85,10 @@ def test_strip_ansi_for_display_removes_sequences_and_orphan_0_39m():
     assert "\x1b" not in s
     assert "0;39m" not in s
     assert "ok" in s
+
+
+def test_strip_ansi_erase_line_not_glue_ls_bin():
+    """EL between echoed token and following text must not become ``lsbin`` when CSI is stripped."""
+    s = strip_ansi_for_display("ls\x1b[Kbin")
+    assert "lsbin" not in s
+    assert "ls" in s and "bin" in s
