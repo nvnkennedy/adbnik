@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Adbnik user guide — Terminal, File Explorer, and Screen Control." />
+  <title>User guide — Adbnik</title>
+  <link rel="stylesheet" href="../css/site.css" />
+  <link rel="icon" href="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" type="image/png" />
+</head>
+<body class="doc-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../index.html">
+        <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="40" height="40" alt="" />
+        <span>Adbnik</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../index.html">Home</a>
+        <a href="index.html"><strong>User guide</strong></a>
+        <a href="terminal.html">Terminal</a>
+        <a href="explorer.html">File Explorer</a>
+        <a href="screen.html">Screen Control</a>
+        <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">PyPI</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <div class="wrap">
+      <article class="doc">
+        <h1>User guide</h1>
+        <p class="doc-lead">
+          These pages describe the main areas of the app: what each control does, and how to work through common tasks.
+          Adbnik relies on your installed <code>adb</code>, <code>ssh</code>, and <code>scrcpy</code> (or equivalents)—set paths under
+          <strong>File → Preferences</strong> if they are not on <code>PATH</code>.
+        </p>
+        <div class="grid" style="margin-top:2rem;">
+          <article class="card">
+            <h3><a href="terminal.html">Terminal</a></h3>
+            <p>Device bar, local shells, bookmarks, remote sessions (ADB shell, SSH, serial, FTP), tab menu, zoom, and menu bar shortcuts.</p>
+          </article>
+          <article class="card">
+            <h3><a href="explorer.html">File Explorer</a></h3>
+            <p>Dual-pane file manager: local disk and remote (Android / SFTP / FTP)—toolbar, keyboard shortcuts, drag-and-drop, rename.</p>
+          </article>
+          <article class="card">
+            <h3><a href="screen.html">Screen Control</a></h3>
+            <p>scrcpy mirror: device selection, quality options, audio, fullscreen, embed mode, recording, ADB helpers, start/stop.</p>
+          </article>
+        </div>
+        <nav class="doc-nav" aria-label="Guide sections">
+          <strong>Jump to:</strong>
+          <a href="terminal.html">Terminal</a> ·
+          <a href="explorer.html">File Explorer</a> ·
+          <a href="screen.html">Screen Control</a>
+        </nav>
+      </article>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap footer-bottom">
+      <a href="../index.html">← Home</a>
+      ·
+      <a href="https://github.com/nvnkennedy/adbnik/blob/main/README.md">README on GitHub</a>
+      ·
+      MIT License
+    </div>
+  </footer>
+</body>
+</html>

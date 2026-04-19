@@ -376,3 +376,129 @@ pre,
     width: 100%;
   }
 }
+
+/* --- User guide (long-form) --- */
+.doc-page main {
+  padding: 2rem 0 3rem;
+}
+
+.doc-page article.doc {
+  max-width: 52rem;
+  margin: 0 auto;
+}
+
+.doc-page article.doc h1 {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  letter-spacing: -0.02em;
+}
+
+.doc-page .doc-lead {
+  margin: 0 0 2rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.doc-page article.doc h2 {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.35rem;
+}
+
+.doc-page article.doc h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.doc-page article.doc p,
+.doc-page article.doc li {
+  color: #cbd5e1;
+  font-size: 0.9375rem;
+}
+
+.doc-page article.doc ul,
+.doc-page article.doc ol {
+  margin: 0.5rem 0 1rem 1.25rem;
+  padding: 0;
+}
+
+.doc-page article.doc li {
+  margin-bottom: 0.35rem;
+}
+
+.doc-page article.doc code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--surface);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.doc-page article.doc table.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin: 1rem 0;
+}
+
+.doc-page article.doc table.doc-table th,
+.doc-page article.doc table.doc-table td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.doc-page article.doc table.doc-table th {
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.doc-page article.doc .steps {
+  counter-reset: step;
+  list-style: none;
+  margin-left: 0;
+  padding: 0;
+}
+
+.doc-page article.doc .steps > li {
+  position: relative;
+  padding-left: 2.5rem;
+  margin-bottom: 1rem;
+  counter-increment: step;
+}
+
+.doc-page article.doc .steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  line-height: 1.75rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  background: var(--accent);
+  color: #042f2e;
+  border-radius: 50%;
+}
+
+.doc-nav {
+  margin: 1.5rem 0 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.doc-nav a {
+  font-weight: 600;
+}

@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.1.1] - 2026-04-19
+
+### Added
+
+- **User guide (website):** New section at **[nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/)** — dedicated pages for **Terminal** (menu bar, sidebar, tabs, shortcuts), **File Explorer** (local/remote panes, toolbar actions, keyboard), and **Screen Control** (step-by-step scrcpy flow, every mirror option, ADB buttons, embed vs separate window). Linked from the landing page, README, and PyPI **Documentation** URL.
+
 ## [1.0.2] - 2026-04-19
 
 ### Changed

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Adbnik File Explorer — local and remote panes, SFTP, FTP, ADB." />
+  <title>File Explorer — Adbnik user guide</title>
+  <link rel="stylesheet" href="../css/site.css" />
+  <link rel="icon" href="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" type="image/png" />
+</head>
+<body class="doc-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../index.html">
+        <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="40" height="40" alt="" />
+        <span>Adbnik</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../index.html">Home</a>
+        <a href="index.html">User guide</a>
+        <a href="terminal.html">Terminal</a>
+        <a href="explorer.html"><strong>File Explorer</strong></a>
+        <a href="screen.html">Screen Control</a>
+        <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">PyPI</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <div class="wrap">
+      <article class="doc">
+        <h1>File Explorer tab</h1>
+        <p class="doc-lead">
+          A dual-pane file manager: <strong>local disk</strong> on the left and <strong>remote</strong> on the right.
+          The remote side can be an <strong>Android device</strong> (ADB), <strong>SFTP</strong>, or <strong>FTP</strong>, depending on how you opened the session (<strong>New session…</strong>).
+          Multiple explorer sessions can exist as <strong>tabs</strong> inside this tab.
+        </p>
+
+        <h2>Opening a session</h2>
+        <ul>
+          <li>Click <strong>New session…</strong> in the explorer chrome, choose <strong>ADB</strong>, <strong>SFTP</strong>, or <strong>FTP</strong>, and complete login (and device selection for ADB).</li>
+          <li>Each session tab shows <strong>Local site</strong> and <strong>Remote site</strong> headers with address bars.</li>
+        </ul>
+
+        <h2>Local pane (left)</h2>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Control</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Address bar</strong></td><td>Current folder path. Edit and press Enter to jump, or pick from history (dropdown).</td></tr>
+            <tr><td><strong>Up</strong></td><td>Go to parent folder.</td></tr>
+            <tr><td><strong>Home</strong></td><td>Jump to your configured home folder for local side.</td></tr>
+            <tr><td><strong>Refresh</strong></td><td>Reload the directory listing.</td></tr>
+            <tr><td><strong>Find in list</strong></td><td>Search within the current listing (find dialog).</td></tr>
+            <tr><td><strong>New folder</strong> / <strong>New file</strong></td><td>Create an empty folder or file in the current local directory.</td></tr>
+            <tr><td><strong>Open with default application</strong></td><td>Open the selected file with the OS default app.</td></tr>
+            <tr><td><strong>Edit in text editor</strong></td><td>Open the file in Adbnik’s built-in editor (size limits apply).</td></tr>
+            <tr><td><strong>Rename</strong></td><td>Rename the selected file or folder (also <strong>F2</strong>).</td></tr>
+            <tr><td><strong>Delete</strong></td><td>Delete selected items (confirmation).</td></tr>
+            <tr><td><strong>Properties</strong></td><td>Show metadata (path, size, dates, etc.).</td></tr>
+            <tr><td><strong>Push selected</strong> (middle column)</td><td>Upload selected <strong>local</strong> files/folders to the <strong>current remote folder</strong>.</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>Keyboard:</strong> <strong>F5</strong> refresh, <strong>Delete</strong> delete, <strong>F2</strong> rename, <strong>Backspace</strong> goes <strong>up</strong> one folder when the table has focus (not while typing in a rename or dialog).
+          <strong>Ctrl+C</strong> copies selected paths to the clipboard. <strong>Drag and drop</strong>: drag files out to the remote pane to push; drag from remote to local to pull (where supported).
+        </p>
+
+        <h2>Remote pane (right)</h2>
+        <p>
+          Labels read <strong>Remote site (Android)</strong>, <strong>(SFTP)</strong>, or <strong>(FTP)</strong> depending on connection type.
+        </p>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Control</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Address bar</strong></td><td>Remote path (POSIX-style for SFTP/FTP/Android). Enter to navigate.</td></tr>
+            <tr><td><strong>Up</strong> / <strong>Home</strong> / <strong>Root</strong> (non-ADB)</td><td>Navigate parent, home, or filesystem root (where applicable).</td></tr>
+            <tr><td><strong>Refresh</strong></td><td>Reload remote listing.</td></tr>
+            <tr><td><strong>Pull</strong> (middle)</td><td>Download selected <strong>remote</strong> items into the <strong>current local folder</strong>.</td></tr>
+            <tr><td><strong>New folder</strong> / <strong>New file</strong></td><td>Create on the device or server.</td></tr>
+            <tr><td><strong>Open with default application</strong></td><td>For remote files, downloads first then opens locally.</td></tr>
+            <tr><td><strong>Edit in text editor</strong></td><td>Downloads/edits/uploads as appropriate for the backend.</td></tr>
+            <tr><td><strong>Rename</strong> (<strong>F2</strong>)</td><td>Rename on device/server (ADB <code>mv</code>, SFTP/FTP rename).</td></tr>
+            <tr><td><strong>Delete</strong></td><td>Remove remote files/folders (may run in background for large trees).</td></tr>
+            <tr><td><strong>Properties</strong></td><td>Remote metadata where available.</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>Context menu</strong> on either pane repeats the main actions (copy paths, refresh, new, open, edit, rename, delete, properties).
+          The <strong>..</strong> row in remote listings moves to the parent directory.
+        </p>
+
+        <h2>Status bar</h2>
+        <p>
+          The line at the bottom of the explorer area summarizes connection state, path, and last refresh—use it to confirm you are in the right folder before push/pull.
+        </p>
+
+        <nav class="doc-nav">
+          <a href="terminal.html">← Terminal</a>
+          ·
+          <a href="index.html">User guide home</a>
+          ·
+          Next: <a href="screen.html">Screen Control</a>
+        </nav>
+      </article>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap footer-bottom">
+      <a href="index.html">← User guide</a>
+    </div>
+  </footer>
+</body>
+</html>
