@@ -2421,7 +2421,6 @@ class TerminalTab(QWidget):
         self.bookmark_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.bookmark_list.customContextMenuRequested.connect(self._on_bookmark_context_menu)
         left_layout.addWidget(self.bookmark_list, 1)
-        self._reload_bookmark_sidebar()
 
         local_row = QHBoxLayout()
         local_row.setSpacing(4)
@@ -2487,6 +2486,8 @@ class TerminalTab(QWidget):
         split.setSizes([240, 1000])
 
         self._add_placeholder_tab()
+        # Bookmarks refresh touches session tabs — run only after self.tabs exists.
+        self._reload_bookmark_sidebar()
 
     def _ssh_tab_title(self, profile: SessionProfile) -> str:
         h = (profile.ssh_host or "").strip()
@@ -2969,6 +2970,8 @@ class TerminalTab(QWidget):
 
     def _refresh_bookmark_open_indicators(self) -> None:
         """Sidebar bookmark labels: green when a matching tab is open, red when not."""
+        if not getattr(self, "tabs", None):
+            return
         active = self._open_bookmark_fingerprints()
         for row in range(self.bookmark_list.count()):
             it = self.bookmark_list.item(row)
