@@ -1410,7 +1410,10 @@ class _RemoteTransferThread(QThread):
                         self._sftp_get(sftp, rp, lp, idx, total)
                         last = name
                         ok += 1
-                        if not bool(it.get("is_dir")) and os.path.isfile(lp):
+                        is_d = bool(it.get("is_dir"))
+                        if is_d and os.path.isdir(lp):
+                            pulled_files.append(str(Path(lp).resolve()))
+                        elif not is_d and os.path.isfile(lp):
                             pulled_files.append(str(Path(lp).resolve()))
                 except Exception as exc:
                     self.done.emit(False, "", _remote_fs_error_message(exc, sftp=True), [])
@@ -1454,7 +1457,9 @@ class _RemoteTransferThread(QThread):
                         self._ftp_get(ftp, rp, lp, idx, total, is_dir=is_dir)
                         last = name
                         ok += 1
-                        if not is_dir and os.path.isfile(lp):
+                        if is_dir and os.path.isdir(lp):
+                            pulled_files.append(str(Path(lp).resolve()))
+                        elif not is_dir and os.path.isfile(lp):
                             pulled_files.append(str(Path(lp).resolve()))
                 except Exception as exc:
                     self.done.emit(False, "", _remote_fs_error_message(exc, ftp=ftp), [])
@@ -3697,7 +3702,7 @@ class ExplorerSessionPage(QWidget):
             creds=creds,
         )
         th.progress.connect(self._on_remote_transfer_progress)
-        th.done.connect(self._on_remote_transfer_done)
+        th.done.connect(lambda ok, ln, msg, paths, t=th: self._on_remote_transfer_done(t, ok, ln, msg, paths))
         th.finished.connect(th.deleteLater)
         self._remote_transfer_thread = th
         th.start()
@@ -3710,9 +3715,13 @@ class ExplorerSessionPage(QWidget):
         self._remote_transfer_dialog.setLabelText(msg or "Transferring…")
 
     def _on_remote_transfer_done(
-        self, ok: bool, last_name: str, message: str, pulled_paths: Optional[List[str]] = None
+        self,
+        th: QThread,
+        ok: bool,
+        last_name: str,
+        message: str,
+        pulled_paths: Optional[List[str]] = None,
     ) -> None:
-        th = self.sender()
         if th is not self._remote_transfer_thread:
             return
         if self._remote_transfer_dialog is not None:
@@ -3740,17 +3749,19 @@ class ExplorerSessionPage(QWidget):
                 if cand.is_file():
                     paths = [str(cand.resolve())]
 
-            def _open_pulled_files() -> None:
+            def _open_pulled_paths() -> None:
                 for ps in paths:
                     p = Path(ps)
                     try:
                         if p.is_file():
                             self._launch_local_file(p)
+                        elif p.is_dir():
+                            QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.resolve())))
                     except OSError:
                         continue
 
             # Defer open so the list refresh and filesystem are settled (matches Pull button behavior).
-            QTimer.singleShot(0, _open_pulled_files)
+            QTimer.singleShot(0, _open_pulled_paths)
         self._log(f"Explorer: {self.kind.upper()} {self._remote_transfer_mode} complete — {message}")
 
     def _start_delete_job(
