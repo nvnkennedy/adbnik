@@ -144,7 +144,7 @@ def preprocess_pty_stream(data: str) -> str:
     """Normalize line endings; fix dropped ESC before CSI (%[); drop NUL/BEL; keep TAB/newline."""
     if not data:
         return data
-    # CRLF only — lone CR is left for emulate_terminal_carriage_return() (SSH/ADB/serial display).
+    # CRLF only — lone CR is normalized later in normalize_remote_pty_plain_text() for the terminal view.
     data = data.replace("\r\n", "\n")
     # UART / tooling sometimes drops ESC (0x1b) so CSI shows as %[ …
     data = re.sub(r"(?<!\x1b)%\[", "\x1b[", data)
@@ -165,36 +165,19 @@ def preprocess_pty_stream(data: str) -> str:
     return data
 
 
-def emulate_terminal_carriage_return(text: str) -> str:
+def normalize_remote_pty_plain_text(text: str) -> str:
     """
-    Apply Unix TTY semantics for bare CR: return to start of current line (overwrite), not an extra newline.
-    CRLF is already normalized to LF by preprocess_pty_stream. Strips bare CR that would otherwise glue
-    tokens (e.g. ``ls`` + ``bin``) or spam blank lines if each CR were mapped to LF.
+    Map PTY carriage returns for QTextEdit plain-text rendering.
+
+    A real terminal applies lone ``\\r`` as “return to column 0” (overwrite). QTextEdit cannot do that
+    without a full emulator; mapping ``\\r`` to ``\\n`` keeps lines separated and avoids glued tokens
+    (e.g. ``ls`` + ``bin``). Spinner redraws may still emit many ``\\r``; cap long runs of blank lines.
     """
     if not text:
         return text
-    lines: List[str] = []
-    cur: List[str] = []
-    i = 0
-    n = len(text)
-    while i < n:
-        if i + 1 < n and text[i] == "\r" and text[i + 1] == "\n":
-            lines.append("".join(cur))
-            cur = []
-            i += 2
-        elif text[i] == "\r":
-            cur = []
-            i += 1
-        elif text[i] == "\n":
-            lines.append("".join(cur))
-            cur = []
-            i += 1
-        else:
-            cur.append(text[i])
-            i += 1
-    if cur or not lines:
-        lines.append("".join(cur))
-    return "\n".join(lines)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\n{8,}", "\n\n\n\n\n\n\n", text)
+    return text
 
 
 def preprocess_escape_noise(data: str) -> str:

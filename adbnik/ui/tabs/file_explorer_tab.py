@@ -3746,22 +3746,43 @@ class ExplorerSessionPage(QWidget):
                 paths = [str(p) for p in pulled_paths]
             elif last_name:
                 cand = Path(self.local_path) / last_name
-                if cand.is_file():
+                if cand.is_file() or cand.is_dir():
                     paths = [str(cand.resolve())]
 
-            def _open_pulled_paths() -> None:
-                for ps in paths:
-                    p = Path(ps)
-                    try:
-                        if p.is_file():
-                            self._launch_local_file(p)
-                        elif p.is_dir():
-                            QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.resolve())))
-                    except OSError:
-                        continue
+            def _finish_pull_like_toolbar() -> None:
+                """Same UX as Pull button: informational dialog with Open, then optional default-app launch for files."""
+                if not paths:
+                    return
+                try:
+                    if len(paths) == 1:
+                        p = Path(paths[0])
+                        if p.is_dir():
+                            self._notify_path_result(
+                                "Pull complete",
+                                f"Pulled folder: {last_name}\nTo local folder:",
+                                str(p.resolve()),
+                            )
+                        else:
+                            self._notify_path_result(
+                                "Pull complete",
+                                f"Pulled: {last_name}\nSaved to:",
+                                str(p.resolve()),
+                            )
+                            if p.is_file():
+                                self._launch_local_file(p)
+                    else:
+                        first = Path(paths[0])
+                        self._notify_path_result(
+                            "Pull complete",
+                            f"Transferred {len(paths)} item(s).\nFirst item saved to:",
+                            str(first.resolve()),
+                        )
+                        if first.is_file():
+                            self._launch_local_file(first)
+                except OSError:
+                    return
 
-            # Defer open so the list refresh and filesystem are settled (matches Pull button behavior).
-            QTimer.singleShot(0, _open_pulled_paths)
+            QTimer.singleShot(0, _finish_pull_like_toolbar)
         self._log(f"Explorer: {self.kind.upper()} {self._remote_transfer_mode} complete — {message}")
 
     def _start_delete_job(

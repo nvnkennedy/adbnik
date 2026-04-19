@@ -44,7 +44,7 @@ from PyQt5.QtWidgets import (
 from ...config import AppConfig
 from ..ansi_html import (
     AnsiToHtmlConverter,
-    emulate_terminal_carriage_return,
+    normalize_remote_pty_plain_text,
     preprocess_escape_noise,
     preprocess_serial_stream,
     strip_ansi_for_display,
@@ -1923,7 +1923,7 @@ class SessionWidget(QWidget):
             self._serial_maybe_retry_on_text(data)
         if self._is_serial_session:
             data = preprocess_serial_stream(data)
-            data = emulate_terminal_carriage_return(data)
+            data = normalize_remote_pty_plain_text(data)
             data = _filter_serial_miniterm_banner(data)
         else:
             # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
@@ -1955,7 +1955,7 @@ class SessionWidget(QWidget):
             plain = strip_ansi_for_display(data)
             if not plain:
                 return
-            plain = emulate_terminal_carriage_return(plain)
+            plain = normalize_remote_pty_plain_text(plain)
             plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]

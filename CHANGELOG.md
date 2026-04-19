@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.4] - 2026-04-20
+
+### Fixed
+
+- **SSH / ADB / serial terminal:** Replaced CR “overwrite” simulation with **mapping lone `\r` to `\n`** after ANSI stripping (QTextEdit cannot emulate true TTY overwrite; the previous approach cleared lines and made prompts/output look wrong). Long runs of blank lines from spinner redraws are **capped** to limit vertical spam.
+- **File Explorer (SFTP/FTP):** Drag-and-drop pull completion now uses the same **“Pull complete” dialog** (Open / OK) as the **Pull** toolbar action, then opens the default app for a single pulled file the same way as after a toolbar pull.
+
 ## [1.3.3] - 2026-04-19
 
 ### Fixed
