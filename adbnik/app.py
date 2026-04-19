@@ -22,6 +22,7 @@ def _set_windows_app_user_model_id() -> None:
 
 
 def main():
+    """Qt application entry: Fusion style, config load, optional welcome dialog, main window."""
     _set_windows_app_user_model_id()
     try:
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)

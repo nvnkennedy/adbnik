@@ -30,9 +30,11 @@
 
 ## User guide
 
-Step-by-step documentation for the **Terminal**, **File Explorer**, and **Screen Control** tabs (menus, toolbars, keyboard shortcuts, and scrcpy options):
+Step-by-step documentation for the **Terminal**, **File Explorer**, and **Screen Control** tabs (menus, toolbars, keyboard shortcuts, and scrcpy options), plus where to put **adb** / **scrcpy** on disk:
 
 **https://nvnkennedy.github.io/adbnik/guide/**
+
+In the app: **Help → User guide** (F1) opens the same URL; **Help** also lists the website, GitHub, and PyPI.
 
 ---
 

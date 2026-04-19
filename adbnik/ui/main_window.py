@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from PyQt5.QtCore import QSize, Qt, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QKeySequence, QTextCursor
+from PyQt5.QtCore import QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
+from PyQt5.QtGui import QDesktopServices, QFont, QKeySequence, QTextCursor
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -35,6 +35,7 @@ from PyQt5.QtWidgets import (
 
 from .. import APP_TITLE, __version__
 from ..config import AppConfig
+from ..urls import GITHUB_REPO, PYPI_PROJECT, USER_GUIDE, WEBSITE_HOME
 from ..services.adb_devices import list_adb_devices
 from ..services.commands import kill_all_adb_subprocesses
 from ..services.commands import run_adb, run_adb_with_line_callback
@@ -95,7 +96,10 @@ class _AdbDeviceStatsThread(QThread):
 
 
 class MainWindow(QMainWindow):
+    """Main application window: tabbed Terminal, File Explorer, Screen Control, app log, and menus."""
+
     def __init__(self, config: AppConfig, *, first_launch: bool = False, is_upgrade: bool = False):
+        """Load UI, theme, device refresh, and optional first-run / upgrade welcome."""
         super().__init__()
         self.config = config
         self._first_launch = first_launch
@@ -340,6 +344,7 @@ class MainWindow(QMainWindow):
         self._scrcpy_hotkey_registered = False
 
     def _build_ui(self):
+        """Create the central splitter (tabs + log), wire tabs to services, then build the menu bar."""
         central = QWidget()
         root = QVBoxLayout(central)
         root.setContentsMargins(6, 4, 6, 4)
@@ -652,6 +657,7 @@ class MainWindow(QMainWindow):
             self.refresh_device_stats()
 
     def _build_menu_bar(self):
+        """Populate File, Edit, Session, Commands, View, and Help menus (rebuilt when preferences change)."""
         bar = self.menuBar()
         bar.clear()
         bar.setObjectName("AppMenuBar")
@@ -803,10 +809,30 @@ class MainWindow(QMainWindow):
         view.addAction(self._action_dark)
 
         help_menu = bar.addMenu("&Help")
+        a_site = QAction("Adbnik &website", self)
+        a_site.setIcon(self.style().standardIcon(QStyle.SP_DialogHelpButton))
+        a_site.triggered.connect(lambda: self._open_help_url(WEBSITE_HOME))
+        help_menu.addAction(a_site)
+        a_guide = QAction("&User guide", self)
+        a_guide.setShortcut(QKeySequence("F1"))
+        a_guide.triggered.connect(lambda: self._open_help_url(USER_GUIDE))
+        help_menu.addAction(a_guide)
+        a_gh = QAction("&GitHub repository", self)
+        a_gh.setIcon(self.style().standardIcon(QStyle.SP_DriveNetIcon))
+        a_gh.triggered.connect(lambda: self._open_help_url(GITHUB_REPO))
+        help_menu.addAction(a_gh)
+        a_pypi = QAction("&PyPI package", self)
+        a_pypi.triggered.connect(lambda: self._open_help_url(PYPI_PROJECT))
+        help_menu.addAction(a_pypi)
+        help_menu.addSeparator()
         a_about = QAction(f"&About {APP_TITLE}", self)
         a_about.setIcon(self.style().standardIcon(QStyle.SP_MessageBoxInformation))
         a_about.triggered.connect(self._menu_help_about)
         help_menu.addAction(a_about)
+
+    def _open_help_url(self, url: str) -> None:
+        """Open a documentation or project URL in the default browser."""
+        QDesktopServices.openUrl(QUrl(url))
 
     def _menu_stop_screen_mirror(self) -> None:
         if hasattr(self, "scrcpy"):
@@ -920,6 +946,7 @@ class MainWindow(QMainWindow):
         self.terminal.send_line_to_current_session(line)
 
     def _menu_help_about(self) -> None:
+        """Show version, feature summary, and links to the site, guide, GitHub, and PyPI."""
         dlg = QDialog(self)
         dlg.setWindowTitle(f"About {APP_TITLE} — v{__version__}")
         dlg.setModal(True)
@@ -942,8 +969,15 @@ class MainWindow(QMainWindow):
 <html><body style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;color:{fg};line-height:1.45;">
 <h2 style="margin-top:0;">{html.escape(APP_TITLE)}</h2>
 <p style="color:{sub}; margin-bottom:8px;"><b>Version</b> {ver_esc}</p>
-<p style="color:{sub};">A desktop workspace for Android debugging, remote files, and screen control — built with
+<p style="color:{sub};">A desktop workspace for Android debugging, remote files, and screen control. Built with
 PyQt5 and Python {py_ver} on {plat}.</p>
+
+<p style="margin-bottom:12px;">
+<a href="{html.escape(WEBSITE_HOME)}">Website</a> ·
+<a href="{html.escape(USER_GUIDE)}">User guide</a> ·
+<a href="{html.escape(GITHUB_REPO)}">GitHub</a> ·
+<a href="{html.escape(PYPI_PROJECT)}">PyPI</a>
+</p>
 
 <h3 style="margin-bottom:6px;">What you can do</h3>
 <ul style="margin-top:0;">
@@ -965,8 +999,8 @@ open SSH using Explorer’s SFTP host or a new session.</li>
 
 <h3 style="margin-bottom:6px;">Tips</h3>
 <ul style="margin-top:0;">
-<li>Heavy work (e.g. file search) runs in the background so the window stays responsive.</li>
-<li>Folder rows show “…” in the size column (totals are not listed for speed). Use <b>Properties</b> on a folder for a full recursive size when you need it.</li>
+<li>Long file searches run in the background so you can keep using the window.</li>
+<li>Folder rows show “…” in the size column (listing big folders fast skips per-folder totals). Use <b>Properties</b> on a folder when you need a full recursive size.</li>
 </ul>
 
 <p style="color:{muted};font-size:12px;margin-bottom:0;">Configuration is stored in your user profile
