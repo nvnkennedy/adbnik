@@ -11,7 +11,7 @@ from adbnik.ui.ansi_html import (
 
 
 def test_normalize_remote_pty_plain_text_maps_cr():
-    assert normalize_remote_pty_plain_text("ls\rbin") == "ls bin"
+    assert normalize_remote_pty_plain_text("ls\rbin") == "ls\nbin"
     assert normalize_remote_pty_plain_text("a\r\nb") == "a\nb"
     assert normalize_remote_pty_plain_text("\n" * 10) == "\n" * 7
 
