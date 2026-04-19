@@ -93,7 +93,9 @@ def _preferred_python_exe_from_path(path_val: str) -> str:
 
 
 _ssh_tab_ls_cache: Dict[Tuple[str, str, str, str], Tuple[float, List[str]]] = {}
-_SSH_TAB_LS_TTL_SEC = 0.35
+_SSH_TAB_LS_TTL_SEC = 0.75
+_ssh_tab_cmd_pool_cache: Dict[Tuple[str, str, str], Tuple[float, List[str]]] = {}
+_SSH_TAB_CMD_POOL_TTL_SEC = 45.0
 
 
 _SSH_TAB_BIN_DIRS = (
@@ -105,6 +107,7 @@ _SSH_TAB_BIN_DIRS = (
     "/system/xbin",
     "/ifs/bin",
     "/vendor/bin",
+    "/opt/bin",
 )
 
 
@@ -153,7 +156,7 @@ def _ssh_list_dir_names_for_args(exe: str, port: str, target: str, remote_dir: s
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-o",
-        "ConnectTimeout=5",
+        "ConnectTimeout=3",
         "-o",
         "ConnectionAttempts=1",
         "-p",
@@ -161,7 +164,7 @@ def _ssh_list_dir_names_for_args(exe: str, port: str, target: str, remote_dir: s
         target,
         inner,
     ]
-    kwargs = {"capture_output": True, "text": True, "timeout": 6}
+    kwargs = {"capture_output": True, "text": True, "timeout": 4}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
     try:
@@ -180,6 +183,80 @@ def _ssh_list_dir_names_for_args(exe: str, port: str, target: str, remote_dir: s
         _ssh_tab_ls_cache.clear()
     _ssh_tab_ls_cache[key] = (now, list(out_names))
     return out_names
+
+
+def _ssh_list_command_pool_for_args(exe: str, port: str, target: str) -> List[str]:
+    """One SSH round-trip to list common bin dirs (Tab completion for commands like slog2info).
+
+    Replaces N sequential `ls` calls — critical for high-latency QNX SSH links.
+    """
+    if not exe or not target:
+        return []
+    port = str(normalize_tcp_port(port, 22))
+    ck = (exe, port, target)
+    now = time.monotonic()
+    hit = _ssh_tab_cmd_pool_cache.get(ck)
+    if hit is not None and (now - hit[0]) < _SSH_TAB_CMD_POOL_TTL_SEC:
+        return list(hit[1])
+    chunks: List[str] = []
+    for d in _SSH_TAB_BIN_DIRS:
+        qd = shlex.quote(d)
+        qm = shlex.quote(f"__ADBNIK_H__:{d}")
+        chunks.append(f"[ -d {qd} ] && printf '%s\\n' {qm} && ls -1a {qd} 2>/dev/null")
+    inner = " ; ".join(chunks)
+    safe = inner.replace("'", "'\"'\"'")
+    remote = f"sh -lc '{safe}'"
+    cmd = [
+        exe,
+        "-T",
+        "-n",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=3",
+        "-o",
+        "ConnectionAttempts=1",
+        "-p",
+        port,
+        target,
+        remote,
+    ]
+    kwargs = {"capture_output": True, "text": True, "timeout": 8}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+    out_names: List[str] = []
+    try:
+        r = subprocess.run(cmd, **kwargs)
+    except Exception:
+        if len(_ssh_tab_cmd_pool_cache) > 24:
+            _ssh_tab_cmd_pool_cache.clear()
+        _ssh_tab_cmd_pool_cache[ck] = (now, [])
+        return []
+    if r.returncode != 0:
+        if len(_ssh_tab_cmd_pool_cache) > 24:
+            _ssh_tab_cmd_pool_cache.clear()
+        _ssh_tab_cmd_pool_cache[ck] = (now, [])
+        return []
+    for ln in (r.stdout or "").splitlines():
+        t = (ln or "").strip()
+        if not t or t.startswith("__ADBNIK_H__:"):
+            continue
+        if t in (".", ".."):
+            continue
+        out_names.append(t)
+    uniq: List[str] = []
+    seen = set()
+    for n in out_names:
+        k = n.lower()
+        if k not in seen:
+            seen.add(k)
+            uniq.append(n)
+    if len(_ssh_tab_cmd_pool_cache) > 24:
+        _ssh_tab_cmd_pool_cache.clear()
+    _ssh_tab_cmd_pool_cache[ck] = (now, list(uniq))
+    return uniq
 
 
 class ShellPlainTextEdit(QTextEdit):
@@ -683,8 +760,9 @@ class SessionWidget(QWidget):
             return
         if self._serial_auto_retries_used >= 2:
             self._append_plain_ui(
-                "\n[serial] Port is still busy after automatic retries. Close any other terminal "
-                "using this COM port, unplug/replug the adapter, then open a new serial tab.\n"
+                "\n[serial] Port is still busy after automatic retries. Close any other app using this COM "
+                "port, unplug/replug the USB adapter, or open Device Manager → Ports (COM & LPT) → your "
+                "adapter → Disable, wait a few seconds, Enable, then try a new serial tab.\n"
             )
             return
         self._serial_auto_retries_used += 1
@@ -779,11 +857,11 @@ class SessionWidget(QWidget):
         self._pending_chunks: List[str] = []
         self._flush_timer = QTimer(self)
         self._flush_timer.setSingleShot(True)
-        # SSH: flush UI often so streaming tools (e.g. slog2info) feel live; serial/CMD use a small coalesce.
-        self._flush_timer.setInterval(5 if self._is_ssh_session else 25)
+        # SSH: coalesce UI updates (~1 frame); smaller intervals burn CPU and can starve other threads.
+        self._flush_timer.setInterval(16 if self._is_ssh_session else 25)
         self._flush_timer.timeout.connect(self._flush_pending_output)
         if self._is_ssh_session:
-            self._stream_chunk = 2048
+            self._stream_chunk = 4096
         self._log_flush_timer = QTimer(self)
         self._log_flush_timer.setSingleShot(True)
         self._log_flush_timer.setInterval(180)
@@ -1072,9 +1150,7 @@ class SessionWidget(QWidget):
             self._show_completion_lines(candidates)
             return True
         names = self._ssh_list_dir_names(cwd)
-        common_bins: List[str] = []
-        for d in _SSH_TAB_BIN_DIRS:
-            common_bins.extend(self._ssh_list_dir_names(d))
+        common_bins = _ssh_list_command_pool_for_args(exe, port, target)
         pool = list(dict.fromkeys([*names, *common_bins]))
         token_l = token.lower()
         candidates = [n for n in pool if n.lower().startswith(token_l)]

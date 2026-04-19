@@ -442,7 +442,11 @@ class MainWindow(QMainWindow):
         if index == 0 and hasattr(self, "terminal"):
             self.terminal._reload_bookmark_sidebar()
         if index == 1:
-            self.refresh_devices()
+            # Avoid spawning back-to-back ADB refresh threads when flipping Terminal ↔ Files (reduces races / warnings).
+            now = time.monotonic()
+            if now - getattr(self, "_last_files_tab_device_refresh", 0.0) >= 2.0:
+                self._last_files_tab_device_refresh = now
+                self.refresh_devices()
 
     def _on_device_combo_changed(self, _text: str):
         if hasattr(self, "file_explorer"):
