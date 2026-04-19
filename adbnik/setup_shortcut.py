@@ -4,6 +4,9 @@ Run after ``pip install adbnik``::
 
     adbnik-setup
 
+Interactive use detaches the console so only dialogs appear; use ``--folder`` from a script
+if you need log output in the terminal.
+
 This is separate from ``pip`` itself (pip cannot create shortcuts or pick folders).
 """
 
@@ -20,6 +23,35 @@ from pathlib import Path
 def _escape_ps_single_quoted(s: str) -> str:
     """Escape for PowerShell single-quoted string."""
     return s.replace("'", "''")
+
+
+def _detach_console_win32() -> None:
+    """Drop the console window so only Qt dialogs show (interactive ``adbnik-setup``)."""
+    try:
+        import ctypes
+
+        if ctypes.windll.kernel32.GetConsoleWindow():
+            ctypes.windll.kernel32.FreeConsole()
+    except Exception:
+        pass
+
+
+def _gui_error(title: str, text: str) -> None:
+    try:
+        from PyQt5.QtWidgets import QApplication, QMessageBox
+
+        app = QApplication.instance()
+        created = False
+        if app is None:
+            app = QApplication(sys.argv)
+            created = True
+        try:
+            QMessageBox.critical(None, title, text)
+        finally:
+            if created:
+                app.quit()
+    except Exception:
+        pass
 
 
 def _windows_desktop_folder() -> Path:
@@ -179,6 +211,11 @@ def main() -> None:
     )
     args = p.parse_args()
 
+    # Console build: hide the black window for GUI flow only (--help / --folder keep a console for output).
+    gui_only = not bool(args.folder)
+    if gui_only:
+        _detach_console_win32()
+
     py_exe = Path(sys.executable).resolve()
     work_dir = str(py_exe.parent)
     target = str(py_exe)
@@ -196,14 +233,19 @@ def main() -> None:
     else:
         chosen = _pick_folder_gui(desktop)
         if chosen is None:
-            print("Cancelled.")
-            sys.exit(1)
+            if not gui_only:
+                print("Cancelled.")
+            sys.exit(0)
         folder = chosen
 
     try:
         folder.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        print(f"Cannot use folder: {exc}", file=sys.stderr)
+        msg = f"Cannot use folder:\n{exc}"
+        if gui_only:
+            _gui_error("Adbnik", msg)
+        else:
+            print(f"Cannot use folder: {exc}", file=sys.stderr)
         sys.exit(1)
 
     name = (args.name or "Adbnik").strip() or "Adbnik"
@@ -221,10 +263,15 @@ def main() -> None:
     try:
         _run_powershell_script(script)
     except Exception as exc:
-        print(f"Failed to create shortcut: {exc}", file=sys.stderr)
+        msg = f"Failed to create shortcut:\n{exc}"
+        if gui_only:
+            _gui_error("Adbnik", msg)
+        else:
+            print(f"Failed to create shortcut: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Shortcut created:\n  {lnk}")
+    if not gui_only:
+        print(f"Shortcut created:\n  {lnk}")
 
     # After GUI folder picker, confirm in a dialog; with --folder, stay console-only.
     if not args.folder:
