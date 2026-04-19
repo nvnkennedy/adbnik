@@ -1,3 +1,4 @@
+import os
 import sys
 
 from PyQt5.QtCore import Qt
@@ -6,7 +7,6 @@ from PyQt5.QtWidgets import QApplication, QStyleFactory
 from . import APP_TITLE, __version__
 from .config import AppConfig, has_existing_config_file
 from .ui.app_icon import create_app_icon
-from .ui.main_window import MainWindow
 
 
 def _set_windows_app_user_model_id() -> None:
@@ -28,6 +28,13 @@ def main():
     except AttributeError:
         pass
     app = QApplication(sys.argv)
+    os.environ.setdefault("QT_API", "pyqt5")
+    try:
+        from qt_thread_updater import get_updater
+
+        get_updater().start()
+    except Exception:
+        pass
     fusion = QStyleFactory.create("Fusion")
     if fusion is not None:
         app.setStyle(fusion)
@@ -46,6 +53,8 @@ def main():
     # First install, or upgraded build: show welcome / theme / paths once user confirms (or skip).
     need_welcome = fresh_config or upgraded
     app.setWindowIcon(create_app_icon(dark=bool(config.dark_theme)))
+
+    from .ui.main_window import MainWindow
 
     window = MainWindow(config, first_launch=need_welcome, is_upgrade=upgraded)
     window.show()

@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -15,8 +16,8 @@ from ...services.adb_devices import friendly_name_for_serial
 from ...services.commands import run_adb
 from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 
-from PyQt5.QtCore import QProcessEnvironment, QSize, Qt, QProcess, QTimer
-from PyQt5.QtGui import QFont, QKeySequence, QTextCursor
+from PyQt5.QtCore import QEventLoop, QProcessEnvironment, QSize, Qt, QProcess, QTimer, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QFont, QKeySequence, QTextCharFormat, QTextCursor
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -40,9 +41,33 @@ from PyQt5.QtWidgets import (
 )
 
 from ...config import AppConfig
-from ..ansi_html import AnsiToHtmlConverter, preprocess_escape_noise, preprocess_pty_stream, preprocess_serial_stream
+from ..ansi_html import (
+    AnsiToHtmlConverter,
+    preprocess_escape_noise,
+    preprocess_serial_stream,
+    strip_ansi_for_display,
+)
 from ..combo_utils import ExpandAllComboBox
 from ..icon_utils import bookmark_icon_from_entry, icon_windows_cmd_console, icon_windows_powershell
+
+# SSH/ADB use plain QTextCursor.insertText (not insertHtml); larger cap, still bounded per timer tick.
+# Smaller chunks + slightly faster timer yield smoother tab switches under heavy streams.
+_REMOTE_PLAIN_FLUSH_CAP = 128 * 1024
+_LOCAL_HTML_FLUSH_CAP = 96 * 1024
+_SERIAL_TEXT_FLUSH_CAP = 192 * 1024
+_SERIAL_MINITERM_BANNER_RE = re.compile(
+    r"(?ms)^---[^\n]*(?:Miniterm|miniterm)[^\n]*\r?\n|"
+    r"^---[^\n]*Quit:\s*Ctrl[^\n]*\r?\n|"
+    r"^---[^\n]*Menu:\s*Ctrl[^\n]*\r?\n|"
+    r"^---[^\n]*Help:\s*Ctrl[^\n]*\r?\n"
+)
+
+
+def _filter_serial_miniterm_banner(text: str) -> str:
+    """Hide pySerial miniterm boilerplate; we show our own serial-console banner instead."""
+    if not text:
+        return text
+    return _SERIAL_MINITERM_BANNER_RE.sub("", text)
 
 
 def _serial_from_combo_text(text: str) -> str:
@@ -95,20 +120,123 @@ def _preferred_python_exe_from_path(path_val: str) -> str:
 _ssh_tab_ls_cache: Dict[Tuple[str, str, str, str], Tuple[float, List[str]]] = {}
 _SSH_TAB_LS_TTL_SEC = 0.75
 _ssh_tab_cmd_pool_cache: Dict[Tuple[str, str, str], Tuple[float, List[str]]] = {}
-_SSH_TAB_CMD_POOL_TTL_SEC = 45.0
+_SSH_TAB_CMD_POOL_TTL_SEC = 120.0
+# One helper ssh at a time so Tab completion does not stack under load (keeps rest of UI smooth).
+_SSH_HELPER_SUBPROCESS_LOCK = threading.Lock()
 
 
-_SSH_TAB_BIN_DIRS = (
-    "/usr/bin",
-    "/bin",
-    "/sbin",
-    "/usr/sbin",
-    "/system/bin",
-    "/system/xbin",
-    "/ifs/bin",
-    "/vendor/bin",
-    "/opt/bin",
-)
+def _ssh_remote_path_pool_script() -> str:
+    """Remote shell: list common QNX/Android bin dirs first (e.g. /ifs/bin), then walk ``$PATH``."""
+    return (
+        "n=0; "
+        "for d in /ifs/bin /system/bin /vendor/bin /opt/bin /usr/bin /bin /sbin /usr/sbin; do "
+        '[ ! -d "$d" ] && continue; '
+        'n=$((n+1)); [ "$n" -gt 10 ] && break; '
+        "printf '%s\\n' \"__ADBNIK_H__:$d\"; "
+        'ls -1a "$d" 2>/dev/null || true; '
+        "done; "
+        "IFS=:; "
+        "for d in $PATH; do "
+        '[ -z "$d" ] && continue; [ ! -d "$d" ] && continue; '
+        'n=$((n+1)); [ "$n" -gt 22 ] && break; '
+        "printf '%s\\n' \"__ADBNIK_H__:$d\"; "
+        'ls -1a "$d" 2>/dev/null || true; '
+        "done"
+    )
+
+
+def _ssh_subprocess_run_flags() -> int:
+    if sys.platform != "win32":
+        return 0
+    flags = int(subprocess.CREATE_NO_WINDOW)  # type: ignore[attr-defined]
+    # Keep Tab-completion ssh.exe from starving the Qt UI thread on Windows.
+    bnp = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
+    if bnp:
+        flags |= int(bnp)
+    return flags
+
+
+def _ssh_tab_render_token(left: str, token: str) -> str:
+    if " " not in token:
+        return token
+    cmd = (left or "").lstrip()
+    if cmd.startswith("cd "):
+        return f'"{token}"'
+    return token.replace(" ", r"\ ")
+
+
+def _expand_common_prefix_str(token: str, candidates: Sequence[str]) -> str:
+    if not token or not candidates:
+        return token
+    lowers = [c.lower() for c in candidates]
+    low_prefix = os.path.commonprefix(lowers)
+    if not low_prefix:
+        return token
+    first = candidates[0]
+    matched_case_prefix = first[: len(low_prefix)]
+    if len(low_prefix) > len(token):
+        return matched_case_prefix
+    if len(low_prefix) == len(token) and token.lower() == low_prefix and token != matched_case_prefix:
+        return matched_case_prefix
+    return token
+
+
+def _ssh_tab_complete_compute(
+    exe: str,
+    port: str,
+    target: str,
+    cwd: str,
+    want_path: bool,
+    token: str,
+    left: str,
+) -> dict:
+    """SSH Tab completion work (runs off the UI thread). Returns a small dict for the main thread."""
+    try:
+        if want_path:
+            if token.startswith("/"):
+                remote_dir = token.rsplit("/", 1)[0] or "/"
+                prefix = token.rsplit("/", 1)[1]
+            else:
+                rel_dir = token.rsplit("/", 1)[0] if "/" in token else ""
+                prefix = token.rsplit("/", 1)[1] if "/" in token else token
+                base = (cwd.rstrip("/") + "/" + rel_dir).replace("//", "/") if rel_dir else cwd
+                remote_dir = base
+            names = _ssh_list_dir_names_for_args(exe, port, target, remote_dir)
+            prefix_l = prefix.lower()
+            candidates = [n for n in names if n.lower().startswith(prefix_l)]
+            if len(candidates) == 1:
+                filled = (
+                    f"{remote_dir.rstrip('/')}/{candidates[0]}"
+                    if token.startswith("/")
+                    else (f"{token.rsplit('/', 1)[0]}/{candidates[0]}" if "/" in token else candidates[0])
+                )
+                if not filled.endswith("/"):
+                    filled = filled + "/"
+                return {"action": "set_tail", "text": left + _ssh_tab_render_token(left, filled)}
+            expanded = _expand_common_prefix_str(prefix, candidates)
+            if expanded != prefix:
+                if token.startswith("/"):
+                    filled = f"{remote_dir.rstrip('/')}/{expanded}"
+                else:
+                    filled = f"{token.rsplit('/', 1)[0]}/{expanded}" if "/" in token else expanded
+                return {"action": "set_tail", "text": left + _ssh_tab_render_token(left, filled)}
+            if not candidates:
+                return {"action": "forward_tab"}
+            return {"action": "list", "candidates": candidates}
+        names = _ssh_list_dir_names_for_args(exe, port, target, cwd)
+        common_bins = _ssh_list_command_pool_for_args(exe, port, target)
+        pool = list(dict.fromkeys([*names, *common_bins]))
+        candidates = [n for n in pool if n.lower().startswith(token.lower())]
+        if len(candidates) == 1:
+            return {"action": "set_tail", "text": left + _ssh_tab_render_token(left, candidates[0])}
+        expanded = _expand_common_prefix_str(token, candidates)
+        if expanded != token:
+            return {"action": "set_tail", "text": left + _ssh_tab_render_token(left, expanded)}
+        if not candidates:
+            return {"action": "forward_tab"}
+        return {"action": "list", "candidates": candidates}
+    except Exception:
+        return {"action": "forward_tab"}
 
 
 def _win_taskkill_serial_tree(pid: int) -> None:
@@ -124,6 +252,63 @@ def _win_taskkill_serial_tree(pid: int) -> None:
         )
     except Exception:
         pass
+
+
+def _win_kill_python_miniterm_for_com(port_name: str) -> None:
+    """End any python process running pyserial miniterm for this COM port (orphans after kill)."""
+    if sys.platform != "win32":
+        return
+    com = (port_name or "").strip().upper()
+    if not re.match(r"^COM\d+$", com):
+        return
+    ps = (
+        f"$com = '{com}'; "
+        "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.CommandLine -and "
+        "($_.CommandLine -like '*serial.tools.miniterm*' -or $_.CommandLine -like '*serial\\\\tools\\\\miniterm*') -and "
+        "($_.CommandLine -like ('*' + $com + '*')) } | "
+        "ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }"
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+        )
+    except Exception:
+        pass
+
+
+def _win_pnp_reset_com_port(port_name: str) -> bool:
+    """Disable+enable the COM port device via PowerShell (same idea as Device Manager)."""
+    if sys.platform != "win32":
+        return False
+    p = (port_name or "").strip().upper()
+    m = re.match(r"^(COM\d+)$", p)
+    if not m:
+        return False
+    com = m.group(1)
+    ps = (
+        f"$d = Get-PnpDevice -Class Ports -ErrorAction SilentlyContinue | "
+        f"Where-Object {{ $_.FriendlyName -like '*({com})*' }} | Select-Object -First 1; "
+        f"if (-not $d) {{ exit 2 }}; "
+        f"Disable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false; "
+        f"Start-Sleep -Seconds 2; "
+        f"Enable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
 
 
 def _ssh_build_ls_remote_cmd_static(remote_dir: str) -> str:
@@ -164,11 +349,13 @@ def _ssh_list_dir_names_for_args(exe: str, port: str, target: str, remote_dir: s
         target,
         inner,
     ]
-    kwargs = {"capture_output": True, "text": True, "timeout": 4}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+    kwargs = {"capture_output": True, "text": True, "timeout": 3}
+    cf = _ssh_subprocess_run_flags()
+    if cf:
+        kwargs["creationflags"] = cf
     try:
-        r = subprocess.run(cmd, **kwargs)
+        with _SSH_HELPER_SUBPROCESS_LOCK:
+            r = subprocess.run(cmd, **kwargs)
     except Exception:
         return []
     if r.returncode != 0:
@@ -186,9 +373,9 @@ def _ssh_list_dir_names_for_args(exe: str, port: str, target: str, remote_dir: s
 
 
 def _ssh_list_command_pool_for_args(exe: str, port: str, target: str) -> List[str]:
-    """One SSH round-trip to list common bin dirs (Tab completion for commands like slog2info).
+    """One SSH round-trip: filenames from common bin dirs (incl. ``/ifs/bin``) plus ``$PATH``.
 
-    Replaces N sequential `ls` calls — critical for high-latency QNX SSH links.
+    Bounded with a short timeout so a stuck NFS mount cannot block helpers for long.
     """
     if not exe or not target:
         return []
@@ -198,12 +385,7 @@ def _ssh_list_command_pool_for_args(exe: str, port: str, target: str) -> List[st
     hit = _ssh_tab_cmd_pool_cache.get(ck)
     if hit is not None and (now - hit[0]) < _SSH_TAB_CMD_POOL_TTL_SEC:
         return list(hit[1])
-    chunks: List[str] = []
-    for d in _SSH_TAB_BIN_DIRS:
-        qd = shlex.quote(d)
-        qm = shlex.quote(f"__ADBNIK_H__:{d}")
-        chunks.append(f"[ -d {qd} ] && printf '%s\\n' {qm} && ls -1a {qd} 2>/dev/null")
-    inner = " ; ".join(chunks)
+    inner = _ssh_remote_path_pool_script()
     safe = inner.replace("'", "'\"'\"'")
     remote = f"sh -lc '{safe}'"
     cmd = [
@@ -223,12 +405,14 @@ def _ssh_list_command_pool_for_args(exe: str, port: str, target: str) -> List[st
         target,
         remote,
     ]
-    kwargs = {"capture_output": True, "text": True, "timeout": 8}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+    kwargs = {"capture_output": True, "text": True, "timeout": 5}
+    cf = _ssh_subprocess_run_flags()
+    if cf:
+        kwargs["creationflags"] = cf
     out_names: List[str] = []
     try:
-        r = subprocess.run(cmd, **kwargs)
+        with _SSH_HELPER_SUBPROCESS_LOCK:
+            r = subprocess.run(cmd, **kwargs)
     except Exception:
         if len(_ssh_tab_cmd_pool_cache) > 24:
             _ssh_tab_cmd_pool_cache.clear()
@@ -259,6 +443,93 @@ def _ssh_list_command_pool_for_args(exe: str, port: str, target: str) -> List[st
     return uniq
 
 
+def _adb_list_dir_names_for_args(adb_path: str, serial: str, remote_dir: str) -> List[str]:
+    if not adb_path:
+        return []
+    d = (remote_dir or "/").replace('"', '\\"')
+    args = ["shell", f'ls -1 -a "{d}" 2>/dev/null']
+    if (serial or "").strip():
+        args = ["-s", serial.strip(), *args]
+    code, out, _err = run_adb(adb_path, args, timeout=6)
+    if code != 0:
+        return []
+    out_names: List[str] = []
+    for ln in out.splitlines():
+        n = ln.strip()
+        if not n or n in (".", ".."):
+            continue
+        out_names.append(n)
+    return out_names
+
+
+def _adb_render_completed_token(left: str, token: str) -> str:
+    if " " not in token:
+        return token
+    cmd = (left or "").lstrip()
+    if cmd.startswith("cd "):
+        return f'"{token}"'
+    return token.replace(" ", r"\ ")
+
+
+def _adb_tab_complete_compute(
+    adb_path: str,
+    serial: str,
+    cwd: str,
+    want_path: bool,
+    token: str,
+    left: str,
+) -> dict:
+    """ADB Tab completion work (runs off the UI thread). Same contract as ``_ssh_tab_complete_compute``."""
+    try:
+        if want_path:
+            if token.startswith("/"):
+                remote_dir = token.rsplit("/", 1)[0] or "/"
+                prefix = token.rsplit("/", 1)[1]
+                base = remote_dir if remote_dir.startswith("/") else "/" + remote_dir
+            else:
+                rel_dir = token.rsplit("/", 1)[0] if "/" in token else ""
+                prefix = token.rsplit("/", 1)[1] if "/" in token else token
+                base = (cwd.rstrip("/") + "/" + rel_dir).replace("//", "/") if rel_dir else cwd
+                remote_dir = base
+            names = _adb_list_dir_names_for_args(adb_path, serial, remote_dir)
+            prefix_l = prefix.lower()
+            candidates = [n for n in names if n.lower().startswith(prefix_l)]
+            if len(candidates) == 1:
+                filled = f"{remote_dir.rstrip('/')}/{candidates[0]}" if token.startswith("/") else (
+                    f"{token.rsplit('/', 1)[0]}/{candidates[0]}" if "/" in token else candidates[0]
+                )
+                if not filled.endswith("/"):
+                    filled = filled + "/"
+                return {"action": "set_tail", "text": left + _adb_render_completed_token(left, filled)}
+            expanded = _expand_common_prefix_str(prefix, candidates)
+            if expanded != prefix:
+                if token.startswith("/"):
+                    filled = f"{remote_dir.rstrip('/')}/{expanded}"
+                else:
+                    filled = f"{token.rsplit('/', 1)[0]}/{expanded}" if "/" in token else expanded
+                return {"action": "set_tail", "text": left + _adb_render_completed_token(left, filled)}
+            if not candidates:
+                return {"action": "forward_tab"}
+            return {"action": "list", "candidates": candidates}
+        names = _adb_list_dir_names_for_args(adb_path, serial, cwd)
+        common_bins: List[str] = []
+        for d in ("/ifs/bin", "/system/bin", "/system/xbin"):
+            common_bins.extend(_adb_list_dir_names_for_args(adb_path, serial, d))
+        pool = list(dict.fromkeys([*names, *common_bins]))
+        token_l = token.lower()
+        candidates = [n for n in pool if n.lower().startswith(token_l)]
+        if len(candidates) == 1:
+            return {"action": "set_tail", "text": left + _adb_render_completed_token(left, candidates[0])}
+        expanded = _expand_common_prefix_str(token, candidates)
+        if expanded != token:
+            return {"action": "set_tail", "text": left + _adb_render_completed_token(left, expanded)}
+        if not candidates:
+            return {"action": "forward_tab"}
+        return {"action": "list", "candidates": candidates}
+    except Exception:
+        return {"action": "forward_tab"}
+
+
 class ShellPlainTextEdit(QTextEdit):
     """Shell output + typing at the end (ANSI colors via HTML). History, context menu, Ctrl+Shift+C/V."""
 
@@ -270,6 +541,7 @@ class ShellPlainTextEdit(QTextEdit):
         self._on_tab_key: Optional[Callable[[bool], None]] = None  # bool = shift (Backtab)
         self._is_session_running_fn: Optional[Callable[[], bool]] = None
         self._skip_bridging_newline_fn: Optional[Callable[[], bool]] = None
+        self._remote_pty_relaxed_bridging = False
         self._cmd_history: List[str] = []
         self._hist_browse_idx: Optional[int] = None
         self._hist_stash: str = ""
@@ -304,6 +576,10 @@ class ShellPlainTextEdit(QTextEdit):
         """When True, do not insert a synthetic newline after sending a line (SSH/serial echo their own)."""
         self._skip_bridging_newline_fn = fn
 
+    def set_remote_pty_relaxed_bridging(self, enabled: bool) -> None:
+        """ADB/SSH: do not treat trailing space after $/# as 'at prompt' — avoids gluing output to the prompt line."""
+        self._remote_pty_relaxed_bridging = bool(enabled)
+
     def set_on_clear_buffer(self, fn: Optional[Callable[[], None]]) -> None:
         """Called after the user clears the terminal (reset scrollback / tail caches in SessionWidget)."""
         self._on_clear_buffer_fn = fn
@@ -328,7 +604,7 @@ class ShellPlainTextEdit(QTextEdit):
         self._anchor = cur.position()
         self._reset_history_browse()
 
-    def append_from_process_html(self, html: str) -> None:
+    def append_from_process_html(self, html: str, ensure_visible: bool = True) -> None:
         if not html:
             return
         self.moveCursor(QTextCursor.End)
@@ -340,7 +616,8 @@ class ShellPlainTextEdit(QTextEdit):
         self.insertHtml(wrapped)
         self._anchor = self.textCursor().position()
         self._reset_history_browse()
-        self.ensureCursorVisible()
+        if ensure_visible:
+            self.ensureCursorVisible()
 
     def append_plain_fragment(self, text: str) -> None:
         """Insert plain text (escaped) with default terminal foreground — for completion rows, prompts, etc."""
@@ -354,6 +631,22 @@ class ShellPlainTextEdit(QTextEdit):
         self._anchor = self.textCursor().position()
         self._reset_history_browse()
         self.ensureCursorVisible()
+
+    def append_stream_plain(self, text: str, *, ensure_visible: bool = True) -> None:
+        """Fast path for high-volume PTY output — insertText, not insertHtml (Moba-style responsiveness)."""
+        if not text:
+            return
+        cur = self.textCursor()
+        cur.movePosition(QTextCursor.End)
+        fmt = QTextCharFormat()
+        fmt.setForeground(QBrush(QColor("#f0f3f6")))
+        cur.setCharFormat(fmt)
+        cur.insertText(text)
+        self.setTextCursor(cur)
+        self._anchor = cur.position()
+        self._reset_history_browse()
+        if ensure_visible:
+            self.ensureCursorVisible()
 
     def _reset_history_browse(self) -> None:
         self._hist_browse_idx = None
@@ -624,7 +917,7 @@ class ShellPlainTextEdit(QTextEdit):
                 c2.setPosition(pos, QTextCursor.KeepAnchor)
                 prev_chunk = c2.selectedText().replace("\u2029", "\n")
                 prev = prev_chunk[0] if prev_chunk else "\n"
-                at_prompt = prev in " \t" or prev in ">$#]"
+                at_prompt = (prev in " \t" or prev in ">$#]") and not self._remote_pty_relaxed_bridging
                 skip_nl = bool(self._skip_bridging_newline_fn and self._skip_bridging_newline_fn())
                 if prev != "\n" and not at_prompt and not skip_nl:
                     cur.insertText("\n")
@@ -641,6 +934,9 @@ class ShellPlainTextEdit(QTextEdit):
 
 class SessionWidget(QWidget):
     """Single terminal session: scrollback + type-at-end shell (Moba-like dark theme)."""
+
+    # Thread-safe delivery of Tab-completion results from worker threads (avoid QTimer from non-Qt threads).
+    _tab_async_complete = pyqtSignal(str, int, object)
 
     def __init__(
         self,
@@ -681,12 +977,17 @@ class SessionWidget(QWidget):
         self._path_command_cache_key: str = ""
         self._python_repl_mode = False
         self._log_path = self._build_log_path()
-        self._ansi = AnsiToHtmlConverter()
+        self._ansi = AnsiToHtmlConverter(ignore_background=True, lift_black_foreground=True)
         self._stream_chunk = 65536
         # Serial: auto-retry when the COM port is still held by a dead miniterm (max 2 restarts).
         self._serial_auto_retries_used = 0
         self._serial_retry_scheduled = False
         self._serial_start_monotonic = 0.0
+        self._serial_pnp_reset_done = False
+        self._ssh_complete_seq = 0
+        self._adb_complete_seq = 0
+        self._remote_ui_tick = 0
+        self._tab_async_complete.connect(self._on_tab_async_complete)
         self._build_ui()
         self._start()
 
@@ -705,17 +1006,46 @@ class SessionWidget(QWidget):
         return exe in ("ssh", "ssh.exe")
 
     @property
+    def _is_remote_pty_shell(self) -> bool:
+        """Interactive ADB shell or SSH — same completion, drain, merge, and UI-throttle behavior."""
+        return self._is_ssh_session or self._is_adb_shell
+
+    @property
     def _is_serial_session(self) -> bool:
         return "serial.tools.miniterm" in " ".join(str(x) for x in self.command).lower()
 
+    def _pending_flush_backlog(self) -> int:
+        return sum(len(x) for x in self._pending_chunks)
+
+    def _flush_interval_ms(self) -> int:
+        if self._is_serial_session:
+            return 10
+        if self._is_remote_pty_shell:
+            n = self._pending_flush_backlog()
+            if n > 1_200_000:
+                return 80
+            if n > 600_000:
+                return 50
+            if n > 200_000:
+                return 32
+            return 20
+        return 20
+
+    def _arm_flush_timer(self) -> None:
+        self._flush_timer.setInterval(self._flush_interval_ms())
+        if not self._flush_timer.isActive():
+            self._flush_timer.start()
+
     @staticmethod
-    def _serial_port_busy_text(text: str) -> bool:
+    def _serial_recoverable_open_error(text: str) -> bool:
+        """Errors where retry + optional COM PnP reset may help (busy port, permission, stale handle)."""
         tl = (text or "").lower()
         if not tl.strip():
             return False
         needles = (
             "permissionerror",
             "permission denied",
+            "operation not permitted",
             "access is denied",
             "access denied",
             "could not open port",
@@ -723,6 +1053,7 @@ class SessionWidget(QWidget):
             "serial.serialutil.serialexception",
             "being used by another process",
             "errno 13",
+            "errno 16",
             "failed to open port",
             "could not exclusively lock",
             "winerror 5",
@@ -730,8 +1061,48 @@ class SessionWidget(QWidget):
             "unable to open",
             "port is busy",
             "device is being used",
+            "cannot configure port",
+            "insufficient permissions",
         )
         return any(n in tl for n in needles)
+
+    def _serial_com_port_from_command(self) -> str:
+        parts = [str(x) for x in (self.command or [])]
+        joined = " ".join(parts).lower()
+        if "miniterm" not in joined:
+            return ""
+        for p in parts:
+            if re.match(r"(?i)^COM\d+$", (p or "").strip()):
+                return p.strip()
+        return ""
+
+    def _serial_force_kill_and_release(self) -> None:
+        """Kill miniterm QProcess and any stray ``python -m serial.tools.miniterm`` for the same COM (Windows)."""
+        if not self._is_serial_session:
+            return
+        com = self._serial_com_port_from_command()
+        serial_pid: Optional[int] = None
+        st = self.proc.state()
+        if st == QProcess.Running:
+            try:
+                serial_pid = int(self.proc.processId())
+            except Exception:
+                serial_pid = None
+        still_running = False
+        if st == QProcess.Running:
+            self.proc.kill()
+            still_running = not self.proc.waitForFinished(12000)
+        elif st == QProcess.Starting:
+            self.proc.kill()
+            self.proc.waitForFinished(6000)
+        if serial_pid and still_running:
+            _win_taskkill_serial_tree(serial_pid)
+            time.sleep(0.35)
+        if sys.platform == "win32" and com:
+            _win_kill_python_miniterm_for_com(com)
+            time.sleep(0.75)
+        elif self._is_serial_session:
+            time.sleep(0.45)
 
     def _serial_maybe_retry_on_text(self, raw: str) -> None:
         """If miniterm reports the COM port is busy, tear down and reopen (limited retries)."""
@@ -741,7 +1112,7 @@ class SessionWidget(QWidget):
             return
         if time.monotonic() - self._serial_start_monotonic > 120.0:
             return
-        if not self._serial_port_busy_text(raw):
+        if not self._serial_recoverable_open_error(raw):
             return
         self._schedule_serial_restart()
 
@@ -754,7 +1125,7 @@ class SessionWidget(QWidget):
         QTimer.singleShot(120, self._restart_serial_session_impl)
 
     def _restart_serial_session_impl(self) -> None:
-        """Kill the current miniterm process (and tree on Windows) and start the same command again."""
+        """Kill the current serial-console process (and tree on Windows) and start the same command again."""
         self._serial_retry_scheduled = False
         if not self._is_serial_session:
             return
@@ -767,7 +1138,7 @@ class SessionWidget(QWidget):
             return
         self._serial_auto_retries_used += 1
         self._append_plain_ui(
-            f"\n[serial] Port busy or access denied — stopping miniterm and retrying "
+            f"\n[serial] Port busy or access denied — stopping serial console and retrying "
             f"({self._serial_auto_retries_used}/2)…\n"
         )
         self._disconnect_proc_signals()
@@ -778,26 +1149,22 @@ class SessionWidget(QWidget):
         self._stdout_drain_scheduled = False
         self._stderr_drain_scheduled = False
 
-        serial_pid: Optional[int] = None
-        st = self.proc.state()
-        if st == QProcess.Running:
-            try:
-                serial_pid = int(self.proc.processId())
-            except Exception:
-                serial_pid = None
-        still_running = False
-        if st == QProcess.Running:
-            self.proc.kill()
-            still_running = not self.proc.waitForFinished(8000)
-        elif st == QProcess.Starting:
-            self.proc.kill()
-            self.proc.waitForFinished(4000)
+        self._serial_force_kill_and_release()
 
-        if self._is_serial_session and serial_pid and still_running:
-            _win_taskkill_serial_tree(serial_pid)
-            time.sleep(0.45)
-        elif self._is_serial_session:
-            time.sleep(0.35)
+        if (
+            sys.platform == "win32"
+            and self._is_serial_session
+            and not self._serial_pnp_reset_done
+            and self._serial_auto_retries_used == 1
+        ):
+            com = self._serial_com_port_from_command()
+            if com and _win_pnp_reset_com_port(com):
+                self._serial_pnp_reset_done = True
+                self._append_plain_ui(
+                    f"\n[serial] Reset {com} via Device Manager class APIs (disable/enable). "
+                    f"Waiting before reopening the port…\n"
+                )
+                time.sleep(2.5)
 
         self._ansi.reset()
         self._trim_first_pty_chunk = bool(self._banner)
@@ -830,6 +1197,7 @@ class SessionWidget(QWidget):
         self.output.set_on_tab_key(self._send_tab_to_shell)
         self.output.set_session_running(lambda: self.proc.state() == QProcess.Running)
         self.output.set_skip_bridging_newline(lambda: self._is_serial_session)
+        self.output.set_remote_pty_relaxed_bridging(self._is_remote_pty_shell)
         self.output.set_on_clear_buffer(self._on_terminal_cleared)
         # Reliable font zoom shortcuts on terminal widget.
         self._zoom_in_sc = QShortcut(QKeySequence.ZoomIn, self.output)
@@ -843,6 +1211,11 @@ class SessionWidget(QWidget):
         self._zoom_out_sc_alt.activated.connect(lambda: self.output.adjust_terminal_font_size(-1))
         self._zoom_reset_sc.activated.connect(lambda: self.output.set_terminal_font_size(10))
         layout.addWidget(self.output, 1)
+        if self._is_remote_pty_shell:
+            try:
+                self.output.document().setMaximumBlockCount(6000)
+            except Exception:
+                pass
         self._session_footer = QLabel()
         self._session_footer.setObjectName("TerminalSessionFooter")
         self._session_footer.setFont(QFont("Consolas", 10))
@@ -858,10 +1231,15 @@ class SessionWidget(QWidget):
         self._flush_timer = QTimer(self)
         self._flush_timer.setSingleShot(True)
         # SSH: coalesce UI updates (~1 frame); smaller intervals burn CPU and can starve other threads.
-        self._flush_timer.setInterval(16 if self._is_ssh_session else 25)
+        if self._is_serial_session:
+            self._flush_timer.setInterval(8)
+            self._stream_chunk = 131072
+        elif self._is_remote_pty_shell:
+            self._flush_timer.setInterval(22)
+            self._stream_chunk = 65536
+        else:
+            self._flush_timer.setInterval(20)
         self._flush_timer.timeout.connect(self._flush_pending_output)
-        if self._is_ssh_session:
-            self._stream_chunk = 4096
         self._log_flush_timer = QTimer(self)
         self._log_flush_timer.setSingleShot(True)
         self._log_flush_timer.setInterval(180)
@@ -923,39 +1301,12 @@ class SessionWidget(QWidget):
         return m.group(1) if m else "/"
 
     def _adb_list_dir_names(self, remote_dir: str) -> List[str]:
-        d = (remote_dir or "/").replace('"', '\\"')
         adb = self.command[0] if self.command else ""
-        serial = self._adb_shell_serial()
-        args = ["shell", f'ls -1 -a "{d}" 2>/dev/null']
-        if serial:
-            args = ["-s", serial, *args]
-        code, out, _err = run_adb(adb, args, timeout=6)
-        if code != 0:
-            return []
-        out_names: List[str] = []
-        for ln in out.splitlines():
-            n = ln.strip()
-            if not n or n in (".", ".."):
-                continue
-            out_names.append(n)
-        return out_names
+        return _adb_list_dir_names_for_args(adb, self._adb_shell_serial(), remote_dir)
 
     @staticmethod
     def _expand_common_prefix(token: str, candidates: Sequence[str]) -> str:
-        if not token or not candidates:
-            return token
-        lowers = [c.lower() for c in candidates]
-        low_prefix = os.path.commonprefix(lowers)
-        if not low_prefix:
-            return token
-        first = candidates[0]
-        matched_case_prefix = first[: len(low_prefix)]
-        # Expand when we can grow the token; also normalize case when user typed lower-case.
-        if len(low_prefix) > len(token):
-            return matched_case_prefix
-        if len(low_prefix) == len(token) and token.lower() == low_prefix and token != matched_case_prefix:
-            return matched_case_prefix
-        return token
+        return _expand_common_prefix_str(token, candidates)
 
     def _beep_completion_miss(self) -> None:
         # Moba-like feedback: when Tab cannot complete further, emit a local bell.
@@ -981,14 +1332,6 @@ class SessionWidget(QWidget):
     def _adb_escape_word(text: str) -> str:
         return text.replace(" ", r"\ ")
 
-    def _adb_render_completed_token(self, left: str, token: str) -> str:
-        if " " not in token:
-            return token
-        cmd = (left or "").lstrip()
-        if cmd.startswith("cd "):
-            return f'"{token}"'
-        return self._adb_escape_word(token)
-
     def _adb_complete_from_host(self) -> bool:
         tail = self.output.current_input_tail()
         if not tail:
@@ -999,56 +1342,43 @@ class SessionWidget(QWidget):
         left, token = m.group(1), m.group(2)
         if token == "":
             return False
+        adb = self.command[0] if self.command else ""
+        if not adb:
+            return False
         cwd = self._adb_shell_cwd()
         want_path = "/" in token
-        candidates: List[str] = []
-        if want_path:
-            if token.startswith("/"):
-                remote_dir = token.rsplit("/", 1)[0] or "/"
-                prefix = token.rsplit("/", 1)[1]
-                base = remote_dir if remote_dir.startswith("/") else "/" + remote_dir
-            else:
-                rel_dir = token.rsplit("/", 1)[0] if "/" in token else ""
-                prefix = token.rsplit("/", 1)[1] if "/" in token else token
-                base = (cwd.rstrip("/") + "/" + rel_dir).replace("//", "/") if rel_dir else cwd
-                remote_dir = base
-            names = self._adb_list_dir_names(remote_dir)
-            prefix_l = prefix.lower()
-            candidates = [n for n in names if n.lower().startswith(prefix_l)]
-            if len(candidates) == 1:
-                filled = f"{remote_dir.rstrip('/')}/{candidates[0]}" if token.startswith("/") else (
-                    f"{token.rsplit('/', 1)[0]}/{candidates[0]}" if "/" in token else candidates[0]
-                )
-                if not filled.endswith("/"):
-                    filled = filled + "/"
-                self.output.set_input_tail(left + self._adb_render_completed_token(left, filled))
-                return True
-            expanded = self._expand_common_prefix(prefix, candidates)
-            if expanded != prefix:
-                if token.startswith("/"):
-                    filled = f"{remote_dir.rstrip('/')}/{expanded}"
-                else:
-                    filled = f"{token.rsplit('/', 1)[0]}/{expanded}" if "/" in token else expanded
-                self.output.set_input_tail(left + self._adb_render_completed_token(left, filled))
-                return True
-            self._show_completion_lines(candidates)
-            return True
-        names = self._adb_list_dir_names(cwd)
-        common_bins: List[str] = []
-        for d in ("/ifs/bin", "/system/bin", "/system/xbin"):
-            common_bins.extend(self._adb_list_dir_names(d))
-        pool = list(dict.fromkeys([*names, *common_bins]))
-        token_l = token.lower()
-        candidates = [n for n in pool if n.lower().startswith(token_l)]
-        if len(candidates) == 1:
-            self.output.set_input_tail(left + self._adb_render_completed_token(left, candidates[0]))
-            return True
-        expanded = self._expand_common_prefix(token, candidates)
-        if expanded != token:
-            self.output.set_input_tail(left + self._adb_render_completed_token(left, expanded))
-            return True
-        self._show_completion_lines(candidates)
+        self._adb_complete_seq += 1
+        seq = self._adb_complete_seq
+        serial = self._adb_shell_serial()
+        left_s, token_s = left, token
+
+        def work() -> None:
+            res = _adb_tab_complete_compute(adb, serial, cwd, want_path, token_s, left_s)
+            self._tab_async_complete.emit("adb", seq, res)
+
+        threading.Thread(target=work, daemon=True).start()
         return True
+
+    def _on_tab_async_complete(self, kind: str, seq: int, res: object) -> None:
+        if not isinstance(res, dict):
+            res = {}
+        if kind == "ssh":
+            self._apply_ssh_tab_result(seq, res)
+        elif kind == "adb":
+            self._apply_adb_tab_result(seq, res)
+
+    def _apply_adb_tab_result(self, seq: int, res: dict) -> None:
+        if seq != self._adb_complete_seq:
+            return
+        if self.proc.state() != QProcess.Running:
+            return
+        act = (res or {}).get("action")
+        if act == "set_tail":
+            self.output.set_input_tail((res or {}).get("text") or "")
+        elif act == "list":
+            self._show_completion_lines((res or {}).get("candidates") or [])
+        elif act == "forward_tab":
+            self.proc.write(b"\t")
 
     def _on_terminal_cleared(self) -> None:
         self._tail_cache = ""
@@ -1099,7 +1429,7 @@ class SessionWidget(QWidget):
         return token.replace(" ", r"\ ")
 
     def _ssh_complete_from_host(self) -> bool:
-        """Host-side path/command completion (same idea as ADB / local CMD); keeps Tab responsive."""
+        """Host-side path/command completion (SSH work runs off the UI thread so the session stays responsive)."""
         tail = self.output.current_input_tail()
         if not tail:
             return False
@@ -1114,57 +1444,30 @@ class SessionWidget(QWidget):
             return False
         cwd = self._ssh_shell_cwd()
         want_path = "/" in token
-        candidates: List[str] = []
-        if want_path:
-            if token.startswith("/"):
-                remote_dir = token.rsplit("/", 1)[0] or "/"
-                prefix = token.rsplit("/", 1)[1]
-            else:
-                rel_dir = token.rsplit("/", 1)[0] if "/" in token else ""
-                prefix = token.rsplit("/", 1)[1] if "/" in token else token
-                base = (cwd.rstrip("/") + "/" + rel_dir).replace("//", "/") if rel_dir else cwd
-                remote_dir = base
-            names = self._ssh_list_dir_names(remote_dir)
-            prefix_l = prefix.lower()
-            candidates = [n for n in names if n.lower().startswith(prefix_l)]
-            if len(candidates) == 1:
-                filled = (
-                    f"{remote_dir.rstrip('/')}/{candidates[0]}"
-                    if token.startswith("/")
-                    else (f"{token.rsplit('/', 1)[0]}/{candidates[0]}" if "/" in token else candidates[0])
-                )
-                if not filled.endswith("/"):
-                    filled = filled + "/"
-                self.output.set_input_tail(left + self._ssh_render_completed_token(left, filled))
-                return True
-            expanded = self._expand_common_prefix(prefix, candidates)
-            if expanded != prefix:
-                if token.startswith("/"):
-                    filled = f"{remote_dir.rstrip('/')}/{expanded}"
-                else:
-                    filled = f"{token.rsplit('/', 1)[0]}/{expanded}" if "/" in token else expanded
-                self.output.set_input_tail(left + self._ssh_render_completed_token(left, filled))
-                return True
-            if not candidates:
-                return False
-            self._show_completion_lines(candidates)
-            return True
-        names = self._ssh_list_dir_names(cwd)
-        common_bins = _ssh_list_command_pool_for_args(exe, port, target)
-        pool = list(dict.fromkeys([*names, *common_bins]))
-        token_l = token.lower()
-        candidates = [n for n in pool if n.lower().startswith(token_l)]
-        if len(candidates) == 1:
-            self.output.set_input_tail(left + self._ssh_render_completed_token(left, candidates[0]))
-            return True
-        expanded = self._expand_common_prefix(token, candidates)
-        if expanded != token:
-            self.output.set_input_tail(left + self._ssh_render_completed_token(left, expanded))
-            return True
-        if not candidates:
-            return False
-        self._show_completion_lines(candidates)
+
+        self._ssh_complete_seq += 1
+        seq = self._ssh_complete_seq
+        exe_s, port_s, target_s, cwd_s = exe, str(port), target, cwd
+
+        def work() -> None:
+            res = _ssh_tab_complete_compute(exe_s, port_s, target_s, cwd_s, want_path, token, left)
+            self._tab_async_complete.emit("ssh", seq, res)
+
+        threading.Thread(target=work, daemon=True).start()
         return True
+
+    def _apply_ssh_tab_result(self, seq: int, res: dict) -> None:
+        if seq != self._ssh_complete_seq:
+            return
+        if self.proc.state() != QProcess.Running:
+            return
+        act = (res or {}).get("action")
+        if act == "set_tail":
+            self.output.set_input_tail((res or {}).get("text") or "")
+        elif act == "list":
+            self._show_completion_lines((res or {}).get("candidates") or [])
+        elif act == "forward_tab":
+            self.proc.write(b"\t")
 
     def _list_local_dir_names(self, directory: str) -> List[str]:
         try:
@@ -1300,25 +1603,16 @@ class SessionWidget(QWidget):
         On normal tab close, the kill is fire-and-forget. On application exit, pass
         ``wait_for_process=False`` so the window closes immediately (avoids Windows socket noise).
         """
-        serial_pid: Optional[int] = None
-        if self.proc.state() == QProcess.Running and self._is_serial_session:
-            try:
-                serial_pid = int(self.proc.processId())
-            except Exception:
-                serial_pid = None
-        still_running = False
+        if self._is_serial_session:
+            self._disconnect_proc_signals()
+            self._serial_force_kill_and_release()
+            self._close_log()
+            return
         if self.proc.state() == QProcess.Running:
             self._disconnect_proc_signals()
-            # Windows: terminate() often leaves COM ports busy for serial; SSH works reliably with kill().
             self.proc.kill()
-            wtime = 8000 if self._is_serial_session else (800 if wait_for_process else 400)
-            still_running = not self.proc.waitForFinished(wtime)
-        # Only escalate to taskkill when the process is still alive; otherwise taskkill can confuse the driver.
-        if self._is_serial_session and serial_pid and still_running:
-            _win_taskkill_serial_tree(serial_pid)
-            time.sleep(0.4)
-        elif self._is_serial_session:
-            time.sleep(0.2)
+            wtime = 800 if wait_for_process else 400
+            self.proc.waitForFinished(wtime)
         self._close_log()
 
     def _flush_pending_streams(self) -> None:
@@ -1337,6 +1631,7 @@ class SessionWidget(QWidget):
 
     def _on_proc_finished(self):
         self._flush_pending_streams()
+        self._ansi.reset()
         self._append_plain_ui("\n[session terminated]\n")
         self._write_log("\n[session terminated]\n")
         self._write_log(f"[full log path] {self._log_path}\n")
@@ -1350,7 +1645,7 @@ class SessionWidget(QWidget):
         if not err:
             err = "Process failed to start."
         self._append(f"\n[start error] {err}\nCommand: {cmd}\n")
-        if self._is_serial_session and self._serial_port_busy_text(err):
+        if self._is_serial_session and self._serial_recoverable_open_error(err):
             self._schedule_serial_restart()
 
     def _update_session_footer(self) -> None:
@@ -1482,10 +1777,10 @@ class SessionWidget(QWidget):
         self._send_line((line or "").rstrip("\n"))
 
     def _tighten_pty_chunk(self, text: str) -> str:
-        """Collapse double newlines (ADB/SSH/serial) so command output does not leave a blank line before results."""
+        """Collapse runaway blank lines (ADB/SSH/serial) without merging every pair (avoids choppy slog2info-style streams)."""
         if not text:
             return text
-        text = re.sub(r"\n{2,}", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
         text = text.replace(r"\ ", " ")
         if self._tail_cache.endswith("\n") and text.startswith("\n"):
             text = text[1:]
@@ -1498,10 +1793,10 @@ class SessionWidget(QWidget):
             self._serial_maybe_retry_on_text(data)
         if self._is_serial_session:
             data = preprocess_serial_stream(data)
-        elif self._is_ssh_session:
-            data = preprocess_escape_noise(data)
+            data = _filter_serial_miniterm_banner(data)
         else:
-            data = preprocess_pty_stream(data)
+            # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
+            data = preprocess_escape_noise(data)
         data = re.sub(r"\n{3,}", "\n\n", data)
         if self._trim_first_pty_chunk:
             data = data.lstrip("\n")
@@ -1510,7 +1805,7 @@ class SessionWidget(QWidget):
             self._trim_first_pty_chunk = False
         if not data:
             return
-        if self._is_adb_shell or self._is_serial_session:
+        if self._is_remote_pty_shell or self._is_serial_session:
             data = self._tighten_pty_chunk(data)
             if not data:
                 return
@@ -1522,8 +1817,21 @@ class SessionWidget(QWidget):
             self._write_log(data)
             self._tail_cache = (self._tail_cache + data)[-32768:]
             self._pending_chunks.append(data)
-            if not self._flush_timer.isActive():
-                self._flush_timer.start()
+            self._arm_flush_timer()
+            return
+        # SSH / ADB: QTextCursor.insertText + stripped ANSI (Moba-style: responsive under huge logs).
+        # insertHtml/ANSI-to-HTML cannot keep real-time UI with continuous slog2info-style output.
+        if self._is_remote_pty_shell:
+            plain = strip_ansi_for_display(data)
+            if not plain:
+                return
+            # CRLF → LF; lone CR (progress / same-line redraw e.g. slog2info) must NOT become LF or lines break mid-token.
+            plain = plain.replace("\r\n", "\n")
+            plain = plain.replace("\r", "")
+            self._write_log(plain)
+            self._tail_cache = (self._tail_cache + plain)[-32768:]
+            self._pending_chunks.append(plain)
+            self._arm_flush_timer()
             return
         html_frag, plain_frag = self._ansi.feed(data)
         if not html_frag and not plain_frag:
@@ -1532,28 +1840,76 @@ class SessionWidget(QWidget):
         if plain_frag:
             self._tail_cache = (self._tail_cache + plain_frag)[-32768:]
         self._pending_chunks.append(html_frag)
-        if not self._flush_timer.isActive():
-            self._flush_timer.start()
+        self._arm_flush_timer()
+
+    def _maybe_reset_ansi_after_prompt(self) -> None:
+        """If the last line looks like a shell prompt, reset SGR state so the next line uses default colors."""
+        if self._is_serial_session or self._is_remote_pty_shell:
+            return
+        tail = (self._tail_cache or "")[-4096:]
+        last = ""
+        for line in reversed(tail.split("\n")):
+            if line.strip():
+                last = line
+                break
+        if not last:
+            return
+        s = last.strip()
+        if self._is_adb_shell and re.search(r":(/[^ ]*)\s*[$#]\s*$", s):
+            self._ansi.reset()
+        elif self._is_ssh_session and re.search(r"@[^:]+:\S+\s+[$#>]+\s*$", s):
+            self._ansi.reset()
 
     def _flush_pending_output(self) -> None:
         if not self._pending_chunks:
             return
-        text = "".join(self._pending_chunks)
-        self._pending_chunks.clear()
         if self._is_serial_session:
-            self.output.append_plain_fragment(text)
-            self._sync_python_repl_mode()
+            cap = _SERIAL_TEXT_FLUSH_CAP
+        elif self._is_remote_pty_shell:
+            cap = _REMOTE_PLAIN_FLUSH_CAP
         else:
-            self._append_output_html(text)
-        self.output.moveCursor(QTextCursor.End)
-        self.output.ensureCursorVisible()
+            cap = _LOCAL_HTML_FLUSH_CAP
+        parts: List[str] = []
+        total = 0
+        for ch in self._pending_chunks:
+            if parts and total + len(ch) > cap:
+                break
+            parts.append(ch)
+            total += len(ch)
+        if not parts:
+            parts = [self._pending_chunks[0]]
+        self._pending_chunks = self._pending_chunks[len(parts) :]
+        text = "".join(parts)
+        self.output.setUpdatesEnabled(False)
+        try:
+            if self._is_serial_session:
+                self.output.append_plain_fragment(text)
+                self._sync_python_repl_mode()
+            elif self._is_remote_pty_shell:
+                self._remote_ui_tick += 1
+                backlog = self._pending_flush_backlog()
+                every = 24 if backlog > 500_000 else 14
+                self.output.append_stream_plain(
+                    text,
+                    ensure_visible=(self._remote_ui_tick % every == 0),
+                )
+                self._sync_python_repl_mode()
+                if self._remote_ui_tick % 5 == 0:
+                    QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
+            else:
+                self._append_output_html(text)
+        finally:
+            self.output.setUpdatesEnabled(True)
+        self._maybe_reset_ansi_after_prompt()
         self._ensure_prompt_trailing_space()
         self._update_session_footer()
+        if self._pending_chunks:
+            self._arm_flush_timer()
 
-    def _append_output_html(self, text: str) -> None:
+    def _append_output_html(self, text: str, ensure_visible: bool = True) -> None:
         if not text:
             return
-        self.output.append_from_process_html(text)
+        self.output.append_from_process_html(text, ensure_visible=ensure_visible)
         self._sync_python_repl_mode()
 
     def _sync_python_repl_mode(self) -> None:
@@ -1575,6 +1931,15 @@ class SessionWidget(QWidget):
     def _start(self):
         if self._is_serial_session:
             self._serial_start_monotonic = time.monotonic()
+            if not self._banner:
+                parts = [str(x) for x in self.command]
+                com = parts[-2] if len(parts) >= 2 else "COM?"
+                baud = parts[-1] if len(parts) >= 2 else "?"
+                self._banner = (
+                    f"Serial console · {com} @ {baud} baud — Close this tab to disconnect. "
+                    f"Ctrl+] sends a telnet-style break to the device (pySerial console), not paste.\n"
+                )
+            self._trim_first_pty_chunk = bool(self._banner)
         # Banner line only; first PTY bytes may include leading newlines — trimmed in _append.
         initial = (self._banner + "\n") if self._banner else ""
         self.output.set_initial_content(initial)
@@ -1595,9 +1960,61 @@ class SessionWidget(QWidget):
             env.insert("PATH", env.value("Path", ""))
         self.proc.setProcessEnvironment(env)
         self.proc.setWorkingDirectory(self._working_dir_str)
+        if self._is_ssh_session:
+            parts = [str(x) for x in self.command]
+            dest = parts[-1] if parts else ""
+            if "_adbnik_missing_host.invalid" in dest:
+                self._append_plain_ui(
+                    "\n[SSH] No host configured. Close this tab, then use Session → Login (enter Host), "
+                    "or connect SFTP in File Explorer before opening an SSH terminal from there.\n"
+                )
+                self._update_session_footer()
+                return
+        # Merge stderr into stdout so a noisy remote cannot fill the stderr pipe and stall the session
+        # (can look like slog2info or similar "never finishes" when output is large).
+        # Serial: merge so miniterm/Python errors on stderr still reach the same drain path as stdout.
+        if self._is_remote_pty_shell or self._is_serial_session:
+            self.proc.setProcessChannelMode(QProcess.MergedChannels)
         self.proc.start(self.command[0], self.command[1:])
         self.output.setFocus(Qt.OtherFocusReason)
         self._update_session_footer()
+        if self._is_remote_pty_shell:
+            QTimer.singleShot(80, self._warm_remote_tab_completion_cache)
+
+    def _warm_remote_tab_completion_cache(self) -> None:
+        """Prefetch Tab-completion data for whichever remote shell is active (ADB or SSH)."""
+        if self._is_ssh_session:
+            self._warm_ssh_tab_completion_cache()
+        elif self._is_adb_shell:
+            self._warm_adb_tab_completion_cache()
+
+    def _warm_adb_tab_completion_cache(self) -> None:
+        """Prefetch common remote bin listings so Tab completion stays responsive."""
+        if not self._is_adb_shell or self.proc.state() != QProcess.Running:
+            return
+        adb = self.command[0] if self.command else ""
+        if not adb:
+            return
+        serial = self._adb_shell_serial()
+
+        def work() -> None:
+            for d in ("/ifs/bin", "/system/bin", "/system/xbin"):
+                _adb_list_dir_names_for_args(adb, serial, d)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _warm_ssh_tab_completion_cache(self) -> None:
+        """Prefetch remote PATH tool names (e.g. ``/ifs/bin``) so the first Tab is not a cold cache miss."""
+        if not self._is_ssh_session or self.proc.state() != QProcess.Running:
+            return
+        exe, port, target = self._ssh_parse_connection()
+        if not exe or not target:
+            return
+
+        def work() -> None:
+            _ssh_list_command_pool_for_args(exe, port, target)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _read_stdout(self) -> None:
         self._stdout_pending.extend(bytes(self.proc.readAllStandardOutput()))
@@ -1623,10 +2040,33 @@ class SessionWidget(QWidget):
         self._stdout_drain_scheduled = False
         if not self._stdout_pending:
             return
-        sz = int(getattr(self, "_stream_chunk", 65536) or 65536)
-        chunk = self._stdout_pending[:sz]
-        del self._stdout_pending[:sz]
-        self._append(chunk.decode(errors="ignore"))
+        if self._is_remote_pty_shell:
+            backlog = self._pending_flush_backlog()
+            if backlog > 1_200_000:
+                budget = 96 * 1024
+            elif backlog > 600_000:
+                budget = 192 * 1024
+            elif backlog > 250_000:
+                budget = 512 * 1024
+            else:
+                budget = 2 * 1024 * 1024
+            taken = 0
+            parts: List[bytes] = []
+            slice_sz = max(65536, int(getattr(self, "_stream_chunk", 65536) or 65536))
+            while self._stdout_pending and taken < budget:
+                n = min(len(self._stdout_pending), slice_sz)
+                parts.append(bytes(self._stdout_pending[:n]))
+                del self._stdout_pending[:n]
+                taken += n
+            raw = b"".join(parts)
+            self._append(raw.decode(errors="ignore"))
+        else:
+            sz = int(getattr(self, "_stream_chunk", 65536) or 65536)
+            chunk = self._stdout_pending[:sz]
+            del self._stdout_pending[:sz]
+            if self._is_serial_session:
+                chunk = bytes(b for b in chunk if b not in (0x1B, 0x9B))
+            self._append(chunk.decode(errors="ignore"))
         if self._stdout_pending:
             self._schedule_stdout_drain()
 
@@ -1634,10 +2074,26 @@ class SessionWidget(QWidget):
         self._stderr_drain_scheduled = False
         if not self._stderr_pending:
             return
-        sz = int(getattr(self, "_stream_chunk", 65536) or 65536)
-        chunk = self._stderr_pending[:sz]
-        del self._stderr_pending[:sz]
-        self._append(chunk.decode(errors="ignore"))
+        if self._is_remote_pty_shell:
+            # Stdout/stderr are merged for ssh/adb shell; this path is usually idle.
+            budget = 512 * 1024
+            taken = 0
+            parts: List[bytes] = []
+            while self._stderr_pending and taken < budget:
+                n = min(len(self._stderr_pending), 65536)
+                parts.append(bytes(self._stderr_pending[:n]))
+                del self._stderr_pending[:n]
+                taken += n
+            raw = b"".join(parts)
+            if raw:
+                self._append(raw.decode(errors="ignore"))
+        else:
+            sz = int(getattr(self, "_stream_chunk", 65536) or 65536)
+            chunk = self._stderr_pending[:sz]
+            del self._stderr_pending[:sz]
+            if self._is_serial_session:
+                chunk = bytes(b for b in chunk if b not in (0x1B, 0x9B))
+            self._append(chunk.decode(errors="ignore"))
         if self._stderr_pending:
             self._schedule_stderr_drain()
 
@@ -2066,13 +2522,22 @@ class TerminalTab(QWidget):
         if k == "ssh":
             if not self._ensure_ssh_client_available():
                 return
+            host = str(bm.get("ssh_host", "")).strip()
+            if not host:
+                QMessageBox.warning(
+                    self,
+                    "Bookmark",
+                    "This SSH bookmark has no host. Edit the bookmark or use Session → Login.",
+                )
+                return
             try:
                 sp = int(bm.get("ssh_port") or 22)
             except (TypeError, ValueError):
                 sp = 22
+            sp = normalize_tcp_port(sp, 22)
             profile = SessionProfile(
                 ConnectionKind.SSH_SFTP,
-                ssh_host=bm.get("ssh_host", ""),
+                ssh_host=host,
                 ssh_user=bm.get("ssh_user", ""),
                 ssh_port=sp,
                 ssh_password=bm.get("ssh_password", "") or "",
@@ -2098,7 +2563,7 @@ class TerminalTab(QWidget):
             port = bm.get("serial_port") or self.get_default_serial_port()
             baud = bm.get("serial_baud") or self.get_default_serial_baud()
             cmd = [sys.executable, "-m", "serial.tools.miniterm", str(port), str(baud)]
-            self.add_session(f"Serial · {port}", cmd)
+            self.add_session(f"Serial console · {port}", cmd)
 
     def _open_local_cmd(self) -> None:
         # Native CMD behavior; keep command parsing/execution identical to real cmd.exe.
@@ -2293,7 +2758,7 @@ class TerminalTab(QWidget):
             port = (o.serial_port or "").strip() or self.get_default_serial_port()
             baud = (o.serial_baud or "").strip() or self.get_default_serial_baud()
             cmd = [sys.executable, "-m", "serial.tools.miniterm", port, baud]
-            self.add_session(f"Serial · {port}", cmd)
+            self.add_session(f"Serial console · {port}", cmd)
         elif o.kind == "local_cmd":
             self._open_local_cmd()
         elif o.kind == "local_pwsh":
@@ -2395,4 +2860,4 @@ class TerminalTab(QWidget):
             port = profile.serial_port or self.get_default_serial_port()
             baud = profile.serial_baud or self.get_default_serial_baud()
             cmd = [sys.executable, "-m", "serial.tools.miniterm", port, baud]
-            self.add_session(f"Serial · {port}", cmd)
+            self.add_session(f"Serial console · {port}", cmd)

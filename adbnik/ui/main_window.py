@@ -1,4 +1,5 @@
 import html
+import os
 import platform
 import sys
 import time
@@ -163,6 +164,16 @@ class MainWindow(QMainWindow):
         self.log_view.moveCursor(QTextCursor.End)
 
     def _apply_theme(self) -> None:
+        """Defer stylesheet work via qt-thread-updater so the UI stays responsive after heavy terminal I/O."""
+        os.environ.setdefault("QT_API", "pyqt5")
+        try:
+            from qt_thread_updater import call_latest
+        except Exception:
+            self._apply_theme_impl()
+            return
+        call_latest(self._apply_theme_impl)
+
+    def _apply_theme_impl(self) -> None:
         dark = bool(getattr(self.config, "dark_theme", False))
         self.setStyleSheet(get_stylesheet(dark=dark))
         _icon = create_app_icon(dark=dark)
@@ -467,6 +478,9 @@ class MainWindow(QMainWindow):
         th.start()
 
     def _on_devices_refreshed(self, pairs, adb_ok: bool) -> None:
+        th = self.sender()
+        if th is not self._device_refresh_thread:
+            return
         self._device_refresh_thread = None
         prev_selected_serial = getattr(self, "_prev_selected_serial_for_refresh", "")
         prev_sig = getattr(self, "_last_adb_device_sig", None)
@@ -602,6 +616,9 @@ class MainWindow(QMainWindow):
         th.start()
 
     def _on_device_stats_ready(self, serial: str, raw: object, err: str) -> None:
+        th = self.sender()
+        if th is not self._stats_refresh_thread:
+            return
         self._stats_refresh_thread = None
         current = (self.terminal.current_adb_serial() or "").strip() if hasattr(self, "terminal") else ""
         if serial and current and serial != current:
