@@ -1,6 +1,11 @@
 """ANSI → HTML converter tests."""
 
-from adbnik.ui.ansi_html import AnsiToHtmlConverter, preprocess_escape_noise, preprocess_pty_stream
+from adbnik.ui.ansi_html import (
+    AnsiToHtmlConverter,
+    preprocess_escape_noise,
+    preprocess_pty_stream,
+    preprocess_serial_stream,
+)
 
 
 def test_sgr_green():
@@ -26,3 +31,16 @@ def test_esc_split_across_newlines_merged():
     html, plain = c.feed(s)
     assert "[1;36m" not in plain
     assert "SYS: hello" in plain
+
+
+def test_orphan_reset_line_stripped():
+    """UART/SSH sometimes leave [0;39m on its own line when ESC is lost."""
+    s = preprocess_escape_noise("ok\n[0;39m\nnext\n")
+    assert "[0;39m" not in s
+    assert "ok" in s
+    assert "next" in s
+
+
+def test_serial_preprocess_strips_bracket_39m():
+    s = preprocess_serial_stream("line\n[39m\n")
+    assert "[39m" not in s

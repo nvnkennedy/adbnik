@@ -177,8 +177,15 @@ def preprocess_escape_noise(data: str) -> str:
     data = re.sub(r"(?m)^\s*\x1b\s*$", "", data)
     # Line is only a CSI SGR body like [1;36m (ESC was on the previous line)
     data = re.sub(r"(?m)^\s*\[(?:\d{1,4};)*\d{1,4}m\s*$", "", data)
+    # Orphan reset lines: [0;39m], [39m], [0m] when ESC was dropped or split across lines
+    data = re.sub(r"(?m)^\s*\[(?:0;)?39m\s*$", "", data)
+    data = re.sub(r"(?m)^\s*\[0m\s*$", "", data)
     # CSI SGR without leading ESC (UART / logging dropped 0x1b) — strip anywhere
     data = re.sub(r"(?<!\x1b)\[(?:\d{1,4};)*\d{1,4}m", "", data)
+    data = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", data)
+    data = re.sub(r"(?<!\x1b)\[0m\b", "", data)
+    # New line that is only bracket noise left after a newline-split CSI
+    data = re.sub(r"(?m)^\s*\[\s*$", "", data)
     data = re.sub(r"\n{3,}", "\n\n", data)
     return data
 
@@ -201,9 +208,10 @@ def preprocess_serial_stream(data: str) -> str:
     data = re.sub(r"\x1b\[0m", "", data)
     # UART sometimes drops ESC so "[0;39m" / "[39m" appears as plain text
     data = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", data)
+    data = re.sub(r"(?<!\x1b)\[39m", "", data)
     data = re.sub(r"(?<!\x1b)\[0m\b", "", data)
     # Lines that contain only SGR noise
-    data = re.sub(r"(?m)^(?:\s|\x1b\[[0-9;]*m|\[(?:0;)?39m|\[0m)+\s*$", "", data)
+    data = re.sub(r"(?m)^(?:\s|\x1b\[[0-9;]*m|\[(?:0;)?39m|\[39m|\[0m)+\s*$", "", data)
     # Newline sandwiched between resets (still doubles vertical space)
     data = re.sub(r"\n(?:\s*\x1b\[[0-9;]*m)+\s*\n", "\n", data)
     data = re.sub(r"\n{3,}", "\n\n", data)
