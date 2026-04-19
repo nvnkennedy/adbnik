@@ -271,6 +271,10 @@ def strip_ansi_for_display(text: str) -> str:
     """Remove ANSI/OSC for plain terminal view (high-throughput SSH/ADB). Keeps UI responsive."""
     if not text:
         return text
+    # EL (erase in line) and ED (erase in display): stripping these to empty merges runs that the TTY
+    # kept apart (common after the first prompt: echo + EL + next output → ``lsbin`` if removed bare).
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*K", "\n", text)
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*J", "\n", text)
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     text = _OSC_STRIP_FAST.sub("", text)
     text = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", text)

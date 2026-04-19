@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.5] - 2026-04-20
+
+### Fixed
+
+- **SSH / ADB plain terminal:** When stripping ANSI for display, **erase-line (EL)** and **erase-display (ED)** sequences are turned into a **newline** before other CSI removal. Removing them entirely had collapsed echoed text into the next run on later commands (e.g. `ls` + EL + `bin` rendered as `lsbin`).
+
 ## [1.3.4] - 2026-04-20
 
 ### Fixed
