@@ -954,7 +954,7 @@ class MainWindow(QMainWindow):
 
     def _menu_ssh_send_line(self, line: str):
         self.tabs.setCurrentIndex(0)
-        self.terminal.send_line_to_current_session(line)
+        self.terminal.send_line_to_ssh_session(line)
 
     def _menu_help_about(self) -> None:
         """Show version, feature summary, and links to the site, guide, GitHub, and PyPI."""

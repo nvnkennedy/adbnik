@@ -44,6 +44,7 @@ from PyQt5.QtWidgets import (
 from ...config import AppConfig
 from ..ansi_html import (
     AnsiToHtmlConverter,
+    ensure_remote_pty_visual_line_breaks,
     normalize_remote_pty_plain_text,
     preprocess_escape_noise,
     preprocess_serial_stream,
@@ -1956,6 +1957,7 @@ class SessionWidget(QWidget):
             if not plain:
                 return
             plain = normalize_remote_pty_plain_text(plain)
+            plain = ensure_remote_pty_visual_line_breaks(self._tail_cache, plain)
             plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]
@@ -3016,6 +3018,39 @@ class TerminalTab(QWidget):
             return False
         w.send_line(line, sync_anchor_after=True)
         self.tabs.setCurrentWidget(w)
+        return True
+
+    def send_line_to_ssh_session(self, line: str) -> bool:
+        """Send one line to a running SSH terminal tab (Commands → SSH), not the active tab if it is ADB/local."""
+        ssh_tabs: List[Tuple[int, SessionWidget]] = []
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if not isinstance(w, SessionWidget):
+                continue
+            if not w._is_ssh_session:
+                continue
+            if w.proc.state() != QProcess.Running:
+                continue
+            ssh_tabs.append((i, w))
+        if not ssh_tabs:
+            QMessageBox.information(
+                self,
+                "SSH",
+                "Open an SSH terminal tab first (Session → Login → SSH, or File Explorer → SSH terminal). "
+                "Commands → SSH sends only to SSH sessions, not ADB or local shells.",
+            )
+            return False
+        cur = self.tabs.currentIndex()
+        chosen: Optional[Tuple[int, SessionWidget]] = None
+        for i, w in ssh_tabs:
+            if i == cur:
+                chosen = (i, w)
+                break
+        if chosen is None:
+            chosen = ssh_tabs[0]
+        i, w = chosen
+        self.tabs.setCurrentIndex(i)
+        w.send_line(line, sync_anchor_after=True)
         return True
 
     def shutdown_all_sessions(self) -> None:
