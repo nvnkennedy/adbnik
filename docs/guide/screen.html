@@ -22,6 +22,7 @@
         <a href="terminal.html">Terminal</a>
         <a href="explorer.html">File Explorer</a>
         <a href="screen.html"><strong>Screen Control</strong></a>
+        <a class="btn btn-ghost" href="https://github.com/nvnkennedy/adbnik">GitHub</a>
         <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">PyPI</a>
       </nav>
     </div>
@@ -96,8 +97,9 @@
 
         <h2>Requirements</h2>
         <ul>
-          <li><code>scrcpy</code> on <code>PATH</code> or path set in <strong>File → Preferences</strong>.</li>
-          <li><code>adb</code> the same way; Screen Control may run <code>start-server</code> and check <code>get-state</code> before starting.</li>
+          <li><code>scrcpy</code> on <code>PATH</code> or a full path in <strong>File → Preferences</strong> (same for a portable copy in your own folder).</li>
+          <li><code>adb</code> the same way. Screen Control starts the server if needed and checks device state before launching scrcpy.</li>
+          <li>Step-by-step notes for PATH vs full paths vs a bundled tools folder: <a href="index.html#adb-scrcpy">User guide → ADB and scrcpy on your PC</a>.</li>
         </ul>
 
         <nav class="doc-nav">

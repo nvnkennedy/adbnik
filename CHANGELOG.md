@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.2.0] - 2026-04-19
+
+### Added
+
+- **Help menu:** **Website**, **User guide** (F1), **GitHub**, **PyPI**, plus **About** (with the same links). Central URL constants in `adbnik/urls.py`.
+- **User guide (site):** New section **ADB and scrcpy on your PC** on the guide home page (`guide/index.html#adb-scrcpy`) — PATH vs full paths vs a portable tools folder, tied to **File → Preferences**. **GitHub** link added to the guide header on every guide page. Terminal / Explorer / Screen pages slightly expanded with clearer step-by-step wording.
+
+### Changed
+
+- **Preferences** dialog: clearer intro text for executable paths (own install vs bundled/portable folder).
+- **About** box: link row and slightly plainer wording (e.g. tips section).
+
 ## [1.1.1] - 2026-04-19
 
 ### Added

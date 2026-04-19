@@ -20,7 +20,7 @@ from ..config import AppConfig
 
 
 class PreferencesDialog(QDialog):
-    """Paths, SSH quick commands — stored in your profile."""
+    """Dialog for tool paths and SSH quick commands (stored in the user config file)."""
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
@@ -30,18 +30,27 @@ class PreferencesDialog(QDialog):
         app = QApplication.instance()
         if app is not None:
             self.setWindowIcon(app.windowIcon())
-        self.resize(560, 480)
+        self.resize(560, 520)
         self._build_ui()
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
+        """Lay out path fields, SSH quick commands, and Save/Cancel."""
         root = QVBoxLayout(self)
-        root.addWidget(QLabel("Leave tool paths empty to use the programs on your PATH (adb, scrcpy)."))
+        intro = QLabel(
+            "ADB and scrcpy are not bundled with Adbnik. "
+            "If adb and scrcpy are on your PATH, leave the fields empty. "
+            "Otherwise enter the full path to each executable, or use Browse. "
+            "That can be a normal install (for example Android SDK platform-tools) or a folder you keep yourself "
+            "(portable zip, network share, USB stick): unpack adb and scrcpy there and choose those executables here."
+        )
+        intro.setWordWrap(True)
+        root.addWidget(intro)
 
         paths = QGroupBox("Executables")
         pf = QFormLayout(paths)
         row_adb = QHBoxLayout()
         self.adb_edit = QLineEdit(self._config.adb_path)
-        self.adb_edit.setPlaceholderText("adb — or full path")
+        self.adb_edit.setPlaceholderText("adb — or full path to adb")
         btn_adb = QPushButton("Browse…")
         btn_adb.clicked.connect(self._browse_adb)
         row_adb.addWidget(self.adb_edit, 1)
@@ -50,7 +59,7 @@ class PreferencesDialog(QDialog):
 
         row_sc = QHBoxLayout()
         self.scrcpy_edit = QLineEdit(self._config.scrcpy_path)
-        self.scrcpy_edit.setPlaceholderText("scrcpy — or full path")
+        self.scrcpy_edit.setPlaceholderText("scrcpy — or full path to scrcpy")
         btn_sc = QPushButton("Browse…")
         btn_sc.clicked.connect(self._browse_scrcpy)
         row_sc.addWidget(self.scrcpy_edit, 1)
@@ -61,8 +70,8 @@ class PreferencesDialog(QDialog):
         ssh = QGroupBox("SSH (terminal)")
         sf = QVBoxLayout(ssh)
         ssh_intro = QLabel(
-            "Custom commands for Commands → SSH (one per line). "
-            "Each line: Label | shell command — sent to the active terminal when chosen."
+            "Commands for the menu Commands → SSH (one per line). "
+            "Each line: Label | shell command — sent to the active terminal when you pick it."
         )
         ssh_intro.setWordWrap(True)
         sf.addWidget(ssh_intro)
@@ -85,17 +94,20 @@ class PreferencesDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
-    def _browse_adb(self):
+    def _browse_adb(self) -> None:
+        """Let the user pick adb (or adb.exe); write the path into the ADB field."""
         path, _ = QFileDialog.getOpenFileName(self, "Select adb", str(Path.home()))
         if path:
             self.adb_edit.setText(path)
 
-    def _browse_scrcpy(self):
+    def _browse_scrcpy(self) -> None:
+        """Let the user pick the scrcpy executable; write the path into the scrcpy field."""
         path, _ = QFileDialog.getOpenFileName(self, "Select scrcpy", str(Path.home()))
         if path:
             self.scrcpy_edit.setText(path)
 
     def _parse_quick_commands(self) -> list:
+        """Parse the SSH quick-command text into a list of {label, command} dicts."""
         out = []
         for line in self.quick_edit.toPlainText().splitlines():
             line = line.strip()
@@ -110,7 +122,8 @@ class PreferencesDialog(QDialog):
                 out.append({"label": lab or "Run", "command": cmd})
         return out
 
-    def _save(self):
+    def _save(self) -> None:
+        """Persist paths and quick commands to disk and close the dialog on success."""
         self._config.adb_path = self.adb_edit.text().strip()
         self._config.scrcpy_path = self.scrcpy_edit.text().strip()
         self._config.ssh_quick_commands = self._parse_quick_commands()
