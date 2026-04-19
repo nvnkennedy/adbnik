@@ -1346,7 +1346,8 @@ class _AdbCommandThread(QThread):
 
 class _RemoteTransferThread(QThread):
     progress = pyqtSignal(int, str)
-    done = pyqtSignal(bool, str, str)
+    # Fourth list: absolute local file paths pulled (files only); used to open after drag/drop or batch pull.
+    done = pyqtSignal(bool, str, str, list)
 
     def __init__(self, *, kind: str, mode: str, items: List[dict], remote_path: str, local_path: str, creds: dict):
         super().__init__(None)
@@ -1364,9 +1365,9 @@ class _RemoteTransferThread(QThread):
             elif self._kind == "ftp":
                 self._run_ftp()
             else:
-                self.done.emit(False, "", f"Unsupported transfer kind: {self._kind}")
+                self.done.emit(False, "", f"Unsupported transfer kind: {self._kind}", [])
         except Exception as exc:
-            self.done.emit(False, "", _remote_fs_error_message(exc, sftp=(self._kind == "sftp")))
+            self.done.emit(False, "", _remote_fs_error_message(exc, sftp=(self._kind == "sftp")), [])
 
     def _progress(self, idx: int, total: int, pct: int, msg: str) -> None:
         base = int((idx * 100) / max(total, 1))
@@ -1383,10 +1384,11 @@ class _RemoteTransferThread(QThread):
             timeout=60,
         )
         if err or sftp is None:
-            self.done.emit(False, "", err or "SFTP connection failed")
+            self.done.emit(False, "", err or "SFTP connection failed", [])
             return
         last = ""
         ok = 0
+        pulled_files: List[str] = []
         total = max(len(self._items), 1)
         try:
             for idx, it in enumerate(self._items):
@@ -1408,10 +1410,12 @@ class _RemoteTransferThread(QThread):
                         self._sftp_get(sftp, rp, lp, idx, total)
                         last = name
                         ok += 1
+                        if not bool(it.get("is_dir")) and os.path.isfile(lp):
+                            pulled_files.append(str(Path(lp).resolve()))
                 except Exception as exc:
-                    self.done.emit(False, "", _remote_fs_error_message(exc, sftp=True))
+                    self.done.emit(False, "", _remote_fs_error_message(exc, sftp=True), [])
                     return
-            self.done.emit(True, last, f"Transferred {ok} item(s).")
+            self.done.emit(True, last, f"Transferred {ok} item(s).", pulled_files)
         finally:
             disconnect_sftp(t, sftp)
 
@@ -1424,10 +1428,11 @@ class _RemoteTransferThread(QThread):
             timeout=60,
         )
         if err or ftp is None:
-            self.done.emit(False, "", err or "FTP connection failed")
+            self.done.emit(False, "", err or "FTP connection failed", [])
             return
         last = ""
         ok = 0
+        pulled_files: List[str] = []
         total = max(len(self._items), 1)
         try:
             for idx, it in enumerate(self._items):
@@ -1445,13 +1450,16 @@ class _RemoteTransferThread(QThread):
                             continue
                         name = posixpath.basename(rp.rstrip("/")) or "item"
                         lp = str(Path(self._local_path) / name)
-                        self._ftp_get(ftp, rp, lp, idx, total, is_dir=bool(it.get("is_dir")))
+                        is_dir = bool(it.get("is_dir"))
+                        self._ftp_get(ftp, rp, lp, idx, total, is_dir=is_dir)
                         last = name
                         ok += 1
+                        if not is_dir and os.path.isfile(lp):
+                            pulled_files.append(str(Path(lp).resolve()))
                 except Exception as exc:
-                    self.done.emit(False, "", _remote_fs_error_message(exc, ftp=ftp))
+                    self.done.emit(False, "", _remote_fs_error_message(exc, ftp=ftp), [])
                     return
-            self.done.emit(True, last, f"Transferred {ok} item(s).")
+            self.done.emit(True, last, f"Transferred {ok} item(s).", pulled_files)
         finally:
             disconnect_ftp(ftp)
 
@@ -3701,7 +3709,9 @@ class ExplorerSessionPage(QWidget):
         self._remote_transfer_dialog.setValue(max(0, min(100, int(pct))))
         self._remote_transfer_dialog.setLabelText(msg or "Transferring…")
 
-    def _on_remote_transfer_done(self, ok: bool, last_name: str, message: str) -> None:
+    def _on_remote_transfer_done(
+        self, ok: bool, last_name: str, message: str, pulled_paths: Optional[List[str]] = None
+    ) -> None:
         th = self.sender()
         if th is not self._remote_transfer_thread:
             return
@@ -3722,9 +3732,25 @@ class ExplorerSessionPage(QWidget):
             self.refresh_local()
             if last_name:
                 self._select_local_basename(last_name)
-            lp = Path(self.local_path) / last_name if last_name else None
-            if lp and lp.is_file():
-                self._launch_local_file(lp)
+            paths: List[str] = []
+            if isinstance(pulled_paths, list) and pulled_paths:
+                paths = [str(p) for p in pulled_paths]
+            elif last_name:
+                cand = Path(self.local_path) / last_name
+                if cand.is_file():
+                    paths = [str(cand.resolve())]
+
+            def _open_pulled_files() -> None:
+                for ps in paths:
+                    p = Path(ps)
+                    try:
+                        if p.is_file():
+                            self._launch_local_file(p)
+                    except OSError:
+                        continue
+
+            # Defer open so the list refresh and filesystem are settled (matches Pull button behavior).
+            QTimer.singleShot(0, _open_pulled_files)
         self._log(f"Explorer: {self.kind.upper()} {self._remote_transfer_mode} complete — {message}")
 
     def _start_delete_job(
