@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.7] - 2026-04-20
+
+### Fixed
+
+- **SSH / ADB terminal:** `strip_ansi_for_display` now removes **SGR** (`…m`) sequences only; **all other CSI** (cursor movement, erase, modes, etc.) becomes a **single space**. Stripping non-SGR CSI to empty collapsed cursor spacing and reproduced **`lsbin`**-style glue after the first command.
+- **SSH / ADB terminal:** Removed the **synthetic newline** injected on **empty Enter** (serial UART still gets it). The extra `\n` stacked with PTY echo and looked like blank line / input / blank line per Enter.
+
 ## [1.3.6] - 2026-04-20
 
 ### Fixed
