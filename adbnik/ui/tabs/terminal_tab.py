@@ -19,6 +19,7 @@ from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 from PyQt5.QtCore import QEventLoop, QProcessEnvironment, QSize, Qt, QProcess, QTimer, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QFont, QKeySequence, QTextCharFormat, QTextCursor, QTextOption
 from PyQt5.QtWidgets import (
+    QAction,
     QAbstractItemView,
     QApplication,
     QDialog,
@@ -531,7 +532,7 @@ def _adb_tab_complete_compute(
 
 
 class ShellPlainTextEdit(QTextEdit):
-    """Shell output + typing at the end (ANSI colors via HTML). History, context menu, Ctrl+Shift+C/V."""
+    """Shell output + typing at the end (ANSI colors via HTML). Copy: Ctrl+Shift+C; interrupt: Ctrl+C / Ctrl+Z / Ctrl+X."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -548,6 +549,7 @@ class ShellPlainTextEdit(QTextEdit):
         self._preserve_typed_input = False
         self._font_pt = 11
         self._on_clear_buffer_fn: Optional[Callable[[], None]] = None
+        self._send_control_bytes_fn: Optional[Callable[[bytes], None]] = None
         self.setCursorWidth(2)
         self.setUndoRedoEnabled(False)
         self.setAcceptRichText(True)
@@ -586,14 +588,38 @@ class ShellPlainTextEdit(QTextEdit):
         """Called after the user clears the terminal (reset scrollback / tail caches in SessionWidget)."""
         self._on_clear_buffer_fn = fn
 
+    def set_send_control_bytes(self, fn: Optional[Callable[[bytes], None]]) -> None:
+        """Send raw bytes to the shell (Ctrl+C / Ctrl+Z / Ctrl+X interrupt / job control)."""
+        self._send_control_bytes_fn = fn
+
+    def _try_send_shell_control(self, byte_val: int) -> bool:
+        if self._send_control_bytes_fn is None:
+            return False
+        if self._is_session_running_fn is not None and not self._is_session_running_fn():
+            return False
+        try:
+            self._send_control_bytes_fn(bytes([byte_val & 0xFF]))
+        except Exception:
+            return False
+        return True
+
     def set_preserve_typed_input(self, enabled: bool) -> None:
         self._preserve_typed_input = bool(enabled)
 
     def set_terminal_font_size(self, pt: int) -> None:
         self._font_pt = max(8, min(24, int(pt)))
-        f = self.font()
+        f = QFont(self.font())
         f.setPointSize(self._font_pt)
         self.setFont(f)
+        doc = self.document()
+        doc.setDefaultFont(f)
+        cur = QTextCursor(doc)
+        cur.beginEditBlock()
+        cur.select(QTextCursor.Document)
+        ch = QTextCharFormat()
+        ch.setFontPointSize(self._font_pt)
+        cur.mergeCharFormat(ch)
+        cur.endEditBlock()
 
     def adjust_terminal_font_size(self, delta: int) -> None:
         self.set_terminal_font_size(self._font_pt + int(delta))
@@ -714,6 +740,20 @@ class ShellPlainTextEdit(QTextEdit):
 
     def contextMenuEvent(self, event):
         menu = self.createStandardContextMenu(event.pos())
+        for a in menu.actions():
+            t = (a.text() or "").replace("&", "").strip().lower()
+            if t == "copy":
+                a.setText("Copy selection (Ctrl+Shift+C)")
+            elif t == "paste":
+                a.setText("Paste (Ctrl+Shift+V at prompt)")
+        tip = QAction("Interrupt: Ctrl+C  ·  Suspend: Ctrl+Z  ·  Extra: Ctrl+X", self)
+        tip.setEnabled(False)
+        if menu.actions():
+            first = menu.actions()[0]
+            menu.insertAction(first, tip)
+            menu.insertSeparator(first)
+        else:
+            menu.addAction(tip)
         menu.addSeparator()
         a_copy_all = menu.addAction("Copy all")
         a_copy_all.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
@@ -778,6 +818,31 @@ class ShellPlainTextEdit(QTextEdit):
                 self.set_terminal_font_size(11)
                 ev.accept()
                 return
+            if k == Qt.Key_C:
+                if cur.hasSelection():
+                    self.copy()
+                    ev.accept()
+                    return
+                if self._try_send_shell_control(0x03):
+                    ev.accept()
+                    return
+            if k == Qt.Key_Z:
+                if self._try_send_shell_control(0x1A):
+                    ev.accept()
+                    return
+            if k == Qt.Key_X:
+                if cur.hasSelection():
+                    self.copy()
+                    ev.accept()
+                    return
+                if self._try_send_shell_control(0x18):
+                    ev.accept()
+                    return
+            if k == Qt.Key_V:
+                self.moveCursor(QTextCursor.End)
+                self.paste()
+                ev.accept()
+                return
 
         if self._on_tab_key:
             if k == Qt.Key_Tab and not (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
@@ -811,21 +876,6 @@ class ShellPlainTextEdit(QTextEdit):
                 ev.accept()
                 return
 
-        if mods & Qt.ControlModifier:
-            if k == Qt.Key_C:
-                self.copy()
-                ev.accept()
-                return
-            if k == Qt.Key_V:
-                self.moveCursor(QTextCursor.End)
-                self.paste()
-                ev.accept()
-                return
-            if k == Qt.Key_X:
-                self.copy()
-                ev.accept()
-                return
-
         if cur.hasSelection():
             start = min(cur.selectionStart(), cur.selectionEnd())
             if start < self._anchor and ev.text():
@@ -850,7 +900,7 @@ class ShellPlainTextEdit(QTextEdit):
             return
 
         if mods & Qt.ControlModifier:
-            if k in (Qt.Key_C, Qt.Key_A):
+            if k == Qt.Key_A:
                 return super().keyPressEvent(ev)
             if k == Qt.Key_V and pos < self._anchor:
                 self.moveCursor(QTextCursor.End)
@@ -1201,6 +1251,7 @@ class SessionWidget(QWidget):
         self.output.set_skip_bridging_newline(lambda: self._is_serial_session or self._is_remote_pty_shell)
         self.output.set_remote_pty_relaxed_bridging(False)
         self.output.set_on_clear_buffer(self._on_terminal_cleared)
+        self.output.set_send_control_bytes(self._write_raw_to_shell)
         # Reliable font zoom shortcuts on terminal widget.
         self._zoom_in_sc = QShortcut(QKeySequence.ZoomIn, self.output)
         self._zoom_out_sc = QShortcut(QKeySequence.ZoomOut, self.output)
@@ -1672,9 +1723,18 @@ class SessionWidget(QWidget):
             return
         self._append_plain_ui(" ")
 
+    def _write_raw_to_shell(self, data: bytes) -> None:
+        if self.proc.state() != QProcess.Running or not data:
+            return
+        self.proc.write(data)
+
     def _send_line(self, line: str) -> None:
         if self.proc.state() != QProcess.Running:
             return
+        # Empty Enter on SSH/ADB/serial: add one visual newline so the next PTY/miniterm chunk does not glue to the prompt.
+        # Done here (not in ShellPlainTextEdit.commit) so local echo removal and PTY timing stay consistent.
+        if (self._is_remote_pty_shell or self._is_serial_session) and not (line or "").strip():
+            self._append_plain_ui("\n")
         stripped = (line or "").strip().lower()
         if self._shell_profile in ("cmd", "powershell") and stripped in ("python", "py", "python.exe"):
             self._python_repl_mode = True
@@ -1782,10 +1842,15 @@ class SessionWidget(QWidget):
         """Collapse stacked newlines from PTY/serial (embedded shells often emit extra LFs)."""
         if not text:
             return text
-        text = re.sub(r"\n{2,}", "\n", text)
+        if self._is_remote_pty_shell or self._is_serial_session:
+            # Do not merge all blank lines into one — that can glue command output and the next prompt.
+            text = re.sub(r"\n{6,}", "\n\n\n\n\n", text)
+        else:
+            text = re.sub(r"\n{2,}", "\n", text)
         text = text.replace(r"\ ", " ")
         if self._tail_cache.endswith("\n") and text.startswith("\n"):
-            text = text[1:]
+            if not (self._is_remote_pty_shell or self._is_serial_session):
+                text = text[1:]
         return text
 
     def _append(self, data: str):
@@ -1826,10 +1891,14 @@ class SessionWidget(QWidget):
             plain = strip_ansi_for_display(data)
             if not plain:
                 return
-            # CRLF → LF; lone CR = same-line redraw (slog2info / spinners) — strip, do not convert to LF.
             plain = plain.replace("\r\n", "\n")
-            plain = plain.replace("\r", "")
-            plain = re.sub(r"\n{2,}", "\n", plain)
+            if self._is_adb_shell:
+                # Android/device shells often use CR as line ending; dropping CR glued prompt + output on one line.
+                plain = plain.replace("\r", "\n")
+            else:
+                # SSH: lone CR = same-line redraw (slog2info / spinners) — strip, do not convert to LF.
+                plain = plain.replace("\r", "")
+            plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]
             self._pending_chunks.append(plain)
@@ -2670,6 +2739,13 @@ class TerminalTab(QWidget):
         a_right.setToolTip("Close every tab to the right of this one")
         a_left = m.addAction("Close to the left")
         a_left.setToolTip("Close every tab to the left of this one")
+        m.addSeparator()
+        a_font_up = m.addAction("Increase font size")
+        a_font_up.setToolTip("Larger text (Ctrl++ or Ctrl+mouse wheel)")
+        a_font_down = m.addAction("Decrease font size")
+        a_font_down.setToolTip("Smaller text (Ctrl+-)")
+        a_font_reset = m.addAction("Reset font size")
+        a_font_reset.setToolTip("Default 10 pt (Ctrl+0 in terminal)")
         chosen = m.exec_(tb.mapToGlobal(pos))
         if chosen == a_close:
             self._remove_tab_at(idx)
@@ -2681,6 +2757,15 @@ class TerminalTab(QWidget):
             self._close_tabs_to_the_right_of(idx)
         elif chosen == a_left:
             self._close_tabs_to_the_left_of(idx)
+        elif chosen in (a_font_up, a_font_down, a_font_reset):
+            w = self.tabs.widget(idx)
+            if isinstance(w, SessionWidget):
+                if chosen == a_font_up:
+                    w.output.adjust_terminal_font_size(+1)
+                elif chosen == a_font_down:
+                    w.output.adjust_terminal_font_size(-1)
+                else:
+                    w.output.set_terminal_font_size(10)
 
     def _close_all_tabs_except(self, keep_index: int) -> None:
         for i in range(self.tabs.count() - 1, -1, -1):

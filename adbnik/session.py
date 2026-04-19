@@ -77,7 +77,9 @@ def ssh_command_args(profile: SessionProfile) -> list:
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-o",
-        "ConnectTimeout=30",
+        "ConnectTimeout=60",
+        "-o",
+        "TCPKeepAlive=yes",
         "-p",
         str(port),
     ]
