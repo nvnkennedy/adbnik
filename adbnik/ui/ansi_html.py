@@ -186,6 +186,8 @@ def preprocess_escape_noise(data: str) -> str:
     data = re.sub(r"(?<!\x1b)\[0m\b", "", data)
     # New line that is only bracket noise left after a newline-split CSI
     data = re.sub(r"(?m)^\s*\[\s*$", "", data)
+    # Qt may paint bare 0x1b as a visible "ESC" glyph; drop lone ESC not starting CSI (\x1b[) or OSC (\x1b]).
+    data = re.sub(r"\x1b(?![\[\]])", "", data)
     data = re.sub(r"\n{3,}", "\n\n", data)
     return data
 
@@ -195,8 +197,8 @@ def preprocess_serial_stream(data: str) -> str:
     data = preprocess_escape_noise(data)
     if not data:
         return data
-    # Qt paints raw 0x1B as a visible "ESC" glyph; strip lone ESC bytes that are not CSI (\x1b[).
-    data = re.sub(r"\x1b(?!\[)", "", data)
+    # Do not strip ``\x1b`` before ``]`` here — that would break OSC removal below (preprocess_escape_noise
+    # already removed bare ESCs not starting CSI/OSC).
     # Drop full CSI sequences (SGR colors like \x1b[32m, cursor moves, etc.) — serial is plain log text.
     data = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", data)
     # Second pass: UART sometimes splits CSI so the first pass leaves a remainder.
@@ -208,6 +210,7 @@ def preprocess_serial_stream(data: str) -> str:
     data = re.sub(r"\x1b\[0m", "", data)
     # UART sometimes drops ESC so "[0;39m" / "[39m" appears as plain text
     data = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", data)
+    data = re.sub(r"(?<!\x1b)\[0\.39m", "", data)
     data = re.sub(r"(?<!\x1b)\[39m", "", data)
     data = re.sub(r"(?<!\x1b)\[0m\b", "", data)
     # Lines that contain only SGR noise
@@ -215,6 +218,10 @@ def preprocess_serial_stream(data: str) -> str:
     # Newline sandwiched between resets (still doubles vertical space)
     data = re.sub(r"\n(?:\s*\x1b\[[0-9;]*m)+\s*\n", "\n", data)
     data = re.sub(r"\n{3,}", "\n\n", data)
+    # Last resort: QTextEdit can still paint U+001B as a visible "ESC" — remove any survivors.
+    data = data.replace("\x1b", "").replace("\u009b", "").replace("\u241b", "")
+    # Orphan ``0;39m`` without ``[`` (UART bit errors)
+    data = data.replace("0;39m", "").replace("[0;39m", "")
     return data
 
 
@@ -224,6 +231,24 @@ def strip_ansi_for_log(text: str) -> str:
         return text
     text = preprocess_pty_stream(text)
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    return text
+
+
+# Fast strip for SSH/ADB terminal *display*: QTextCursor.insertText is orders of magnitude
+# cheaper than insertHtml; use this after preprocess_escape_noise on the UI thread.
+_OSC_STRIP_FAST = re.compile(r"\x1b\][^\x07\x1b]{0,8192}(?:\x07|\x1b\\)")
+
+
+def strip_ansi_for_display(text: str) -> str:
+    """Remove ANSI/OSC for plain terminal view (high-throughput SSH/ADB). Keeps UI responsive."""
+    if not text:
+        return text
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    text = _OSC_STRIP_FAST.sub("", text)
+    text = re.sub(r"(?<!\x1b)\[(?:0;)?39m", "", text)
+    text = re.sub(r"(?<!\x1b)\[0\.39m", "", text)
+    text = text.replace("0;39m", "").replace("[0;39m", "")
+    text = text.replace("\x1b", "").replace("\u009b", "")
     return text
 
 
@@ -262,9 +287,18 @@ def _carry_incomplete_esc(s: str) -> Tuple[str, str]:
 class AnsiToHtmlConverter:
     """Incremental ANSI → HTML (for QTextEdit) + parallel plain text (for prompts / logs)."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        ignore_background: bool = True,
+        lift_black_foreground: bool = True,
+    ) -> None:
+        """Embedded terminal: ignore ANSI background (avoids full-pane blue/green from slog2info).
+        ``lift_black_foreground`` maps SGR black (30) to a readable gray on dark UIs."""
         self._pending = ""
         self._state = _SgrState()
+        self._ignore_background = bool(ignore_background)
+        self._lift_black_foreground = bool(lift_black_foreground)
 
     def reset(self) -> None:
         self._pending = ""
@@ -284,7 +318,10 @@ class AnsiToHtmlConverter:
                 self._state.bold = False
                 i += 1
             elif 30 <= n <= 37:
-                self._state.fg = _ANSI_FG.get(n, _DEFAULT_FG)
+                base = _ANSI_FG.get(n, _DEFAULT_FG)
+                if self._lift_black_foreground and n == 30:
+                    base = "#b8c0cc"
+                self._state.fg = base
                 i += 1
             elif 90 <= n <= 97:
                 self._state.fg = _ANSI_FG.get(n, _DEFAULT_FG)
@@ -293,27 +330,32 @@ class AnsiToHtmlConverter:
                 self._state.fg = _DEFAULT_FG
                 i += 1
             elif 40 <= n <= 47:
-                self._state.bg = _ANSI_BG.get(n)
+                if not self._ignore_background:
+                    self._state.bg = _ANSI_BG.get(n)
                 i += 1
             elif 100 <= n <= 107:
-                self._state.bg = _ANSI_BG.get(n)
+                if not self._ignore_background:
+                    self._state.bg = _ANSI_BG.get(n)
                 i += 1
             elif n == 49:
-                self._state.bg = None
+                if not self._ignore_background:
+                    self._state.bg = None
                 i += 1
             elif n == 38 and i + 2 < len(params) and params[i + 1] == 5:
                 self._state.fg = _256_to_rgb(params[i + 2])
                 i += 3
             elif n == 48 and i + 2 < len(params) and params[i + 1] == 5:
-                self._state.bg = _256_to_rgb(params[i + 2])
+                if not self._ignore_background:
+                    self._state.bg = _256_to_rgb(params[i + 2])
                 i += 3
             elif n == 38 and i + 1 < len(params) and params[i + 1] == 2 and i + 4 < len(params):
                 r, g, b = params[i + 2], params[i + 3], params[i + 4]
                 self._state.fg = f"#{r & 255:02x}{g & 255:02x}{b & 255:02x}"
                 i += 5
             elif n == 48 and i + 1 < len(params) and params[i + 1] == 2 and i + 4 < len(params):
-                r, g, b = params[i + 2], params[i + 3], params[i + 4]
-                self._state.bg = f"#{r & 255:02x}{g & 255:02x}{b & 255:02x}"
+                if not self._ignore_background:
+                    r, g, b = params[i + 2], params[i + 3], params[i + 4]
+                    self._state.bg = f"#{r & 255:02x}{g & 255:02x}{b & 255:02x}"
                 i += 5
             else:
                 i += 1
@@ -321,7 +363,7 @@ class AnsiToHtmlConverter:
     def _span_css(self, semantic_fg: Optional[str]) -> str:
         fg = semantic_fg if semantic_fg else self._state.fg
         parts = [f"color:{fg}"]
-        if self._state.bg:
+        if self._state.bg and not self._ignore_background:
             parts.append(f"background-color:{self._state.bg}")
         if self._state.bold:
             parts.append("font-weight:600")

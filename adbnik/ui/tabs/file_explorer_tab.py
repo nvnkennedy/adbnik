@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import io
 import json
@@ -104,6 +105,61 @@ _MAX_FIND_FOLDER_HISTORY = 24
 MIME_REMOTE_PULL = "application/x-adbnik-remote-pull"
 
 
+def _ftp_quote_token(name: str) -> str:
+    """Quote a single path segment or filename for FTP CWD/MKD/RMD/DELE/STOR/RETR when spaces or quotes appear."""
+    s = (name or "").replace("\r", "").replace("\n", "")
+    if not s:
+        return '""'
+    if any(c in s for c in ' \t"'):
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+
+def _ftp_void(ftp: FTP, cmd: str) -> str:
+    return ftp.voidcmd(cmd)
+
+
+def _ftp_safe_cwd(ftp: FTP, remote_path: str) -> None:
+    """CWD to an absolute path; supports spaces and special characters in each segment."""
+    r = (remote_path or "").replace("\\", "/").rstrip("/") or "/"
+    if r == "/":
+        ftp.cwd("/")
+        return
+    try:
+        ftp.cwd("/")
+    except error_perm:
+        pass
+    for seg in [p for p in r.split("/") if p]:
+        _ftp_void(ftp, "CWD " + _ftp_quote_token(seg))
+
+
+def _ftp_cwd_segment(ftp: FTP, segment: str) -> None:
+    """CWD into one directory name relative to the current remote working directory."""
+    _ftp_void(ftp, "CWD " + _ftp_quote_token(segment))
+
+
+def _ftp_safe_mkd(ftp: FTP, dirname: str) -> None:
+    _ftp_void(ftp, "MKD " + _ftp_quote_token(dirname))
+
+
+def _ftp_safe_rmd(ftp: FTP, dirname: str) -> None:
+    _ftp_void(ftp, "RMD " + _ftp_quote_token(dirname))
+
+
+def _ftp_safe_delete_file(ftp: FTP, filename: str) -> None:
+    _ftp_void(ftp, "DELE " + _ftp_quote_token(filename))
+
+
+def _sftp_is_exists_err(exc: BaseException) -> bool:
+    en = getattr(exc, "errno", None)
+    if en in (errno.EEXIST, 17):
+        return True
+    if en in (183, 80):  # Windows FILE_EXISTS / directory exists
+        return True
+    msg = str(exc).lower()
+    return "file exists" in msg or "already exists" in msg
+
+
 def _sftp_is_dir(st_mode: Optional[int]) -> bool:
     """Some embedded SFTP servers report modes that trigger ValueError in stat.S_ISDIR (e.g. Python 3.13+)."""
     if st_mode is None:
@@ -155,47 +211,75 @@ def _sftp_stat_is_dir(st) -> bool:
 
 
 def _sftp_rm_rf(sftp: Any, path: str) -> None:
-    """Remove a remote file or directory tree (paramiko SFTPClient)."""
+    """Remove a remote file or directory tree (paramiko SFTPClient). Uses listdir_attr-safe listing; surfaces errors."""
     path = path.replace("\\", "/").rstrip("/")
     if not path:
-        return
+        raise OSError("Empty remote path")
+    if path == "/":
+        raise OSError("Refusing to delete filesystem root")
     try:
         st = sftp.stat(path)
-    except (OSError, IOError, Exception):
-        return
+    except (OSError, IOError, Exception) as e:
+        raise OSError(f"SFTP stat failed for {path!r}: {e}") from e
     try:
         mode = int(getattr(st, "st_mode", 0)) & 0xFFFFFFFF
     except (TypeError, ValueError):
         mode = 0
     is_dir = (mode & _S_IFMT_MASK) == _S_IFDIR if mode else _sftp_stat_is_dir(st)
+
+    if not is_dir:
+        try:
+            sftp.remove(path)
+            return
+        except (OSError, IOError, Exception) as e:
+            en = getattr(e, "errno", None)
+            if en in (errno.EISDIR, 21) or "is a directory" in str(e).lower():
+                is_dir = True
+            else:
+                raise OSError(f"SFTP remove failed for {path!r}: {e}") from e
+
     if is_dir:
-        for name in sftp.listdir(path):
-            child = posixpath.join(path, name).replace("\\", "/")
+        for a in sftp_listdir_attr_safe(sftp, path):
+            if a.filename in (".", ".."):
+                continue
+            child = posixpath.join(path, a.filename).replace("\\", "/")
             _sftp_rm_rf(sftp, child)
-        sftp.rmdir(path)
-    else:
-        sftp.remove(path)
+        try:
+            sftp.rmdir(path)
+        except (OSError, IOError, Exception) as e:
+            raise OSError(f"SFTP rmdir failed for {path!r}: {e}") from e
 
 
 def _ftp_rm_rf(ftp: FTP, full_path: str) -> None:
-    """Remove a remote file or directory tree (ftplib)."""
+    """Remove a remote file or directory tree (ftplib). Quoted CWD/MKD/RMD/DELE for paths with spaces."""
     full_path = full_path.replace("\\", "/").rstrip("/")
     if not full_path:
         return
     parent = posixpath.dirname(full_path) or "/"
     base = posixpath.basename(full_path)
-    ftp.cwd(parent)
+    _ftp_safe_cwd(ftp, parent)
     try:
-        ftp.cwd(base)
+        _ftp_safe_cwd(ftp, full_path)
     except error_perm:
-        ftp.delete(base)
+        _ftp_safe_delete_file(ftp, base)
         return
-    for n in ftp.nlst():
-        if n in (".", ".."):
-            continue
+    entries: List[str] = []
+    try:
+        for name, _facts in ftp.mlsd():
+            if name not in (".", ".."):
+                entries.append(name)
+    except (error_perm, AttributeError, Exception):
+        try:
+            for name in ftp.nlst():
+                if name not in (".", ".."):
+                    entries.append(name)
+        except Exception:
+            entries = []
+    for n in entries:
         _ftp_rm_rf(ftp, posixpath.join(full_path, n).replace("\\", "/"))
-    ftp.cwd(parent)
-    ftp.rmd(base)
+        _ftp_safe_cwd(ftp, full_path)
+    _ftp_safe_cwd(ftp, parent)
+    _ftp_safe_rmd(ftp, base)
 
 
 def _sftp_abs_remote_path(path: str, cwd: str) -> str:
@@ -330,12 +414,13 @@ def _ftp_remote_item_nlst(ftp: FTP, name: str, full: str) -> tuple:
     try:
         cur = ftp.pwd()
         try:
-            ftp.cwd(name)
-            ftp.cwd(cur)
+            joined = posixpath.join(cur, name).replace("\\", "/") if not name.startswith("/") else name
+            _ftp_safe_cwd(ftp, joined)
+            _ftp_safe_cwd(ftp, cur)
             return (RemoteItem(name, True, "", "", "", "0", ""), full)
         except Exception:
             try:
-                ftp.cwd(cur)
+                _ftp_safe_cwd(ftp, cur)
             except Exception:
                 pass
     except Exception:
@@ -1313,11 +1398,14 @@ class _RemoteTransferThread(QThread):
             acc = f"{acc}/{p}" if acc else f"/{p}"
             try:
                 sftp.stat(acc)
+                continue
             except Exception:
-                try:
-                    sftp.mkdir(acc)
-                except Exception:
-                    pass
+                pass
+            try:
+                sftp.mkdir(acc)
+            except Exception as e:
+                if not _sftp_is_exists_err(e):
+                    raise
 
     def _ftp_put(self, ftp, local_path: str, remote_dir: str, idx: int, total: int) -> None:
         if Path(local_path).is_dir():
@@ -1342,7 +1430,7 @@ class _RemoteTransferThread(QThread):
             pct = int((100 * sent[0]) / size)
             self._progress(idx, total, pct, f"Uploading {name} ({pct}%)")
         with open(local_file, "rb") as f:
-            ftp.storbinary(f"STOR {name}", f, blocksize=65536, callback=_cb)
+            ftp.storbinary(f"STOR {_ftp_quote_token(name)}", f, blocksize=65536, callback=_cb)
 
     def _ftp_get(self, ftp, remote_path: str, local_path: str, idx: int, total: int, *, is_dir: bool = False) -> None:
         if is_dir:
@@ -1355,12 +1443,12 @@ class _RemoteTransferThread(QThread):
         name = posixpath.basename(remote_path)
         self._ftp_ensure_dir(ftp, parent)
         with open(local_path, "wb") as out:
-            ftp.retrbinary(f"RETR {name}", out.write)
+            ftp.retrbinary(f"RETR {_ftp_quote_token(name)}", out.write)
         self._progress(idx, total, 100, f"Downloaded {Path(local_path).name}")
 
     def _ftp_get_tree(self, ftp, remote_path: str, local_root: Path, idx: int, total: int) -> None:
         try:
-            ftp.cwd(remote_path)
+            _ftp_safe_cwd(ftp, remote_path)
         except Exception:
             return
         try:
@@ -1387,10 +1475,13 @@ class _RemoteTransferThread(QThread):
     def _ftp_ensure_dir(self, ftp, remote_dir: str) -> None:
         r = remote_dir.replace("\\", "/").rstrip("/")
         if r in ("", "/"):
-            ftp.cwd("/")
+            try:
+                ftp.cwd("/")
+            except Exception:
+                pass
             return
         try:
-            ftp.cwd(r)
+            _ftp_safe_cwd(ftp, r)
             return
         except Exception:
             pass
@@ -1398,10 +1489,13 @@ class _RemoteTransferThread(QThread):
         base = posixpath.basename(r)
         self._ftp_ensure_dir(ftp, parent)
         try:
-            ftp.mkd(base)
+            _ftp_safe_mkd(ftp, base)
         except Exception:
             pass
-        ftp.cwd(base)
+        try:
+            _ftp_cwd_segment(ftp, base)
+        except Exception:
+            pass
 
 
 class _RemoteListThread(QThread):
@@ -1481,7 +1575,7 @@ class _RemoteListThread(QThread):
                     self.done.emit(rows, e or "FTP connection failed.")
                     return
                 try:
-                    ftp.cwd(rp.rstrip("/") or "/")
+                    _ftp_safe_cwd(ftp, rp.rstrip("/") or "/")
                     try:
                         raw_mlsd = list(ftp.mlsd())
 
@@ -1665,6 +1759,32 @@ class _DeleteThread(QThread):
                 unregister_adb_process(proc)
             except Exception:
                 pass
+
+
+class _SftpFtpDeleteThread(QThread):
+    """SFTP/FTP recursive delete off the UI thread (paramiko/ftplib calls stay in one thread per run)."""
+
+    done = pyqtSignal(bool, str)
+
+    def __init__(self, *, kind: str, sftp: Any = None, ftp: Optional[FTP] = None, path: str):
+        super().__init__(None)
+        self._kind = (kind or "").strip().lower()
+        self._sftp = sftp
+        self._ftp = ftp
+        self._path = path
+
+    def run(self) -> None:
+        try:
+            if self._kind == "sftp":
+                _sftp_rm_rf(self._sftp, self._path)
+            elif self._kind == "ftp":
+                _ftp_rm_rf(self._ftp, self._path)
+            else:
+                self.done.emit(False, f"Unsupported delete kind: {self._kind}")
+                return
+            self.done.emit(True, "")
+        except Exception as exc:
+            self.done.emit(False, str(exc))
 
 
 _FIND_FILES_DIALOG_QSS_DARK = """
@@ -1921,6 +2041,8 @@ class ExplorerSessionPage(QWidget):
         self._delete_thread: Optional[_DeleteThread] = None
         self._delete_dialog: Optional[QProgressDialog] = None
         self._delete_done_cb: Optional[Callable[[bool, str], None]] = None
+        self._sftp_ftp_delete_thread: Optional[_SftpFtpDeleteThread] = None
+        self._sftp_ftp_delete_dialog: Optional[QProgressDialog] = None
         self._remote_refresh_thread: Optional[_RemoteListThread] = None
         self._remote_refresh_pending: bool = False
         self._last_active_side: str = "local"
@@ -1949,13 +2071,16 @@ class ExplorerSessionPage(QWidget):
     def has_active_file_transfer(self) -> bool:
         adb = self._adb_transfer_thread is not None and self._adb_transfer_thread.isRunning()
         rem = self._remote_transfer_thread is not None and self._remote_transfer_thread.isRunning()
-        return bool(adb or rem)
+        sdel = self._sftp_ftp_delete_thread is not None and self._sftp_ftp_delete_thread.isRunning()
+        return bool(adb or rem or sdel)
 
     def hideEvent(self, event) -> None:
         if self._adb_transfer_dialog is not None:
             self._adb_transfer_dialog.hide()
         if self._remote_transfer_dialog is not None:
             self._remote_transfer_dialog.hide()
+        if self._sftp_ftp_delete_dialog is not None:
+            self._sftp_ftp_delete_dialog.hide()
         super().hideEvent(event)
 
     def showEvent(self, event) -> None:
@@ -1968,6 +2093,12 @@ class ExplorerSessionPage(QWidget):
             and self._remote_transfer_thread.isRunning()
         ):
             self._remote_transfer_dialog.show()
+        if (
+            self._sftp_ftp_delete_dialog is not None
+            and self._sftp_ftp_delete_thread
+            and self._sftp_ftp_delete_thread.isRunning()
+        ):
+            self._sftp_ftp_delete_dialog.show()
 
     @staticmethod
     def _is_descendant_of(widget: Optional[QWidget], parent: Optional[QWidget]) -> bool:
@@ -2072,6 +2203,7 @@ class ExplorerSessionPage(QWidget):
             self._remote_transfer_thread,
             self._remote_refresh_thread,
             self._delete_thread,
+            self._sftp_ftp_delete_thread,
         ]
         for th in threads:
             if th is None:
@@ -2088,6 +2220,11 @@ class ExplorerSessionPage(QWidget):
         self._remote_transfer_thread = None
         self._remote_refresh_thread = None
         self._delete_thread = None
+        self._sftp_ftp_delete_thread = None
+        if self._sftp_ftp_delete_dialog is not None:
+            self._sftp_ftp_delete_dialog.close()
+            self._sftp_ftp_delete_dialog.deleteLater()
+            self._sftp_ftp_delete_dialog = None
         if self._adb_transfer_dialog is not None:
             self._adb_transfer_dialog.close()
             self._adb_transfer_dialog.deleteLater()
@@ -2732,7 +2869,7 @@ class ExplorerSessionPage(QWidget):
                 if depth > 4 or len(out) >= 200:
                     return
                 try:
-                    self._ftp_client.cwd(d)
+                    _ftp_safe_cwd(self._ftp_client, d)
                 except Exception:
                     return
                 try:
@@ -2767,7 +2904,7 @@ class ExplorerSessionPage(QWidget):
             finally:
                 if start_cwd:
                     try:
-                        self._ftp_client.cwd(start_cwd)
+                        _ftp_safe_cwd(self._ftp_client, start_cwd)
                     except Exception:
                         pass
             return out
@@ -2825,11 +2962,14 @@ class ExplorerSessionPage(QWidget):
             acc = f"{acc}/{p}" if acc else f"/{p}"
             try:
                 self._sftp_client.stat(acc)
+                continue
             except (OSError, IOError):
-                try:
-                    self._sftp_client.mkdir(acc)
-                except (OSError, IOError):
-                    pass
+                pass
+            try:
+                self._sftp_client.mkdir(acc)
+            except (OSError, IOError) as e:
+                if not _sftp_is_exists_err(e):
+                    raise
 
     def _sftp_put_tree(self, local_root: Path, remote_parent: str) -> bool:
         assert self._sftp_client is not None
@@ -2897,7 +3037,7 @@ class ExplorerSessionPage(QWidget):
                 pass
             return
         try:
-            self._ftp_client.cwd(r)
+            _ftp_safe_cwd(self._ftp_client, r)
             return
         except error_perm:
             pass
@@ -2907,11 +3047,11 @@ class ExplorerSessionPage(QWidget):
         base = posixpath.basename(r)
         self._ftp_ensure_remote_dir(parent)
         try:
-            self._ftp_client.mkd(base)
+            _ftp_safe_mkd(self._ftp_client, base)
         except error_perm:
             pass
         try:
-            self._ftp_client.cwd(base)
+            _ftp_cwd_segment(self._ftp_client, base)
         except error_perm:
             pass
 
@@ -2948,7 +3088,9 @@ class ExplorerSessionPage(QWidget):
                     QApplication.processEvents()
 
                 with open(lp, "rb") as f:
-                    self._ftp_client.storbinary(f"STOR {base}", f, blocksize=65536, callback=_dcb)
+                    self._ftp_client.storbinary(
+                        f"STOR {_ftp_quote_token(base)}", f, blocksize=65536, callback=_dcb
+                    )
                 dlg.setValue(100)
                 dlg.close()
                 n += 1
@@ -2965,7 +3107,7 @@ class ExplorerSessionPage(QWidget):
     def _ftp_pull_recursive(self, remote_path: str, local_path: str) -> None:
         assert self._ftp_client is not None
         try:
-            self._ftp_client.cwd(remote_path)
+            _ftp_safe_cwd(self._ftp_client, remote_path)
         except error_perm as exc:
             self._log(f"Explorer: FTP cwd {remote_path}: {exc}")
             raise
@@ -2995,7 +3137,7 @@ class ExplorerSessionPage(QWidget):
                 QApplication.processEvents()
                 self._ftp_ensure_remote_dir(parent)
                 with open(l, "wb") as out:
-                    self._ftp_client.retrbinary(f"RETR {fn}", out.write)
+                    self._ftp_client.retrbinary(f"RETR {_ftp_quote_token(fn)}", out.write)
                 dlg.close()
 
     def _adb_progress_exec(
@@ -3188,6 +3330,9 @@ class ExplorerSessionPage(QWidget):
         self._tick_adb_transfer_elapsed()
 
     def _on_adb_transfer_done(self, code: int, msg: str) -> None:
+        th = self.sender()
+        if th is not self._adb_transfer_thread:
+            return
         if self._adb_elapsed_timer is not None:
             try:
                 self._adb_elapsed_timer.stop()
@@ -3408,6 +3553,9 @@ class ExplorerSessionPage(QWidget):
         self._remote_transfer_dialog.setLabelText(msg or "Transferring…")
 
     def _on_remote_transfer_done(self, ok: bool, last_name: str, message: str) -> None:
+        th = self.sender()
+        if th is not self._remote_transfer_thread:
+            return
         if self._remote_transfer_dialog is not None:
             self._remote_transfer_dialog.setValue(100)
             self._remote_transfer_dialog.close()
@@ -3499,6 +3647,9 @@ class ExplorerSessionPage(QWidget):
         dlg.setLabelText(f"Deleting…\n{pct}% · {elapsed:,.1f}s elapsed")
 
     def _on_delete_job_done(self, ok: bool, err: str) -> None:
+        th = self.sender()
+        if th is not self._delete_thread:
+            return
         if self._delete_elapsed_timer is not None:
             try:
                 self._delete_elapsed_timer.stop()
@@ -3752,6 +3903,9 @@ class ExplorerSessionPage(QWidget):
         th.start()
 
     def _on_remote_refresh_done(self, rows, err: str) -> None:
+        th = self.sender()
+        if th is not self._remote_refresh_thread:
+            return
         self._remote_refresh_thread = None
         _fill_remote_table(self.remote_table, rows or [], self.style(), self.icon_provider)
         msg = (err or "").strip()
@@ -3847,7 +4001,7 @@ class ExplorerSessionPage(QWidget):
             return
         rp = self.remote_path.rstrip("/") or "/"
         try:
-            self._ftp_client.cwd(rp)
+            _ftp_safe_cwd(self._ftp_client, rp)
         except error_perm as exc:
             self.remote_table.setRowCount(0)
             self._ftp_last_error = str(exc)
@@ -4151,8 +4305,8 @@ class ExplorerSessionPage(QWidget):
             return
         if self.kind == "ftp" and self._ftp_client:
             try:
-                self._ftp_client.cwd(self.remote_path)
-                self._ftp_client.storbinary(f"STOR {name.strip()}", io.BytesIO(b""))
+                _ftp_safe_cwd(self._ftp_client, self.remote_path.rstrip("/") or "/")
+                self._ftp_client.storbinary(f"STOR {_ftp_quote_token(name.strip())}", io.BytesIO(b""))
                 self.refresh_remote()
             except Exception as exc:
                 QMessageBox.warning(self, "New file", str(exc))
@@ -4262,9 +4416,9 @@ class ExplorerSessionPage(QWidget):
                 if quiet:
                     parent = posixpath.dirname(remote_file_path) or "/"
                     fn = posixpath.basename(remote_file_path)
-                    self._ftp_client.cwd(parent)
+                    _ftp_safe_cwd(self._ftp_client, parent)
                     with open(local_fs_path, "rb") as f:
-                        self._ftp_client.storbinary(f"STOR {fn}", f, blocksize=65536)
+                        self._ftp_client.storbinary(f"STOR {_ftp_quote_token(fn)}", f, blocksize=65536)
                     self._log(f"Explorer: FTP uploaded {remote_file_path}")
                     return True
                 total = max(os.path.getsize(local_fs_path), 1)
@@ -4281,9 +4435,11 @@ class ExplorerSessionPage(QWidget):
 
                 parent = posixpath.dirname(remote_file_path) or "/"
                 fn = posixpath.basename(remote_file_path)
-                self._ftp_client.cwd(parent)
+                _ftp_safe_cwd(self._ftp_client, parent)
                 with open(local_fs_path, "rb") as f:
-                    self._ftp_client.storbinary(f"STOR {fn}", f, blocksize=65536, callback=_dcb)
+                    self._ftp_client.storbinary(
+                        f"STOR {_ftp_quote_token(fn)}", f, blocksize=65536, callback=_dcb
+                    )
                 dlg.setValue(100)
                 dlg.close()
                 self._log(f"Explorer: FTP uploaded {remote_file_path}")
@@ -4434,9 +4590,9 @@ class ExplorerSessionPage(QWidget):
             elif self.kind == "ftp" and self._ftp_client:
                 parent = posixpath.dirname(remote_path) or "/"
                 fn = posixpath.basename(remote_path)
-                self._ftp_client.cwd(parent)
+                _ftp_safe_cwd(self._ftp_client, parent)
                 with open(dest, "wb") as out:
-                    self._ftp_client.retrbinary(f"RETR {fn}", out.write)
+                    self._ftp_client.retrbinary(f"RETR {_ftp_quote_token(fn)}", out.write)
             else:
                 return
             if not os.path.isfile(dest):
@@ -4474,9 +4630,9 @@ class ExplorerSessionPage(QWidget):
             elif self.kind == "ftp" and self._ftp_client:
                 parent = posixpath.dirname(remote_path) or "/"
                 fn = posixpath.basename(remote_path)
-                self._ftp_client.cwd(parent)
+                _ftp_safe_cwd(self._ftp_client, parent)
                 with open(dest, "wb") as out:
-                    self._ftp_client.retrbinary(f"RETR {fn}", out.write)
+                    self._ftp_client.retrbinary(f"RETR {_ftp_quote_token(fn)}", out.write)
             else:
                 return
             if not os.path.isfile(dest):
@@ -4668,9 +4824,9 @@ class ExplorerSessionPage(QWidget):
                 QApplication.processEvents()
                 parent = posixpath.dirname(info["path"]) or "/"
                 fn = posixpath.basename(info["path"])
-                self._ftp_client.cwd(parent)
+                _ftp_safe_cwd(self._ftp_client, parent)
                 with open(dest, "wb") as out:
-                    self._ftp_client.retrbinary(f"RETR {fn}", out.write)
+                    self._ftp_client.retrbinary(f"RETR {_ftp_quote_token(fn)}", out.write)
                 dlg.close()
                 self._log(f"Explorer: FTP pull saved → {dest}")
                 self.refresh_local()
@@ -4833,9 +4989,11 @@ class ExplorerSessionPage(QWidget):
                         dlg.setValue(min(99, int(100 * sent[0] / total)))
                         QApplication.processEvents()
 
-                    self._ftp_client.cwd(self.remote_path)
+                    _ftp_safe_cwd(self._ftp_client, self.remote_path.rstrip("/") or "/")
                     with open(local, "rb") as f:
-                        self._ftp_client.storbinary(f"STOR {name}", f, blocksize=65536, callback=_dcb)
+                        self._ftp_client.storbinary(
+                            f"STOR {_ftp_quote_token(name)}", f, blocksize=65536, callback=_dcb
+                        )
                     dlg.setValue(100)
                     dlg.close()
                     n_ok += 1
@@ -4908,28 +5066,45 @@ class ExplorerSessionPage(QWidget):
             )
             return
         if self.kind == "sftp" and self._sftp_client:
-            try:
-                rpath = _sftp_abs_remote_path(str(info["path"]), self.remote_path)
-                self._log(f"Explorer: SFTP delete {rpath}")
-                _sftp_rm_rf(self._sftp_client, rpath)
+            if self._sftp_ftp_delete_thread and self._sftp_ftp_delete_thread.isRunning():
                 dlg.close()
-                self._log("Explorer: SFTP delete completed.")
-                self.refresh_remote()
-            except Exception as exc:
-                dlg.close()
-                self._log(f"Explorer: SFTP delete error: {exc}")
-                QMessageBox.warning(self, "Delete", str(exc))
+                QMessageBox.information(self, "Delete", "Another remote delete is still running.")
+                return
+            rpath = _sftp_abs_remote_path(str(info["path"]), self.remote_path)
+            self._log(f"Explorer: SFTP delete {rpath}")
+            dlg.close()
+            pdlg = QProgressDialog("Deleting on server…", None, 0, 0, self)
+            pdlg.setCancelButton(None)
+            pdlg.setMinimumDuration(0)
+            pdlg.setWindowModality(Qt.NonModal)
+            pdlg.show()
+            self._sftp_ftp_delete_dialog = pdlg
+            th = _SftpFtpDeleteThread(kind="sftp", sftp=self._sftp_client, path=rpath)
+            th.done.connect(self._on_sftp_ftp_delete_done)
+            th.finished.connect(th.deleteLater)
+            self._sftp_ftp_delete_thread = th
+            th.start()
             return
         if self.kind == "ftp" and self._ftp_client:
-            try:
-                fpath = str(info["path"]).replace("\\", "/")
-                self._log(f"Explorer: FTP delete {fpath}")
-                _ftp_rm_rf(self._ftp_client, fpath)
+            if self._sftp_ftp_delete_thread and self._sftp_ftp_delete_thread.isRunning():
                 dlg.close()
-                self.refresh_remote()
-            except Exception as exc:
-                dlg.close()
-                QMessageBox.warning(self, "Delete", str(exc))
+                QMessageBox.information(self, "Delete", "Another remote delete is still running.")
+                return
+            fpath = str(info["path"]).replace("\\", "/")
+            self._log(f"Explorer: FTP delete {fpath}")
+            dlg.close()
+            pdlg = QProgressDialog("Deleting on server…", None, 0, 0, self)
+            pdlg.setCancelButton(None)
+            pdlg.setMinimumDuration(0)
+            pdlg.setWindowModality(Qt.NonModal)
+            pdlg.show()
+            self._sftp_ftp_delete_dialog = pdlg
+            th = _SftpFtpDeleteThread(kind="ftp", ftp=self._ftp_client, path=fpath)
+            th.done.connect(self._on_sftp_ftp_delete_done)
+            th.finished.connect(th.deleteLater)
+            self._sftp_ftp_delete_thread = th
+            th.start()
+            return
 
     def _on_remote_adb_delete_done(self, ok: bool, err: str) -> None:
         if ok:
@@ -4938,6 +5113,27 @@ class ExplorerSessionPage(QWidget):
             return
         self._log(f"Explorer: delete failed: {err or 'unknown'}")
         QMessageBox.warning(self, "Delete", err or "Failed.")
+
+    def _on_sftp_ftp_delete_done(self, ok: bool, err: str) -> None:
+        th = self.sender()
+        if th is not self._sftp_ftp_delete_thread:
+            return
+        if self._sftp_ftp_delete_dialog is not None:
+            self._sftp_ftp_delete_dialog.close()
+            self._sftp_ftp_delete_dialog.deleteLater()
+            self._sftp_ftp_delete_dialog = None
+        self._sftp_ftp_delete_thread = None
+        if not ok:
+            self._log(f"Explorer: remote delete failed: {err or 'unknown'}")
+            QMessageBox.warning(self, "Delete", err or "Delete failed.")
+            return
+        self._log("Explorer: remote delete completed.")
+        try:
+            from qt_thread_updater import call_latest
+
+            call_latest(self.refresh_remote)
+        except Exception:
+            self.refresh_remote()
 
     def make_remote_folder(self) -> None:
         name, ok = QInputDialog.getText(self, "New folder", "Folder name:")
@@ -4972,15 +5168,15 @@ class ExplorerSessionPage(QWidget):
                 pass
             try:
                 rp = self.remote_path.rstrip("/") or "/"
-                self._ftp_client.cwd(rp)
-                self._ftp_client.mkd(nm)
+                _ftp_safe_cwd(self._ftp_client, rp)
+                _ftp_safe_mkd(self._ftp_client, nm)
                 self.refresh_remote()
             except Exception as exc:
                 QMessageBox.warning(self, "New folder", str(exc))
             finally:
                 if saved is not None:
                     try:
-                        self._ftp_client.cwd(saved)
+                        _ftp_safe_cwd(self._ftp_client, saved)
                     except Exception:
                         pass
 
