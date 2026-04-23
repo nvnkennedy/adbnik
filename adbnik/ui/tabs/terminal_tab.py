@@ -16,7 +16,7 @@ from ...services.adb_devices import friendly_name_for_serial
 from ...services.commands import run_adb
 from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 
-from PyQt5.QtCore import QEventLoop, QProcessEnvironment, QSize, Qt, QProcess, QTimer, pyqtSignal
+from PyQt5.QtCore import QProcessEnvironment, QSize, Qt, QProcess, QTimer, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QTextCharFormat, QTextCursor, QTextOption
 from PyQt5.QtWidgets import (
     QAction,
@@ -1341,6 +1341,9 @@ class SessionWidget(QWidget):
                 self.output.document().setMaximumBlockCount(6000)
             except Exception:
                 pass
+            # One logical command line stays on one row (horizontal scroll); wrap was splitting tokens visually.
+            self.output.setLineWrapMode(QTextEdit.NoWrap)
+            self.output.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._session_footer = QLabel()
         self._session_footer.setObjectName("TerminalSessionFooter")
         self._session_footer.setFont(QFont("Consolas", 10))
@@ -1357,10 +1360,10 @@ class SessionWidget(QWidget):
         self._flush_timer.setSingleShot(True)
         # SSH: coalesce UI updates (~1 frame); smaller intervals burn CPU and can starve other threads.
         if self._is_serial_session:
-            self._flush_timer.setInterval(8)
+            self._flush_timer.setInterval(12)
             self._stream_chunk = 131072
         elif self._is_remote_pty_shell:
-            self._flush_timer.setInterval(22)
+            self._flush_timer.setInterval(32)
             self._stream_chunk = 65536
         else:
             self._flush_timer.setInterval(20)
@@ -2039,8 +2042,6 @@ class SessionWidget(QWidget):
                     ensure_visible=(self._remote_ui_tick % every == 0),
                 )
                 self._sync_python_repl_mode()
-                if self._remote_ui_tick % 24 == 0:
-                    QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
             else:
                 self._append_output_html(text)
         finally:

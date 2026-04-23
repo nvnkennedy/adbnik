@@ -41,7 +41,8 @@ def main():
         app.setStyle(fusion)
     app.setApplicationName(APP_TITLE)
     try:
-        QApplication.setCursorFlashTime(530)
+        # 0 = caret does not blink — reduces repaint churn (terminals feel snappier under load).
+        QApplication.setCursorFlashTime(0)
     except AttributeError:
         pass
 
