@@ -17,6 +17,12 @@ def test_normalize_remote_pty_plain_text_maps_cr():
     assert normalize_remote_pty_plain_text("\n" * 10) == "\n" * 7
 
 
+def test_normalize_remote_pty_strips_cr_after_shell_prompt():
+    """Lone CR after $/#/ > is same-line redraw; must not split ``#`` and ``ls`` (SSH/ADB)."""
+    assert normalize_remote_pty_plain_text("root@h:~# \rls") == "root@h:~# ls"
+    assert normalize_remote_pty_plain_text("x $ \rfoo") == "x $ foo"
+
+
 def test_ensure_remote_pty_visual_line_breaks_prompt_after_output():
     tail = "acct bin vendor_dlkm"
     chunk = "i3_max_civic_vendor_star3_5:/ $ "
@@ -38,6 +44,12 @@ def test_ensure_remote_pty_visual_line_breaks_after_echoed_command():
 
 def test_ensure_remote_pty_visual_line_breaks_noop_when_tail_has_newline():
     assert ensure_remote_pty_visual_line_breaks("ok\n", "bin") == "bin"
+
+
+def test_ensure_remote_pty_no_double_lead_when_chunk_starts_with_newline():
+    tail = "out"  # no trailing newline; would normally consider glue
+    chunk = "\nroot@h:~# "
+    assert not ensure_remote_pty_visual_line_breaks(tail, chunk).startswith("\n\n")
 
 
 def test_embedded_terminal_ignores_background_colors():
@@ -102,6 +114,12 @@ def test_serial_preprocess_strips_corrupt_0_dot_39m():
     """UART may show ``[0.39m`` when ``[0;39m`` loses semicolon / ESC."""
     s = preprocess_serial_stream("ok\n[0.39m\n")
     assert "[0.39m" not in s
+
+
+def test_serial_preprocess_strips_bare_0_39m_line():
+    s = preprocess_serial_stream("a\n0;39m\nb\n")
+    assert "0;39m" not in s
+    assert "a" in s and "b" in s
 
 
 def test_strip_ansi_for_display_removes_sequences_and_orphan_0_39m():
