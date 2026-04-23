@@ -39,6 +39,8 @@ class AppConfig:
     embed_scrcpy_mirror: bool = False
     # Legacy mirror of embed checkbox; kept for older configs (embed off => opt_out true).
     embed_scrcpy_mirror_opt_out: bool = True
+    # scrcpy --keyboard: "" = default (SDK), "uhid" often needed for Android Automotive / infotainment.
+    scrcpy_keyboard: str = ""
     default_ssh_host: str = ""
     default_serial_port: str = "COM3"
     default_serial_baud: str = "115200"

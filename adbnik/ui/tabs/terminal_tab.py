@@ -584,12 +584,14 @@ class ShellPlainTextEdit(QTextEdit):
         self._font_pt = 11
         self._on_clear_buffer_fn: Optional[Callable[[], None]] = None
         self._send_control_bytes_fn: Optional[Callable[[bytes], None]] = None
+        # ADB/SSH/serial: join accidental block/paragraph breaks so one logical line is sent (Wrap + QText block model).
+        self._collapse_commit_whitespace = False
         self.setCursorWidth(2)
         self.setUndoRedoEnabled(False)
         self.setAcceptRichText(True)
-        # Wrap at pane width — avoids a permanent horizontal scrollbar; long lines still readable.
+        # Wrap at pane width — prefer word boundaries when possible (less “broken mid-token” wrap than WrapAnywhere).
         self.setLineWrapMode(QTextEdit.WidgetWidth)
-        self.setWordWrapMode(QTextOption.WrapAnywhere)
+        self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.setTabChangesFocus(False)
         try:
             self.document().setMaximumBlockCount(60000)
@@ -617,6 +619,10 @@ class ShellPlainTextEdit(QTextEdit):
     def set_remote_pty_relaxed_bridging(self, enabled: bool) -> None:
         """ADB/SSH: do not treat trailing space after $/# as 'at prompt' — avoids gluing output to the prompt line."""
         self._remote_pty_relaxed_bridging = bool(enabled)
+
+    def set_collapse_commit_whitespace(self, enabled: bool) -> None:
+        """When True, a committed line collapses internal whitespace/newlines to single spaces (remote PTY/serial)."""
+        self._collapse_commit_whitespace = bool(enabled)
 
     def set_on_clear_buffer(self, fn: Optional[Callable[[], None]]) -> None:
         """Called after the user clears the terminal (reset scrollback / tail caches in SessionWidget)."""
@@ -987,10 +993,15 @@ class ShellPlainTextEdit(QTextEdit):
             return
         cur = self.textCursor()
         pos = cur.position()
-        line = self._plain_text_range(self._anchor, pos)
-        if "\n" in line:
-            line = line.split("\n", 1)[0]
-        end_input = self._anchor + len(line)
+        raw = self._plain_text_range(self._anchor, pos)
+        if self._collapse_commit_whitespace:
+            line = " ".join(raw.replace("\u2029", "\n").split())
+        elif "\n" in raw:
+            line = raw.split("\n", 1)[0]
+        else:
+            line = raw
+        # Collapsed send uses full typed span (anchor→cursor); split-line commit removes only the first segment.
+        end_input = pos if self._collapse_commit_whitespace else self._anchor + len(line)
         if line.strip():
             if not self._cmd_history or self._cmd_history[-1] != line:
                 self._cmd_history.append(line)
@@ -1310,6 +1321,7 @@ class SessionWidget(QWidget):
         # Remote shells echo line endings; a synthetic newline after send duplicates prompts and blanks (SSH/ADB/serial).
         self.output.set_skip_bridging_newline(lambda: self._is_serial_session or self._is_remote_pty_shell)
         self.output.set_remote_pty_relaxed_bridging(False)
+        self.output.set_collapse_commit_whitespace(self._is_serial_session or self._is_remote_pty_shell)
         self.output.set_on_clear_buffer(self._on_terminal_cleared)
         self.output.set_send_control_bytes(self._write_raw_to_shell)
         # Reliable font zoom shortcuts on terminal widget.
@@ -1959,6 +1971,8 @@ class SessionWidget(QWidget):
             plain = normalize_remote_pty_plain_text(plain)
             plain = ensure_remote_pty_visual_line_breaks(self._tail_cache, plain)
             plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
+            # Tame stacked blank lines from PTY + our glue (keeps at most one empty line between content).
+            plain = re.sub(r"\n{3,}", "\n\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]
             self._pending_chunks.append(plain)

@@ -191,6 +191,14 @@ class ScrcpyTab(QWidget):
         except OSError:
             pass
 
+    def _on_keyboard_mode_changed(self) -> None:
+        data = self.keyboard_combo.currentData()
+        self.config.scrcpy_keyboard = (data or "") if data is not None else ""
+        try:
+            self.config.save()
+        except OSError:
+            pass
+
     def _adb_serial_prefix(self) -> list:
         s = (self._selected_serial() or "").strip().split()
         return ["-s", s[0]] if s else []
@@ -448,13 +456,30 @@ class ScrcpyTab(QWidget):
         self.embed_mirror_cb.stateChanged.connect(self._on_embed_mirror_changed)
         grid.addWidget(self.embed_mirror_cb, 7, 0, 1, 2)
 
-        grid.addWidget(QLabel("Extra CLI"), 8, 0)
+        grid.addWidget(QLabel("Keyboard"), 8, 0)
+        self.keyboard_combo = ExpandAllComboBox()
+        self.keyboard_combo.setMaxVisibleItems(8)
+        self.keyboard_combo.setMinimumHeight(34)
+        self.keyboard_combo.setToolTip(
+            "Default uses Android key injection (phones). Choose UHID for many infotainment / IVI units "
+            "where typing does not reach apps — simulates a physical USB HID keyboard (see scrcpy docs)."
+        )
+        self.keyboard_combo.addItem("Default (SDK injection)", "")
+        self.keyboard_combo.addItem("UHID (IVI / infotainment / HID keyboard)", "uhid")
+        self.keyboard_combo.addItem("SDK (explicit)", "sdk")
+        kb_saved = (getattr(self.config, "scrcpy_keyboard", "") or "").strip().lower()
+        kb_idx = self.keyboard_combo.findData(kb_saved)
+        self.keyboard_combo.setCurrentIndex(kb_idx if kb_idx >= 0 else 0)
+        self.keyboard_combo.currentIndexChanged.connect(self._on_keyboard_mode_changed)
+        grid.addWidget(self.keyboard_combo, 8, 1)
+
+        grid.addWidget(QLabel("Extra CLI"), 9, 0)
         self.extra_args = QLineEdit()
         self.extra_args.setPlaceholderText("optional scrcpy flags…")
         self.extra_args.setMinimumHeight(34)
-        grid.addWidget(self.extra_args, 8, 1)
+        grid.addWidget(self.extra_args, 9, 1)
 
-        grid.addWidget(QLabel("Record to"), 9, 0)
+        grid.addWidget(QLabel("Record to"), 10, 0)
         rec_row = QHBoxLayout()
         rec_row.setContentsMargins(0, 0, 0, 0)
         rec_row.setSpacing(6)
@@ -468,7 +493,7 @@ class ScrcpyTab(QWidget):
         b_rec_browse.setFixedSize(34, 34)
         b_rec_browse.clicked.connect(self._choose_record_file)
         rec_row.addWidget(b_rec_browse)
-        grid.addLayout(rec_row, 9, 1)
+        grid.addLayout(rec_row, 10, 1)
 
         form.addWidget(grp)
 
@@ -771,6 +796,10 @@ class ScrcpyTab(QWidget):
         elif sys.platform == "win32" and self.embed_mirror_cb.isChecked():
             # Hide off-screen until SetParent embeds (avoids a visible separate window flash).
             cmd.extend(["--window-x", "-16000", "--window-y", "-16000"])
+        extras_preview = (self.extra_args.text() or "").strip()
+        kb = (getattr(self.config, "scrcpy_keyboard", "") or "").strip().lower()
+        if kb in ("uhid", "sdk") and "--keyboard" not in extras_preview.lower():
+            cmd.extend(["--keyboard", kb])
         rec_out = (self.record_path.text() or "").strip()
         if rec_out:
             cmd.extend(["--record", rec_out])

@@ -169,15 +169,18 @@ def normalize_remote_pty_plain_text(text: str) -> str:
     """
     Map PTY carriage returns for SSH/ADB plain-text rendering only (not used for serial UART).
 
-    QTextEdit cannot emulate TTY ``\\r`` (return to column 0). Mapping lone ``\\r`` to ``\\n``
-    keeps each prompt and command on its own line; mapping to **space** (v1.3.6) glued lines so
-    root prompts looked like ``# # # #`` on one row. ``\\r\\n`` stays a single newline. Cursor
-    motion is already spaced in ``strip_ansi_for_display``, so tokens like ``ls`` + ``bin`` do not
-    merge. Long runs of blank lines (spinners / redraws) are still capped.
+    QTextEdit cannot emulate TTY ``\\r`` (return to column 0). ``\\r\\n`` is one newline. Lone
+    ``\\r`` after a shell prompt token (``$``, ``#``, ``>``) is usually a same-line redraw (bash /
+    Android shell) — stripping it avoids splitting ``#`` and ``ls`` onto separate rows. Other lone
+    ``\\r`` still become ``\\n`` so listings stay readable (see tests). Long runs of blank lines
+    are capped.
     """
     if not text:
         return text
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\r\n", "\n")
+    # Same-line redraw after prompt: replace ``\s*\\r`` with one space so "# \\rls" becomes "# ls" (not "#ls").
+    text = re.sub(r"(?<=[\$#>])\s*\r+(?!\n)", " ", text)
+    text = text.replace("\r", "\n")
     text = re.sub(r"\n{8,}", "\n\n\n\n\n\n\n", text)
     return text
 
@@ -204,13 +207,20 @@ def ensure_remote_pty_visual_line_breaks(tail_before_chunk: str, chunk: str) -> 
     Insert a leading newline when the PTY glued two logical lines into one QTextEdit line.
 
     Used only for SSH/ADB plain-text streaming. Safe to no-op when ``tail_before_chunk`` already
-    ends with ``\\n``.
+    ends with ``\\n``. If ``chunk`` already begins with line breaks, do not prepend another (avoids
+    stacked blank rows after output).
     """
     if not chunk:
         return chunk
     if tail_before_chunk.endswith("\n"):
         return chunk
-    first_line = chunk.split("\n", 1)[0]
+    rest = chunk.lstrip("\n")
+    if not rest:
+        return chunk
+    # Chunk already starts with newline(s): separation exists — extra prepend would double-space.
+    if chunk.startswith("\n"):
+        return chunk
+    first_line = rest.split("\n", 1)[0]
     if _REMOTE_CHUNK_STARTS_WITH_PROMPT.match(first_line):
         return "\n" + chunk
     if _TAIL_ENDS_WITH_PROMPT_AND_ECHOED_CMD.search(tail_before_chunk):
@@ -288,6 +298,9 @@ def preprocess_serial_stream(data: str) -> str:
     # Orphan ``0;39m`` / ``0.39m`` without ``[`` (UART bit errors)
     data = data.replace("0;39m", "").replace("[0;39m", "")
     data = re.sub(r"(?<![\[\x1b])0\.39m", "", data, flags=re.I)
+    # Lines that are only corrupted reset tokens (optional brackets / semicolon variants)
+    data = re.sub(r"(?m)^\s*\[?0[;.]39m\]?\s*$", "", data, flags=re.I)
+    data = re.sub(r"(?m)^\s*0[;.]39m\s*$", "", data, flags=re.I)
     return data
 
 

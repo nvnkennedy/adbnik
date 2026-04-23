@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.4.0] - 2026-04-23
+
+### Added
+
+- **Screen / scrcpy:** **Keyboard** mode selector — **Default (SDK)** (unchanged for phones) or **UHID** for many **infotainment / IVI** head units where key events do not reach apps. **SDK (explicit)** is also available. Setting is saved in config. *Extra CLI* with your own `--keyboard` still wins and is not overridden.
+
+### Fixed
+
+- **ADB / SSH terminal:** Committed command line **collapses internal line/paragraph breaks** to a single line of text (QTextEdit wrap + block boundaries no longer split a long command or send only the first segment after Enter).
+- **Terminal wrap:** Word wrap prefers **word boundaries** when possible (less mid-token line breaks; long tokens may still wrap if needed).
+- **SSH / ADB stream:** Lone **carriage return after `$` / `#` / `>`** is treated as same-line redraw (fixes `#` and `ls` splitting onto separate rows when the PTY echoes that way).
+- **SSH / ADB stream:** **Fewer stacked blank lines** between chunks (leading glue newline not duplicated when the chunk already starts with `\n`; triple+ blank runs collapsed to at most one empty line).
+- **Serial:** Extra cleanup for **orphan reset fragments** (`0;39m`, `[0;39m`, bracket variants) on their own line.
+
 ## [1.3.10] - 2026-04-23
 
 ### Changed
