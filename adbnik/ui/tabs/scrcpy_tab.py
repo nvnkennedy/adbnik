@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
 
 from ... import APP_TITLE
 from ...config import AppConfig
-from ...services.adb_devices import list_adb_devices
+from ...services.adb_devices import infer_scrcpy_keyboard_mode, list_adb_devices
 from ..combo_utils import ExpandAllComboBox
 from ..icon_utils import icon_media_play_green, icon_media_stop_red
 from ...services.commands import run_adb
@@ -193,7 +193,7 @@ class ScrcpyTab(QWidget):
 
     def _on_keyboard_mode_changed(self) -> None:
         data = self.keyboard_combo.currentData()
-        self.config.scrcpy_keyboard = (data or "") if data is not None else ""
+        self.config.scrcpy_keyboard = str(data or "auto") if data is not None else "auto"
         try:
             self.config.save()
         except OSError:
@@ -461,13 +461,15 @@ class ScrcpyTab(QWidget):
         self.keyboard_combo.setMaxVisibleItems(8)
         self.keyboard_combo.setMinimumHeight(34)
         self.keyboard_combo.setToolTip(
-            "Default uses Android key injection (phones). Choose UHID for many infotainment / IVI units "
-            "where typing does not reach apps — simulates a physical USB HID keyboard (see scrcpy docs)."
+            "Auto reads device props/features (ADB) and picks UHID on IVI/automotive-style builds; "
+            "phones stay on SDK injection. Override only if needed. Extra CLI wins over this."
         )
-        self.keyboard_combo.addItem("Default (SDK injection)", "")
-        self.keyboard_combo.addItem("UHID (IVI / infotainment / HID keyboard)", "uhid")
-        self.keyboard_combo.addItem("SDK (explicit)", "sdk")
+        self.keyboard_combo.addItem("Auto — detect IVI vs phone", "auto")
+        self.keyboard_combo.addItem("Always UHID", "uhid")
+        self.keyboard_combo.addItem("Always SDK injection", "sdk")
         kb_saved = (getattr(self.config, "scrcpy_keyboard", "") or "").strip().lower()
+        if kb_saved not in ("auto", "uhid", "sdk"):
+            kb_saved = "auto"
         kb_idx = self.keyboard_combo.findData(kb_saved)
         self.keyboard_combo.setCurrentIndex(kb_idx if kb_idx >= 0 else 0)
         self.keyboard_combo.currentIndexChanged.connect(self._on_keyboard_mode_changed)
@@ -796,10 +798,6 @@ class ScrcpyTab(QWidget):
         elif sys.platform == "win32" and self.embed_mirror_cb.isChecked():
             # Hide off-screen until SetParent embeds (avoids a visible separate window flash).
             cmd.extend(["--window-x", "-16000", "--window-y", "-16000"])
-        extras_preview = (self.extra_args.text() or "").strip()
-        kb = (getattr(self.config, "scrcpy_keyboard", "") or "").strip().lower()
-        if kb in ("uhid", "sdk") and "--keyboard" not in extras_preview.lower():
-            cmd.extend(["--keyboard", kb])
         rec_out = (self.record_path.text() or "").strip()
         if rec_out:
             cmd.extend(["--record", rec_out])
@@ -824,6 +822,23 @@ class ScrcpyTab(QWidget):
                     + ", ".join(removed)
                 )
             cmd.extend(cleaned)
+
+        extras_preview = (self.extra_args.text() or "").strip()
+        cfg = (getattr(self.config, "scrcpy_keyboard", "") or "").strip().lower()
+        if cfg not in ("auto", "uhid", "sdk"):
+            cfg = "auto"
+        kb_flag = ""
+        if cfg == "auto":
+            inf = infer_scrcpy_keyboard_mode(adb_path, serial)
+            if inf:
+                kb_flag = inf
+                self._append_log("Screen: keyboard auto → UHID (infotainment / automotive hints).")
+        elif cfg == "uhid":
+            kb_flag = "uhid"
+        elif cfg == "sdk":
+            kb_flag = "sdk"
+        if kb_flag and "--keyboard" not in extras_preview.lower():
+            cmd.extend(["--keyboard", kb_flag])
 
         self._clear_embed()
         self._append_log(f"Screen: starting on {serial}: {' '.join(cmd)}")

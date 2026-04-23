@@ -25,6 +25,7 @@ _S_IFMT_MASK = 0o170000
 from PyQt5.QtCore import (
     QByteArray,
     QEvent,
+    QEventLoop,
     QFileInfo,
     QFileSystemWatcher,
     QMimeData,
@@ -103,6 +104,17 @@ _MAX_FIND_FOLDER_HISTORY = 24
 
 # Remote table → local table drag (pull); custom MIME, not file:// URLs.
 MIME_REMOTE_PULL = "application/x-adbnik-remote-pull"
+
+_FE_PE_LAST = [0.0]
+
+
+def _file_explorer_pe() -> None:
+    """Throttle nested ``processEvents`` (~13/sec cap) so tab switches stay responsive during transfers."""
+    now = time.monotonic()
+    if now - _FE_PE_LAST[0] < 0.075:
+        return
+    _FE_PE_LAST[0] = now
+    QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
 
 def _ftp_quote_token(name: str) -> str:
@@ -3123,7 +3135,7 @@ class ExplorerSessionPage(QWidget):
         def _cb(sent: int, size: int) -> None:
             if size:
                 dlg.setValue(min(99, int(100 * sent / max(size, 1))))
-            QApplication.processEvents()
+            _file_explorer_pe()
 
         self._sftp_client.get(remote_path, local_dest, callback=_cb)
         dlg.setValue(100)
@@ -3159,7 +3171,7 @@ class ExplorerSessionPage(QWidget):
                 def _cb(sent: int, size: int) -> None:
                     if size:
                         dlg.setValue(min(99, int(100 * sent / max(size, 1))))
-                    QApplication.processEvents()
+                    _file_explorer_pe()
 
                 self._sftp_client.put(str(lp), rp, callback=_cb)
                 dlg.setValue(100)
@@ -3247,7 +3259,7 @@ class ExplorerSessionPage(QWidget):
                 def _dcb(block: bytes) -> None:
                     sent[0] += len(block)
                     dlg.setValue(min(99, int(100 * sent[0] / max(total, 1))))
-                    QApplication.processEvents()
+                    _file_explorer_pe()
 
                 with open(lp, "rb") as f:
                     self._ftp_client.storbinary(
@@ -3296,7 +3308,7 @@ class ExplorerSessionPage(QWidget):
                 dlg.setCancelButton(None)
                 dlg.setMinimumDuration(0)
                 dlg.setWindowModality(Qt.ApplicationModal)
-                QApplication.processEvents()
+                _file_explorer_pe()
                 self._ftp_ensure_remote_dir(parent)
                 with open(l, "wb") as out:
                     self._ftp_client.retrbinary(f"RETR {_ftp_quote_token(fn)}", out.write)
@@ -3323,7 +3335,7 @@ class ExplorerSessionPage(QWidget):
                 last_pct[0] = p
                 dlg.setValue(p)
                 dlg.setLabelText(f"{label}\n{p}%")
-            QApplication.processEvents()
+            _file_explorer_pe()
 
         code, out, err = run_adb_with_line_callback(
             self.get_adb_path(),
@@ -4646,7 +4658,7 @@ class ExplorerSessionPage(QWidget):
                 def _cb(sent: int, size: int) -> None:
                     if size:
                         dlg.setValue(min(99, int(100 * sent / max(size, 1))))
-                    QApplication.processEvents()
+                    _file_explorer_pe()
 
                 self._sftp_client.put(local_fs_path, remote_file_path, callback=_cb)
                 dlg.setValue(100)
@@ -4678,7 +4690,7 @@ class ExplorerSessionPage(QWidget):
                 def _dcb(block: bytes) -> None:
                     sent[0] += len(block)
                     dlg.setValue(min(99, int(100 * sent[0] / total)))
-                    QApplication.processEvents()
+                    _file_explorer_pe()
 
                 parent = posixpath.dirname(remote_file_path) or "/"
                 fn = posixpath.basename(remote_file_path)
@@ -5016,7 +5028,7 @@ class ExplorerSessionPage(QWidget):
                     dlg.setCancelButton(None)
                     dlg.setMinimumDuration(0)
                     dlg.setWindowModality(Qt.ApplicationModal)
-                    QApplication.processEvents()
+                    _file_explorer_pe()
                     self._sftp_pull_tree(info["path"], target_dir)
                     dlg.close()
                     self._log(f"Explorer: SFTP folder pull → {target_dir}")
@@ -5044,7 +5056,7 @@ class ExplorerSessionPage(QWidget):
                     dlg.setCancelButton(None)
                     dlg.setMinimumDuration(0)
                     dlg.setWindowModality(Qt.ApplicationModal)
-                    QApplication.processEvents()
+                    _file_explorer_pe()
                     self._ftp_pull_tree(info["path"], target_dir)
                     dlg.close()
                     self._log(f"Explorer: FTP folder pull → {target_dir}")
@@ -5099,7 +5111,7 @@ class ExplorerSessionPage(QWidget):
                 dlg.setCancelButton(None)
                 dlg.setMinimumDuration(0)
                 dlg.setWindowModality(Qt.ApplicationModal)
-                QApplication.processEvents()
+                _file_explorer_pe()
                 parent = posixpath.dirname(info["path"]) or "/"
                 fn = posixpath.basename(info["path"])
                 _ftp_safe_cwd(self._ftp_client, parent)
@@ -5191,7 +5203,7 @@ class ExplorerSessionPage(QWidget):
                         dlg.setCancelButton(None)
                         dlg.setMinimumDuration(0)
                         dlg.setWindowModality(Qt.ApplicationModal)
-                        QApplication.processEvents()
+                        _file_explorer_pe()
                         if self._sftp_put_tree(lp, self.remote_path.rstrip("/")):
                             n_ok += 1
                             last_pushed = name
@@ -5212,7 +5224,7 @@ class ExplorerSessionPage(QWidget):
                         dlg.setCancelButton(None)
                         dlg.setMinimumDuration(0)
                         dlg.setWindowModality(Qt.ApplicationModal)
-                        QApplication.processEvents()
+                        _file_explorer_pe()
                         if self._ftp_put_tree(lp, self.remote_path.rstrip("/")):
                             n_ok += 1
                             last_pushed = name
@@ -5255,7 +5267,7 @@ class ExplorerSessionPage(QWidget):
                     def _cb(sent: int, size: int) -> None:
                         if size:
                             dlg.setValue(min(99, int(100 * sent / max(size, 1))))
-                        QApplication.processEvents()
+                        _file_explorer_pe()
 
                     self._sftp_client.put(local, remote_file, callback=_cb)
                     dlg.setValue(100)
@@ -5283,7 +5295,7 @@ class ExplorerSessionPage(QWidget):
                     def _dcb(block: bytes) -> None:
                         sent[0] += len(block)
                         dlg.setValue(min(99, int(100 * sent[0] / total)))
-                        QApplication.processEvents()
+                        _file_explorer_pe()
 
                     _ftp_safe_cwd(self._ftp_client, self.remote_path.rstrip("/") or "/")
                     with open(local, "rb") as f:
@@ -5353,7 +5365,7 @@ class ExplorerSessionPage(QWidget):
         dlg.setCancelButton(None)
         dlg.setMinimumDuration(0)
         dlg.setWindowModality(Qt.ApplicationModal)
-        QApplication.processEvents()
+        _file_explorer_pe()
 
         if self.kind == "adb":
             self._log(f"Explorer: delete remote {info['path']}")

@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.4.1] - 2026-04-23
+
+### Added
+
+- **ADB device inference** for **scrcpy keyboard**: default **Auto** selects **UHID** when ``getprop`` / ``pm list features`` suggest IVI/automotive; phones keep SDK injection without manual toggling.
+
+### Changed
+
+- **ADB / SSH terminal:** **No word-wrap** on remote PTY panes — long commands stay on **one visual line** (horizontal scroll). Commit behavior unchanged.
+- **Performance:** caret **blink disabled** app-wide; remote/serial terminal flush timers slightly **coarser**; removed nested ``processEvents`` during PTY redraw; **File Explorer** coalesces ``processEvents`` (~13 Hz) so tab switches stay responsive under SFTP/FTP progress.
+
+### Fixed
+
+- **QThread lifecycle:** ADB refresh/stats worker threads use a proper parent, **no** ``finished → deleteLater`` race on the live object; finished handlers **deleteLater** the worker; shutdown **waits** longer and **terminates** only after a timeout — avoids “QThread: Destroyed while thread is still running”.
+- **Repository hygiene:** removed legacy per-version **RELEASE_NOTES_v\*.md** stubs from ``.github`` (changelog remains in ``CHANGELOG.md``).
+
 ## [1.4.0] - 2026-04-23
 
 ### Added

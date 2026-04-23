@@ -6,6 +6,54 @@ from typing import List, Optional, Tuple
 from .commands import run_adb
 
 
+def infer_scrcpy_keyboard_mode(adb_path: str, serial: str) -> Optional[str]:
+    """
+    Pick scrcpy ``--keyboard`` for devices where SDK injection often fails (IVI / automotive).
+
+    Returns ``"uhid"`` when props/features suggest automotive or embedded-class builds;
+    ``None`` means omit the flag (scrcpy default SDK injection — typical phones).
+    """
+    serial = (serial or "").strip()
+    if not serial:
+        return None
+    blob = ""
+    for cmd in (
+        ["shell", "getprop", "ro.build.characteristics"],
+        ["shell", "getprop", "ro.hardware"],
+        ["shell", "getprop", "ro.product.first_api_level"],
+    ):
+        code, out, _ = run_adb(adb_path, ["-s", serial, *cmd], timeout=5)
+        if code == 0 and out:
+            blob += out.lower()
+    hints = (
+        "automotive",
+        "embedded",
+        "ivi",
+        "android automotive",
+        "android.hardware.type.automotive",
+        "aaos",
+        "vehicle",
+        "infotainment",
+        "headunit",
+        "head unit",
+    )
+    if any(h in blob for h in hints):
+        return "uhid"
+    code, out, _ = run_adb(adb_path, ["-s", serial, "shell", "pm", "list", "features"], timeout=8)
+    if code == 0 and out:
+        ol = out.lower()
+        if any(
+            x in ol
+            for x in (
+                "android.hardware.type.automotive",
+                "android.hardware.automotive",
+                "android.software.cantunnel",
+            )
+        ):
+            return "uhid"
+    return None
+
+
 def _parse_devices_l_line(line: str) -> Optional[Tuple[str, str]]:
     line = line.strip()
     if not line or line.startswith("List of devices"):

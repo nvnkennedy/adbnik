@@ -58,8 +58,8 @@ from .win_scrcpy_hotkey import (
 class _AdbDevicesRefreshThread(QThread):
     done = pyqtSignal(object, bool)
 
-    def __init__(self, adb_path: str):
-        super().__init__(None)
+    def __init__(self, adb_path: str, parent=None):
+        super().__init__(parent)
         self._adb_path = adb_path
 
     def run(self) -> None:
@@ -74,8 +74,8 @@ class _AdbDevicesRefreshThread(QThread):
 class _AdbDeviceStatsThread(QThread):
     done = pyqtSignal(str, object, str)
 
-    def __init__(self, adb_path: str, serial: str):
-        super().__init__(None)
+    def __init__(self, adb_path: str, serial: str, parent=None):
+        super().__init__(parent)
         self._adb_path = adb_path
         self._serial = serial
 
@@ -311,10 +311,15 @@ class MainWindow(QMainWindow):
             self.file_explorer.disconnect_remote_services()
         if hasattr(self, "scrcpy"):
             self.scrcpy.shutdown(fast=True)
-        if getattr(self, "_device_refresh_thread", None) and self._device_refresh_thread.isRunning():
-            self._device_refresh_thread.wait(5000)
-        if getattr(self, "_stats_refresh_thread", None) and self._stats_refresh_thread.isRunning():
-            self._stats_refresh_thread.wait(5000)
+        for _name in ("_device_refresh_thread", "_stats_refresh_thread"):
+            th = getattr(self, _name, None)
+            if th is not None and th.isRunning():
+                if not th.wait(15000):
+                    try:
+                        th.terminate()
+                    except Exception:
+                        pass
+                    th.wait(3000)
         super().closeEvent(event)
 
     def nativeEvent(self, eventType, message):
@@ -501,9 +506,8 @@ class MainWindow(QMainWindow):
             self._device_refresh_pending = True
             return
         self._prev_selected_serial_for_refresh = self.terminal.current_adb_serial()
-        th = _AdbDevicesRefreshThread(self.get_adb_path())
+        th = _AdbDevicesRefreshThread(self.get_adb_path(), self)
         th.done.connect(self._on_devices_refreshed)
-        th.finished.connect(th.deleteLater)
         self._device_refresh_thread = th
         th.start()
 
@@ -512,6 +516,8 @@ class MainWindow(QMainWindow):
         if th is not self._device_refresh_thread:
             return
         self._device_refresh_thread = None
+        if isinstance(th, QThread):
+            th.deleteLater()
         prev_selected_serial = getattr(self, "_prev_selected_serial_for_refresh", "")
         prev_sig = getattr(self, "_last_adb_device_sig", None)
         sig = tuple(pairs) if pairs else ()
@@ -639,9 +645,8 @@ class MainWindow(QMainWindow):
         if self._stats_refresh_thread and self._stats_refresh_thread.isRunning():
             self._stats_refresh_pending = True
             return
-        th = _AdbDeviceStatsThread(self.get_adb_path(), serial)
+        th = _AdbDeviceStatsThread(self.get_adb_path(), serial, self)
         th.done.connect(self._on_device_stats_ready)
-        th.finished.connect(th.deleteLater)
         self._stats_refresh_thread = th
         th.start()
 
@@ -650,6 +655,8 @@ class MainWindow(QMainWindow):
         if th is not self._stats_refresh_thread:
             return
         self._stats_refresh_thread = None
+        if isinstance(th, QThread):
+            th.deleteLater()
         current = (self.terminal.current_adb_serial() or "").strip() if hasattr(self, "terminal") else ""
         if serial and current and serial != current:
             return
