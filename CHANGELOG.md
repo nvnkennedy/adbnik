@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.3.10] - 2026-04-23
+
+### Changed
+
+- **Packaging / repo:** Single-package workspace layout (no nested extra copy); standard ignores for build outputs. Same application code as 1.3.9.
+
 ## [1.3.9] - 2026-04-20
 
 ### Fixed
