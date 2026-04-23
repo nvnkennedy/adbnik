@@ -191,14 +191,6 @@ class ScrcpyTab(QWidget):
         except OSError:
             pass
 
-    def _on_keyboard_mode_changed(self) -> None:
-        data = self.keyboard_combo.currentData()
-        self.config.scrcpy_keyboard = str(data or "auto") if data is not None else "auto"
-        try:
-            self.config.save()
-        except OSError:
-            pass
-
     def _adb_serial_prefix(self) -> list:
         s = (self._selected_serial() or "").strip().split()
         return ["-s", s[0]] if s else []
@@ -456,32 +448,13 @@ class ScrcpyTab(QWidget):
         self.embed_mirror_cb.stateChanged.connect(self._on_embed_mirror_changed)
         grid.addWidget(self.embed_mirror_cb, 7, 0, 1, 2)
 
-        grid.addWidget(QLabel("Keyboard"), 8, 0)
-        self.keyboard_combo = ExpandAllComboBox()
-        self.keyboard_combo.setMaxVisibleItems(8)
-        self.keyboard_combo.setMinimumHeight(34)
-        self.keyboard_combo.setToolTip(
-            "Auto reads device props/features (ADB) and picks UHID on IVI/automotive-style builds; "
-            "phones stay on SDK injection. Override only if needed. Extra CLI wins over this."
-        )
-        self.keyboard_combo.addItem("Auto — detect IVI vs phone", "auto")
-        self.keyboard_combo.addItem("Always UHID", "uhid")
-        self.keyboard_combo.addItem("Always SDK injection", "sdk")
-        kb_saved = (getattr(self.config, "scrcpy_keyboard", "") or "").strip().lower()
-        if kb_saved not in ("auto", "uhid", "sdk"):
-            kb_saved = "auto"
-        kb_idx = self.keyboard_combo.findData(kb_saved)
-        self.keyboard_combo.setCurrentIndex(kb_idx if kb_idx >= 0 else 0)
-        self.keyboard_combo.currentIndexChanged.connect(self._on_keyboard_mode_changed)
-        grid.addWidget(self.keyboard_combo, 8, 1)
-
-        grid.addWidget(QLabel("Extra CLI"), 9, 0)
+        grid.addWidget(QLabel("Extra CLI"), 8, 0)
         self.extra_args = QLineEdit()
         self.extra_args.setPlaceholderText("optional scrcpy flags…")
         self.extra_args.setMinimumHeight(34)
-        grid.addWidget(self.extra_args, 9, 1)
+        grid.addWidget(self.extra_args, 8, 1)
 
-        grid.addWidget(QLabel("Record to"), 10, 0)
+        grid.addWidget(QLabel("Record to"), 9, 0)
         rec_row = QHBoxLayout()
         rec_row.setContentsMargins(0, 0, 0, 0)
         rec_row.setSpacing(6)
@@ -495,7 +468,7 @@ class ScrcpyTab(QWidget):
         b_rec_browse.setFixedSize(34, 34)
         b_rec_browse.clicked.connect(self._choose_record_file)
         rec_row.addWidget(b_rec_browse)
-        grid.addLayout(rec_row, 10, 1)
+        grid.addLayout(rec_row, 9, 1)
 
         form.addWidget(grp)
 
@@ -824,21 +797,13 @@ class ScrcpyTab(QWidget):
             cmd.extend(cleaned)
 
         extras_preview = (self.extra_args.text() or "").strip()
-        cfg = (getattr(self.config, "scrcpy_keyboard", "") or "").strip().lower()
-        if cfg not in ("auto", "uhid", "sdk"):
-            cfg = "auto"
-        kb_flag = ""
-        if cfg == "auto":
-            inf = infer_scrcpy_keyboard_mode(adb_path, serial)
-            if inf:
-                kb_flag = inf
-                self._append_log("Screen: keyboard auto → UHID (infotainment / automotive hints).")
-        elif cfg == "uhid":
-            kb_flag = "uhid"
-        elif cfg == "sdk":
-            kb_flag = "sdk"
+        inf = infer_scrcpy_keyboard_mode(adb_path, serial)
+        kb_flag = (inf or "").strip().lower()
         if kb_flag and "--keyboard" not in extras_preview.lower():
             cmd.extend(["--keyboard", kb_flag])
+            self._append_log(
+                "Screen: UHID keyboard (device looks like IVI/automotive). Add `--keyboard sdk` in Extra CLI to force SDK injection."
+            )
 
         self._clear_embed()
         self._append_log(f"Screen: starting on {serial}: {' '.join(cmd)}")

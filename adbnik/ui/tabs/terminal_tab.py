@@ -1089,10 +1089,10 @@ class SessionWidget(QWidget):
         self._serial_auto_retries_used = 0
         self._serial_retry_scheduled = False
         self._serial_start_monotonic = 0.0
-        self._serial_pnp_reset_done = False
         self._ssh_complete_seq = 0
         self._adb_complete_seq = 0
         self._remote_ui_tick = 0
+        self._flush_paused = False
         self._tab_async_complete.connect(self._on_tab_async_complete)
         self._build_ui()
         self._start()
@@ -1155,9 +1155,19 @@ class SessionWidget(QWidget):
         return 20
 
     def _arm_flush_timer(self) -> None:
+        if self._flush_paused:
+            return
         self._flush_timer.setInterval(self._flush_interval_ms())
         if not self._flush_timer.isActive():
             self._flush_timer.start()
+
+    def set_flush_paused(self, paused: bool) -> None:
+        """When this session tab is not selected, stop burning CPU flushing scrollback (other tabs stay responsive)."""
+        self._flush_paused = bool(paused)
+        if self._flush_paused:
+            self._flush_timer.stop()
+        elif self._pending_chunks:
+            self._arm_flush_timer()
 
     @staticmethod
     def _serial_recoverable_open_error(text: str) -> bool:
@@ -1273,21 +1283,8 @@ class SessionWidget(QWidget):
         self._stderr_drain_scheduled = False
 
         self._serial_force_kill_and_release()
-
-        if (
-            sys.platform == "win32"
-            and self._is_serial_session
-            and not self._serial_pnp_reset_done
-            and self._serial_auto_retries_used == 1
-        ):
-            com = self._serial_com_port_from_command()
-            if com and _win_pnp_reset_com_port(com):
-                self._serial_pnp_reset_done = True
-                self._append_plain_ui(
-                    f"\n[serial] Reset {com} via Device Manager class APIs (disable/enable). "
-                    f"Waiting before reopening the port…\n"
-                )
-                time.sleep(1.0)
+        # Do not run Disable/Enable-PnpDevice here: it blocks the UI thread for a long time and can leave
+        # the COM device stuck disabled. Process kill + delay above is enough for stale miniterm locks.
 
         self._ansi.reset()
         self._trim_first_pty_chunk = bool(self._banner)
@@ -1344,6 +1341,9 @@ class SessionWidget(QWidget):
             # One logical command line stays on one row (horizontal scroll); wrap was splitting tokens visually.
             self.output.setLineWrapMode(QTextEdit.NoWrap)
             self.output.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            _to = QTextOption(self.output.document().defaultTextOption())
+            _to.setWrapMode(QTextOption.NoWrap)
+            self.output.document().setDefaultTextOption(_to)
         self._session_footer = QLabel()
         self._session_footer.setObjectName("TerminalSessionFooter")
         self._session_footer.setFont(QFont("Consolas", 10))
@@ -2494,7 +2494,7 @@ class TerminalTab(QWidget):
         tb.setContextMenuPolicy(Qt.CustomContextMenu)
         tb.customContextMenuRequested.connect(self._on_terminal_tab_bar_context_menu)
         self.tabs.tabCloseRequested.connect(self._on_tab_close)
-        self.tabs.currentChanged.connect(lambda _i: self._refresh_bookmark_open_indicators())
+        self.tabs.currentChanged.connect(self._on_terminal_stack_changed)
         right_layout.addWidget(self.tabs, 1)
 
         self._status_label = QLabel("Ready")
@@ -2510,6 +2510,18 @@ class TerminalTab(QWidget):
         self._add_placeholder_tab()
         # Bookmarks refresh touches session tabs — run only after self.tabs exists.
         self._reload_bookmark_sidebar()
+        QTimer.singleShot(0, self._sync_terminal_flush_pause)
+
+    def _on_terminal_stack_changed(self, _index: int) -> None:
+        self._refresh_bookmark_open_indicators()
+        self._sync_terminal_flush_pause()
+
+    def _sync_terminal_flush_pause(self) -> None:
+        idx = self.tabs.currentIndex()
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            if hasattr(w, "set_flush_paused"):
+                w.set_flush_paused(i != idx)
 
     def _ssh_tab_title(self, profile: SessionProfile) -> str:
         h = (profile.ssh_host or "").strip()
