@@ -109,6 +109,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(create_app_icon(dark=bool(getattr(self.config, "dark_theme", False))))
         self.resize(1450, 900)
         self.setMinimumSize(720, 480)
+        self._shutting_down = False
         self._build_ui()
         self._device_refresh_thread: Optional[_AdbDevicesRefreshThread] = None
         self._device_refresh_pending = False
@@ -294,6 +295,7 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
             return
+        self._shutting_down = True
         try:
             kill_all_adb_subprocesses()
         except Exception:
@@ -313,13 +315,15 @@ class MainWindow(QMainWindow):
             self.scrcpy.shutdown(fast=True)
         for _name in ("_device_refresh_thread", "_stats_refresh_thread"):
             th = getattr(self, _name, None)
-            if th is not None and th.isRunning():
-                if not th.wait(15000):
-                    try:
-                        th.terminate()
-                    except Exception:
-                        pass
-                    th.wait(3000)
+            if th is not None:
+                if th.isRunning():
+                    if not th.wait(15000):
+                        try:
+                            th.terminate()
+                        except Exception:
+                            pass
+                        th.wait(3000)
+                setattr(self, _name, None)
         super().closeEvent(event)
 
     def nativeEvent(self, eventType, message):
@@ -500,6 +504,8 @@ class MainWindow(QMainWindow):
         self.refresh_device_stats()
 
     def refresh_devices(self):
+        if getattr(self, "_shutting_down", False):
+            return
         if not hasattr(self, "terminal"):
             return
         if self._device_refresh_thread and self._device_refresh_thread.isRunning():
@@ -514,6 +520,8 @@ class MainWindow(QMainWindow):
     def _on_devices_refreshed(self, pairs, adb_ok: bool) -> None:
         th = self.sender()
         if th is not self._device_refresh_thread:
+            if isinstance(th, QThread):
+                th.deleteLater()
             return
         self._device_refresh_thread = None
         if isinstance(th, QThread):
@@ -636,6 +644,8 @@ class MainWindow(QMainWindow):
             self.file_explorer.set_device_stats_text(stats)
 
     def refresh_device_stats(self) -> None:
+        if getattr(self, "_shutting_down", False):
+            return
         if not hasattr(self, "terminal"):
             return
         serial = (self.terminal.current_adb_serial() or "").strip()
@@ -653,6 +663,8 @@ class MainWindow(QMainWindow):
     def _on_device_stats_ready(self, serial: str, raw: object, err: str) -> None:
         th = self.sender()
         if th is not self._stats_refresh_thread:
+            if isinstance(th, QThread):
+                th.deleteLater()
             return
         self._stats_refresh_thread = None
         if isinstance(th, QThread):

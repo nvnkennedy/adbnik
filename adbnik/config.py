@@ -39,7 +39,7 @@ class AppConfig:
     embed_scrcpy_mirror: bool = False
     # Legacy mirror of embed checkbox; kept for older configs (embed off => opt_out true).
     embed_scrcpy_mirror_opt_out: bool = True
-    # scrcpy --keyboard: "auto" = infer IVI/automotive → UHID; "" legacy = auto; "uhid"/"sdk" = forced.
+    # Deprecated: keyboard mode is inferred from the device (see infer_scrcpy_keyboard_mode); kept for JSON round-trip.
     scrcpy_keyboard: str = "auto"
     default_ssh_host: str = ""
     default_serial_port: str = "COM3"

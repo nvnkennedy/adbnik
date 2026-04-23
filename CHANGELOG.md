@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [1.4.2] - 2026-04-23
+
+### Changed
+
+- **Screen / scrcpy:** **Keyboard mode is fully automatic** (IVI/automotive → **UHID** via ADB inference). The Screen tab **no longer shows a keyboard dropdown**; override only via **Extra CLI** (e.g. ``--keyboard sdk``) if needed.
+- **Terminal tabs:** Only the **active** session runs the output flush timer — **background ADB/SSH tabs** stop consuming CPU while you work elsewhere (faster tab switching).
+- **ADB workers:** **Stale** device-list / stats **QThread** instances from an older refresh are always **deleteLater**’d so Qt does not tear down live threads incorrectly.
+
+### Fixed
+
+- **ADB / SSH display:** Remote PTY panes also set the document **text wrap mode** to **NoWrap** (in addition to ``QTextEdit``), so long commands stay on **one visual line**.
+- **Serial retry:** Removed automatic **PnP disable/enable** for busy COM ports — it **blocked the UI** for a long time and could leave the port **stuck disabled**. Retry now relies on killing miniterm/orphans and reopening (same guidance text if still busy).
+- **Shutdown:** **MainWindow** sets a **shutting-down** flag so no new ADB refresh/stats threads start during close; worker pointers are **cleared** after **wait/terminate**.
+
 ## [1.4.1] - 2026-04-23
 
 ### Added
