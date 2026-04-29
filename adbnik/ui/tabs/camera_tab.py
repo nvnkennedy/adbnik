@@ -500,7 +500,7 @@ class CameraTab(QWidget):
     def _start_cv_thread(self, index: int) -> None:
         self._stop_cv_thread()
         self._cv_index = index
-        th = FrameGrabThread(index, 1920, 1080, 30.0)
+        th = FrameGrabThread(index, 1280, 720, 30.0)
         th.frame_ready.connect(self._on_cv_frame)
         th.bgr_ready.connect(self._on_cv_bgr_frame)
         th.failed.connect(self._on_cv_failed)
@@ -521,6 +521,8 @@ class CameraTab(QWidget):
             pass
 
     def _paint_preview_label(self) -> None:
+        if not self.isVisible():
+            return
         if (
             not self._opencv_mode
             or not isinstance(self._view, QLabel)
@@ -530,7 +532,7 @@ class CameraTab(QWidget):
             return
         pix = QPixmap.fromImage(self._last_cv_frame)
         self._view.setPixmap(
-            pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
         )
 
     def _on_cv_frame(self, img: object) -> None:
@@ -538,6 +540,8 @@ class CameraTab(QWidget):
             return
         self._last_cv_frame = img
         if not self._opencv_mode or not isinstance(self._view, QLabel):
+            return
+        if not self.isVisible():
             return
         self._paint_preview_label()
 
@@ -548,12 +552,18 @@ class CameraTab(QWidget):
         self._status.setText("Stopped")
         self._apply_button_states()
 
+    def _clear_preview_surface(self) -> None:
+        if self._opencv_mode and isinstance(self._view, QLabel):
+            self._view.clear()
+        self._last_cv_frame = None
+
     def pause_for_background(self) -> None:
         self._finalize_recorder_sync(offer_open=False)
         if self._opencv_mode:
             self._stop_cv_thread()
             self._paused = True
             self._status.setText("Paused")
+            self._clear_preview_surface()
             self._apply_button_states()
             return
         if self._camera is None:
@@ -564,7 +574,12 @@ class CameraTab(QWidget):
             pass
         self._paused = True
         self._status.setText("Paused")
+        self._clear_preview_surface()
         self._apply_button_states()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._clear_preview_surface()
 
     def _teardown_camera(self) -> None:
         self._finalize_recorder_sync(offer_open=False)

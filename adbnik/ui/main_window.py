@@ -412,6 +412,7 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("MainTabs")
+        self.tabs.setDocumentMode(True)
         tb = self.tabs.tabBar()
         tb.setElideMode(Qt.ElideNone)
         tb.setUsesScrollButtons(True)
@@ -581,6 +582,11 @@ class MainWindow(QMainWindow):
                     except Exception:
                         pass
         self._prev_main_tab_index = index
+        if index == 2 and hasattr(self, "scrcpy"):
+            try:
+                self.scrcpy.raise_()
+            except Exception:
+                pass
         if index == 0 and hasattr(self, "terminal"):
             self.terminal._reload_bookmark_sidebar()
         if index == 1:

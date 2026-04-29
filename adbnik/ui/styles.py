@@ -895,7 +895,8 @@ _DARK_APPEND = """
     QTabWidget#ExplorerSessionTabs::pane { background: #0f172a; border: 1px solid #334155; }
     QTabWidget#ExplorerSessionTabs QStackedWidget { background: #0f172a; }
     QTabWidget#MobaTabs QStackedWidget { background: #0f172a; }
-    QTabWidget#MainTabs QWidget { background: #0b1220; }
+    /* Tab page root only — avoid forcing every nested QWidget (fixes ghosting/stacking with native embeds). */
+    QTabWidget#MainTabs > QStackedWidget > QWidget { background: #0b1220; }
     QTabWidget#ExplorerSessionTabs QWidget { background: #0f172a; }
     QTabWidget#MobaTabs QWidget { background: #0f172a; }
     QTabWidget#MainTabs QTabBar::close-button,

@@ -113,10 +113,10 @@ class FrameGrabThread(QThread):
             pass
         self._running = True
         # Pace capture to UI/recording rate — avoids flooding the GUI thread with signals.
-        preview_hz = 28.0
+        preview_hz = 30.0
         record_hz = min(30.0, float(self._fps))
-        # Keep preview frames sharp on large tabs (scale in QLabel uses SmoothTransformation).
-        preview_max_w = 1920
+        # Downscale before RGB convert — keeps UI thread light on large tabs.
+        preview_max_w = 1280
         next_deadline = 0.0
         while self._running:
             period = (1.0 / record_hz) if self._emit_bgr_for_record else (1.0 / preview_hz)
@@ -134,7 +134,7 @@ class FrameGrabThread(QThread):
                 scale = preview_max_w / float(ww)
                 nw = max(1, int(ww * scale))
                 nh = max(1, int(hh * scale))
-                work_bgr = cv2.resize(work_bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
+                work_bgr = cv2.resize(work_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
             rgb = cv2.cvtColor(work_bgr, cv2.COLOR_BGR2RGB)
             h2, w2, _ch = rgb.shape
             bpl = 3 * w2

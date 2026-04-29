@@ -125,6 +125,21 @@ def _win_move_window(hwnd: int, parent: QWidget) -> None:
         pass
 
 
+def _win_show_window(hwnd: int, show: bool) -> None:
+    """Hide/show embedded mirror HWND so it cannot paint above other main-window tabs."""
+    if sys.platform != "win32" or not hwnd:
+        return
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        SW_HIDE = 0
+        SW_SHOW = 5
+        user32.ShowWindow(int(hwnd), SW_SHOW if show else SW_HIDE)
+    except Exception:
+        pass
+
+
 class _EmbedHost(QWidget):
     """Hosts a reparented scrcpy HWND; keeps the child window sized to this widget."""
 
@@ -145,6 +160,17 @@ class _EmbedHost(QWidget):
         if self._hwnd:
             _win_move_window(self._hwnd, self)
             QTimer.singleShot(50, self._deferred_embed_resize)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if self._hwnd:
+            _win_show_window(self._hwnd, False)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._hwnd and self.isVisible():
+            _win_show_window(self._hwnd, True)
+            QTimer.singleShot(0, self._deferred_embed_resize)
 
 
 class ScrcpyTab(QWidget):
