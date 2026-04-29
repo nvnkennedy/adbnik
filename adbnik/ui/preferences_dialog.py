@@ -4,7 +4,6 @@ from PyQt5.QtWidgets import (
     QApplication,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -17,6 +16,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..config import AppConfig
+from .file_dialogs import get_open_filename
 
 
 class PreferencesDialog(QDialog):
@@ -96,13 +96,13 @@ class PreferencesDialog(QDialog):
 
     def _browse_adb(self) -> None:
         """Let the user pick adb (or adb.exe); write the path into the ADB field."""
-        path, _ = QFileDialog.getOpenFileName(self, "Select adb", str(Path.home()))
+        path, _ = get_open_filename(self, "Select adb", str(Path.home()), "")
         if path:
             self.adb_edit.setText(path)
 
     def _browse_scrcpy(self) -> None:
         """Let the user pick the scrcpy executable; write the path into the scrcpy field."""
-        path, _ = QFileDialog.getOpenFileName(self, "Select scrcpy", str(Path.home()))
+        path, _ = get_open_filename(self, "Select scrcpy", str(Path.home()), "")
         if path:
             self.scrcpy_edit.setText(path)
 

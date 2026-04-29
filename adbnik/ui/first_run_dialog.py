@@ -8,7 +8,6 @@ from PyQt5.QtWidgets import (
     QButtonGroup,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -24,6 +23,7 @@ from PyQt5.QtWidgets import (
 
 from .. import __version__
 from ..config import AppConfig
+from .file_dialogs import get_open_filename
 
 
 class FirstRunDialog(QDialog):
@@ -404,12 +404,12 @@ class FirstRunDialog(QDialog):
             )
 
     def _browse_adb(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Select adb", str(Path.home()))
+        path, _ = get_open_filename(self, "Select adb", str(Path.home()), "")
         if path:
             self.adb_edit.setText(path)
 
     def _browse_scrcpy(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Select scrcpy", str(Path.home()))
+        path, _ = get_open_filename(self, "Select scrcpy", str(Path.home()), "")
         if path:
             self.scrcpy_edit.setText(path)
 

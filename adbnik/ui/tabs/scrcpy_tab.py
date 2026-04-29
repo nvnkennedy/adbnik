@@ -16,7 +16,6 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QFileDialog,
     QScrollArea,
     QShortcut,
     QSizePolicy,
@@ -31,6 +30,7 @@ from ... import APP_TITLE
 from ...config import AppConfig
 from ...services.adb_devices import infer_scrcpy_keyboard_mode, list_adb_devices
 from ..combo_utils import ExpandAllComboBox
+from ..file_dialogs import get_save_filename
 from ..icon_utils import icon_media_play_green, icon_media_stop_red
 from ...services.commands import run_adb
 
@@ -1010,7 +1010,7 @@ class ScrcpyTab(QWidget):
     def _choose_record_file(self) -> None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         suggested = f"scrcpy_record_{ts}.mp4"
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = get_save_filename(
             self,
             "Choose recording file",
             suggested,

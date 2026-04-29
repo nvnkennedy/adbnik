@@ -3,8 +3,10 @@
 from adbnik.ui.ansi_html import (
     AnsiToHtmlConverter,
     ensure_remote_pty_visual_line_breaks,
+    get_prompt_palette,
     normalize_remote_pty_plain_text,
     preprocess_escape_noise,
+    preprocess_prompt_lines_for_highlight,
     preprocess_pty_stream,
     preprocess_serial_stream,
     strip_ansi_for_display,
@@ -61,13 +63,15 @@ def test_style_prompt_line_unix_ssh():
 
 def test_style_prompt_line_adb_device_path():
     """ADB/Android shell: hostname:/path $ tail — no user@."""
-    h = style_prompt_line_html("vivo:/ $ ")
-    assert h and "vivo" in h and "/" in h and "$" in h and "#79c0ff" in h
+    adb = get_prompt_palette("adb")
+    h = style_prompt_line_html("vivo:/ $ ", palette=adb)
+    assert h and "vivo" in h and "/" in h and "$" in h and adb.user in h
 
 
 def test_style_prompt_line_adb_same_line_command():
-    h = style_prompt_line_html("vivo:/system/bin $ ls -la")
-    assert h and "vivo" in h and "ls" in h and "#f0ab68" in h
+    adb = get_prompt_palette("adb")
+    h = style_prompt_line_html("vivo:/system/bin $ ls -la", palette=adb)
+    assert h and "vivo" in h and "ls" in h and adb.prompt_input in h
 
 
 def test_style_prompt_line_powershell():
@@ -99,7 +103,15 @@ def test_plain_output_line_uses_output_tint():
     c = AnsiToHtmlConverter(prompt_highlight=True)
     html, plain = c.feed("hello world\n")
     assert "hello world" in plain
-    assert "#b8c4ce" in html
+    assert get_prompt_palette("local").line_output in html
+
+
+def test_preprocess_prompt_lines_strips_sgr_on_detected_prompt():
+    """Colored SSH prompts become plain so HTML prompt styling applies."""
+    line = "\x1b[32muser@host:~$\x1b[0m ls"
+    out = preprocess_prompt_lines_for_highlight(line + "\n")
+    assert "\x1b" not in out
+    assert "user@host" in out
 
 
 def test_embedded_terminal_ignores_background_colors():

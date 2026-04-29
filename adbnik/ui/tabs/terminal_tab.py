@@ -24,7 +24,6 @@ from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QDialog,
-    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -46,11 +45,14 @@ from ...config import AppConfig
 from ..ansi_html import (
     AnsiToHtmlConverter,
     ensure_remote_pty_visual_line_breaks,
+    get_prompt_palette,
     normalize_remote_pty_plain_text,
     preprocess_escape_noise,
+    preprocess_prompt_lines_for_highlight,
     preprocess_serial_esc_boundaries,
 )
 from ..combo_utils import ExpandAllComboBox
+from ..file_dialogs import get_save_filename
 from ..icon_utils import (
     bookmark_icon_from_entry,
     icon_adb_android,
@@ -1214,7 +1216,12 @@ class SessionWidget(QWidget):
         self._path_command_cache_key: str = ""
         self._python_repl_mode = False
         self._log_path = self._build_log_path()
-        self._ansi = AnsiToHtmlConverter(ignore_background=True, lift_black_foreground=True, prompt_highlight=True)
+        self._ansi = AnsiToHtmlConverter(
+            ignore_background=True,
+            lift_black_foreground=True,
+            prompt_highlight=True,
+            prompt_palette=get_prompt_palette(self._session_prompt_palette_name()),
+        )
         self._welcome_is_reconnect = False
         self._scroll_output_on_newline_only = True
         self._stream_chunk = 65536
@@ -1287,6 +1294,19 @@ class SessionWidget(QWidget):
             return "Windows Command Prompt"
         return "Local terminal"
 
+    def _session_prompt_palette_name(self) -> str:
+        if self._is_ssh_session:
+            return "ssh"
+        if self._is_adb_shell:
+            return "adb"
+        if self._is_serial_session:
+            return "serial"
+        if self._shell_profile == "powershell":
+            return "powershell"
+        if self._shell_profile == "cmd":
+            return "cmd"
+        return "local"
+
     def _welcome_banner_parts(self) -> Tuple[str, str]:
         dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         kind = self._session_kind_label()
@@ -1296,26 +1316,27 @@ class SessionWidget(QWidget):
             extra = self._banner.strip().replace("\n", " ")
             if len(extra) > 220:
                 extra = extra[:217] + "…"
-        sep_plain = "=" * 56
+        sep_plain = "=" * 72
         lines_plain = ["Welcome to adbnik", f"{kind} · {tag}", dt]
         if extra:
             lines_plain.append(extra)
         plain = "\n".join(lines_plain) + "\n" + sep_plain + "\n\n"
+        fz = "13px"
         h = (
-            '<div style="color:#8b949e;font-size:11px;line-height:1.45;margin:0;padding:0 0 6px 0">'
-            '<span style="color:#58a6ff;font-weight:600">Welcome to adbnik</span><br/>'
-            f'<span style="color:#7ee787">{html_escape(kind)}</span>'
+            f'<div style="color:#8b949e;font-size:{fz};line-height:1.5;margin:0;padding:0 0 8px 0;'
+            'width:100%;box-sizing:border-box">'
+            f'<span style="color:#58a6ff;font-weight:600;font-size:{fz}">Welcome to adbnik</span><br/>'
+            f'<span style="color:#7ee787;font-size:{fz}">{html_escape(kind)}</span>'
             f'<span style="color:#6e7681"> · </span>'
-            f'<span style="color:#a371f7">{html_escape(tag)}</span><br/>'
-            f'<span style="color:#6e7681">{html_escape(dt)}</span>'
+            f'<span style="color:#a371f7;font-size:{fz}">{html_escape(tag)}</span><br/>'
+            f'<span style="color:#6e7681;font-size:{fz}">{html_escape(dt)}</span>'
         )
         if extra:
-            h += f'<br/><span style="color:#8b949e">{html_escape(extra)}</span>'
+            h += f'<br/><span style="color:#8b949e;font-size:{fz}">{html_escape(extra)}</span>'
         h += (
             '</div>'
-            f'<div style="font-family:Consolas,\'Courier New\',monospace;font-size:10px;color:#6e7681;'
-            f'letter-spacing:0.5px;margin:0 0 2px 0;padding:2px 0 8px 0;border-bottom:1px solid #3d444d">'
-            f'{html_escape(sep_plain)}</div><br/>'
+            '<div style="width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 10px 0;'
+            'border-bottom:2px solid #3d444d">&nbsp;</div><br/>'
         )
         return h, plain
 
@@ -2215,6 +2236,8 @@ class SessionWidget(QWidget):
             data = preprocess_serial_esc_boundaries(data)
             data = _filter_serial_miniterm_banner(data)
             data = _scrub_serial_display_glitches(data)
+            # Collapse UART noise lines (ESC fragments / lone resets) that double vertical space
+            data = re.sub(r"\n(?:\s*(?:\x1b\[[0-9;]*m|\[(?:0;)?39m|0;39m|\x1b))+\s*\n", "\n", data, flags=re.I)
             data = re.sub(r"\n{2,}", "\n", data)
         else:
             # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
@@ -2250,6 +2273,7 @@ class SessionWidget(QWidget):
         if self._is_remote_pty_shell:
             data = normalize_remote_pty_plain_text(data)
             data = ensure_remote_pty_visual_line_breaks(self._tail_cache, data)
+            data = preprocess_prompt_lines_for_highlight(data)
             data = re.sub(r"\n{6,}", "\n\n\n\n\n", data)
             data = re.sub(r"\n{3,}", "\n", data)
             html_frag, plain_frag = self._ansi.feed(data)
@@ -2505,7 +2529,7 @@ class SessionWidget(QWidget):
     def _save_buffer_as(self) -> None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         suggested = f"{self.session_label.replace(' ', '_')}_{ts}.txt"
-        path, _ = QFileDialog.getSaveFileName(self, "Save terminal output as", suggested, "Text files (*.txt);;All files (*.*)")
+        path, _ = get_save_filename(self, "Save terminal output as", suggested, "Text files (*.txt);;All files (*.*)")
         if not path:
             return
         mode = QMessageBox.question(

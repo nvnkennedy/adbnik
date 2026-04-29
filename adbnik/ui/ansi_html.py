@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Pattern, Tuple
+from typing import Dict, List, Optional, Pattern, Tuple
 
 # xterm 6×6×6 color cube + grayscale (standard mapping)
 _CUBE = [0, 95, 135, 175, 215, 255]
@@ -81,6 +81,92 @@ _ANSI_BG = {
 }
 
 _DEFAULT_FG = "#f0f3f6"
+
+
+@dataclass(frozen=True)
+class PromptPalette:
+    """Per-session prompt segmentation + default plain-line output tint (when SGR is default)."""
+
+    user: str
+    sep: str
+    host: str
+    path: str
+    sig: str
+    ps_prefix: str
+    prompt_input: str
+    line_output: str
+
+
+def get_prompt_palette(kind: str) -> PromptPalette:
+    """``kind``: ssh | adb | powershell | cmd | serial | local"""
+    return _PROMPT_PALETTES.get(kind, _PROMPT_PALETTES["local"])
+
+
+_PROMPT_PALETTES: Dict[str, PromptPalette] = {
+    # SSH: cool cyan/teal prompt, amber typed tail, slate output
+    "ssh": PromptPalette(
+        user="#67e8f9",
+        sep="#94a3b8",
+        host="#38bdf8",
+        path="#86efac",
+        sig="#fb7185",
+        ps_prefix="#c4b5fd",
+        prompt_input="#fde68a",
+        line_output="#94a3b8",
+    ),
+    # ADB: green device tone, gold input, neutral output
+    "adb": PromptPalette(
+        user="#4ade80",
+        sep="#94a3a6",
+        host="#bbf7d0",
+        path="#a7f3d0",
+        sig="#fbbf24",
+        ps_prefix="#ddd6fe",
+        prompt_input="#fcd34d",
+        line_output="#9ca3af",
+    ),
+    "powershell": PromptPalette(
+        user="#a78bfa",
+        sep="#94a3b8",
+        host="#c4b5fd",
+        path="#7dd3fc",
+        sig="#f472b6",
+        ps_prefix="#e9d5ff",
+        prompt_input="#fca5a5",
+        line_output="#b4c6d6",
+    ),
+    "cmd": PromptPalette(
+        user="#38bdf8",
+        sep="#8b949e",
+        host="#94a3b8",
+        path="#93c5fd",
+        sig="#facc15",
+        ps_prefix="#d8b4fe",
+        prompt_input="#fde047",
+        line_output="#b8c4ce",
+    ),
+    "serial": PromptPalette(
+        user="#fbbf24",
+        sep="#a8a29e",
+        host="#fcd34d",
+        path="#fde047",
+        sig="#f87171",
+        ps_prefix="#e879f9",
+        prompt_input="#fdba74",
+        line_output="#a8a29e",
+    ),
+    "local": PromptPalette(
+        user="#79c0ff",
+        sep="#8b949e",
+        host="#a5d6ff",
+        path="#7ee787",
+        sig="#ff7b72",
+        ps_prefix="#d2a8ff",
+        prompt_input="#f0ab68",
+        line_output="#b8c4ce",
+    ),
+}
+
 
 # When the PTY has not set SGR color (default fg), tint whole lines by keywords — Moba-style log reading.
 _SEMANTIC_LINE_PATTERNS: List[Tuple[Pattern[str], str]] = [
@@ -380,19 +466,6 @@ def _carry_incomplete_esc(s: str) -> Tuple[str, str]:
     return s[:last], tail
 
 
-# Prompt readability (host/path vs #/$) when SGR is default — works on dark terminal chrome.
-_CLR_PROMPT_USER = "#79c0ff"
-_CLR_PROMPT_SEP = "#8b949e"
-_CLR_PROMPT_HOST = "#a5d6ff"
-_CLR_PROMPT_PATH = "#7ee787"
-_CLR_PROMPT_SIG = "#ff7b72"
-_CLR_PS_PREFIX = "#d2a8ff"
-# Text typed after $/#/> on the same line as the prompt (distinct from scrollback “output”).
-_CLR_PROMPT_INPUT = "#f0ab68"
-# Plain command output when SGR is default (slightly muted vs default fg).
-_CLR_LINE_OUTPUT = "#b8c4ce"
-
-
 def strip_sgr_sequences_for_prompt(line: str) -> str:
     """Strip CSI sequences so prompt regexes match (SGR, cursor moves, EL/ED, etc.)."""
     if not line:
@@ -400,12 +473,18 @@ def strip_sgr_sequences_for_prompt(line: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line)
 
 
-def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[str]:
+def style_prompt_line_html(
+    line: str,
+    bare: Optional[str] = None,
+    *,
+    palette: Optional[PromptPalette] = None,
+) -> Optional[str]:
     """Return colored HTML for one logical prompt line (Unix/CMD/PowerShell), or None to use default span.
 
     ``bare`` should be the same line with SGR stripped; if omitted it is derived from ``line``.
     Includes optional text **after** ``#`` / ``$`` / ``>`` (typed command on the same line).
     """
+    pal = palette or get_prompt_palette("local")
     if not (line or "").strip():
         return None
     s = (bare if bare is not None else strip_sgr_sequences_for_prompt(line)).rstrip("\r")
@@ -413,16 +492,16 @@ def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[st
     def _tail_span(rest: str) -> str:
         if not rest:
             return ""
-        return f'<span style="color:{_CLR_PROMPT_INPUT}">{html.escape(rest)}</span>'
+        return f'<span style="color:{pal.prompt_input}">{html.escape(rest)}</span>'
 
     # PowerShell: PS C:\path>  optional tail
     m = re.match(r"^(PS\s+)(.+)(>+)(.*)$", s)
     if m:
         prefix, mid, gt, tail = m.group(1), m.group(2), m.group(3), m.group(4)
         return (
-            f'<span style="color:{_CLR_PS_PREFIX}">{html.escape(prefix)}</span>'
-            f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(mid)}</span>'
-            f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(gt)}</span>'
+            f'<span style="color:{pal.ps_prefix}">{html.escape(prefix)}</span>'
+            f'<span style="color:{pal.path}">{html.escape(mid)}</span>'
+            f'<span style="color:{pal.sig}">{html.escape(gt)}</span>'
             f"{_tail_span(tail)}"
         )
 
@@ -431,8 +510,8 @@ def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[st
     if m:
         path, gt, tail = m.group(1), m.group(2), m.group(3)
         return (
-            f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(path)}</span>'
-            f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(gt)}</span>'
+            f'<span style="color:{pal.path}">{html.escape(path)}</span>'
+            f'<span style="color:{pal.sig}">{html.escape(gt)}</span>'
             f"{_tail_span(tail)}"
         )
 
@@ -452,10 +531,10 @@ def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[st
                 rest_path = head[colon + 1 :]
                 if dev.strip():
                     return (
-                        f'<span style="color:{_CLR_PROMPT_USER}">{html.escape(dev)}</span>'
-                        f'<span style="color:{_CLR_PROMPT_SEP}">:</span>'
-                        f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(rest_path)}</span>'
-                        f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(sig_ch)}</span>'
+                        f'<span style="color:{pal.user}">{html.escape(dev)}</span>'
+                        f'<span style="color:{pal.sep}">:</span>'
+                        f'<span style="color:{pal.path}">{html.escape(rest_path)}</span>'
+                        f'<span style="color:{pal.sig}">{html.escape(sig_ch)}</span>'
                         f"{_tail_span(tail)}"
                     )
         at = head.find("@")
@@ -468,16 +547,32 @@ def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[st
         host = head[at + 1 : colon]
         path = head[colon + 1 :]
         return (
-            f'<span style="color:{_CLR_PROMPT_USER}">{html.escape(user)}</span>'
-            f'<span style="color:{_CLR_PROMPT_SEP}">@</span>'
-            f'<span style="color:{_CLR_PROMPT_HOST}">{html.escape(host)}</span>'
-            f'<span style="color:{_CLR_PROMPT_SEP}">:</span>'
-            f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(path)}</span>'
-            f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(sig_ch)}</span>'
+            f'<span style="color:{pal.user}">{html.escape(user)}</span>'
+            f'<span style="color:{pal.sep}">@</span>'
+            f'<span style="color:{pal.host}">{html.escape(host)}</span>'
+            f'<span style="color:{pal.sep}">:</span>'
+            f'<span style="color:{pal.path}">{html.escape(path)}</span>'
+            f'<span style="color:{pal.sig}">{html.escape(sig_ch)}</span>'
             f"{_tail_span(tail)}"
         )
 
     return None
+
+
+def preprocess_prompt_lines_for_highlight(data: str) -> str:
+    """SSH/ADB: strip in-band SGR on lines that match a shell prompt so prompt HTML styling applies."""
+    if not data:
+        return data
+    lines = data.split("\n")
+    pal = get_prompt_palette("local")
+    out: List[str] = []
+    for line in lines:
+        bare = strip_sgr_sequences_for_prompt(line)
+        if style_prompt_line_html(line, bare, palette=pal) is not None:
+            out.append(bare)
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 class AnsiToHtmlConverter:
@@ -489,6 +584,7 @@ class AnsiToHtmlConverter:
         ignore_background: bool = True,
         lift_black_foreground: bool = True,
         prompt_highlight: bool = True,
+        prompt_palette: Optional[PromptPalette] = None,
     ) -> None:
         """Embedded terminal: ignore ANSI background (avoids full-pane blue/green from slog2info).
         ``lift_black_foreground`` maps SGR black (30) to a readable gray on dark UIs."""
@@ -497,6 +593,7 @@ class AnsiToHtmlConverter:
         self._ignore_background = bool(ignore_background)
         self._lift_black_foreground = bool(lift_black_foreground)
         self._prompt_highlight = bool(prompt_highlight)
+        self._prompt_palette = prompt_palette or get_prompt_palette("local")
 
     def reset(self) -> None:
         self._pending = ""
@@ -581,13 +678,13 @@ class AnsiToHtmlConverter:
                 continue
             if self._prompt_highlight:
                 bare = strip_sgr_sequences_for_prompt(line)
-                ph = style_prompt_line_html(line, bare)
+                ph = style_prompt_line_html(line, bare, palette=self._prompt_palette)
                 if ph:
                     html_parts.append(ph)
                     continue
             sem = _semantic_fg_for_plain_line(line) if use_semantic else None
             if sem is None and use_semantic:
-                sem = _CLR_LINE_OUTPUT
+                sem = self._prompt_palette.line_output
             html_parts.append(f'<span style="{self._span_css(sem)}">{esc}</span>')
 
     def feed(self, chunk: str) -> Tuple[str, str]:

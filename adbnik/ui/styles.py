@@ -52,6 +52,51 @@ _LIGHT_STYLESHEET = """
     QMenu::item:selected {
         background: #e0edff;
     }
+    /* Native QFileDialog ignores theme on Windows; DontUseNativeDialog + these rules fix invisible labels */
+    QFileDialog {
+        background: #ffffff;
+        color: #0f172a;
+    }
+    QFileDialog QLabel {
+        color: #0f172a;
+        background: transparent;
+        font-size: 13px;
+    }
+    QFileDialog QLineEdit,
+    QFileDialog QComboBox,
+    QFileDialog QSpinBox {
+        background: #ffffff;
+        color: #0f172a;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 6px;
+        min-height: 22px;
+        selection-background-color: #dbeafe;
+        selection-color: #0f172a;
+    }
+    QFileDialog QListView,
+    QFileDialog QTreeView {
+        background: #ffffff;
+        color: #0f172a;
+        selection-background-color: #dbeafe;
+        selection-color: #0f172a;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+    }
+    QFileDialog QPushButton {
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        color: #1e3a8a;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+    QFileDialog QPushButton:hover {
+        background: #e0e7ff;
+    }
+    QFileDialog QDialogButtonBox QPushButton {
+        min-width: 88px;
+    }
     QFrame#TopCard {
         background: #fcfdff;
         border: 1px solid #e2e8f0;
@@ -1002,6 +1047,26 @@ _DARK_APPEND = """
     QSplitter#MainBodySplit::handle { background: #30363d; height: 4px; }
     QSplitter#ScrcpyMainSplit::handle { background: #30363d; width: 4px; }
     QPushButton#SessionStripBtn { background: #334155; border: 1px solid #475569; color: #e2e8f0; }
+    QFileDialog {
+        background: #111827;
+        color: #f1f5f9;
+    }
+    QFileDialog QLabel { color: #e2e8f0; background: transparent; }
+    QFileDialog QLineEdit, QFileDialog QComboBox, QFileDialog QListView, QFileDialog QTreeView {
+        background: #0f172a;
+        color: #f1f5f9;
+        border: 1px solid #334155;
+        selection-background-color: #1d4ed8;
+        selection-color: #ffffff;
+    }
+    QFileDialog QPushButton {
+        background: #334155;
+        border: 1px solid #475569;
+        color: #f8fafc;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-weight: 600;
+    }
     QDialog { background: #111827; color: #f1f5f9; }
     QDialog QWidget { background: #111827; color: #f1f5f9; }
     QDialog QTableWidget#WinScpTable {

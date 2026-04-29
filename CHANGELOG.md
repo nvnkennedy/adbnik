@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.5.0] - 2026-04-29
+
+### Added
+
+- **Camera tab** (next to Screen Control): live preview (Qt Multimedia), **JPEG** snapshots, optional **MP4** recording, **Start / Stop / Pause / Restart**, save-folder picker; session persists while the app runs; **`camera_output_dir`** stored in config when you pick a folder.
+
+### Changed
+
+- **Terminal palettes:** Distinct **SSH** vs **ADB** vs **CMD** vs **PowerShell** vs **serial** colors for prompt segments, typed tail (**input**), and default-scrollback **output**; SSH/ADB streams normalize colored prompt lines so **prompt HTML** applies even when the shell wraps the prompt in **SGR**.
+- **Welcome banner:** Uniform **13px** copy and a **full-width** separator rule (no short monospace rule).
+- **Light theme dialogs:** **Fusion-style** open/save dialogs (`DontUseNativeDialog`) plus **`QFileDialog`** stylesheet rules fix invisible labels/text on Windows.
+
+### Fixed
+
+- **Serial UART:** Tighter collapse of **newline + ESC / `[0;39m` / `0;39m`** runs that added blank rows.
+
 ## [2.4.2] - 2026-04-29
 
 ### Added

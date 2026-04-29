@@ -16,7 +16,6 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -48,6 +47,8 @@ from .preferences_dialog import PreferencesDialog
 from .styles import get_stylesheet
 from .icon_utils import icon_adb_android
 from .tabs.file_explorer_tab import FileExplorerTab
+from .file_dialogs import get_open_filename, get_save_filename
+from .tabs.camera_tab import CameraTab
 from .tabs.scrcpy_tab import ScrcpyTab
 from .tabs.terminal_tab import TerminalTab
 from .win_scrcpy_hotkey import (
@@ -352,6 +353,8 @@ class MainWindow(QMainWindow):
             self.file_explorer.disconnect_remote_services()
         if hasattr(self, "scrcpy"):
             self.scrcpy.shutdown(fast=True)
+        if hasattr(self, "camera"):
+            self.camera.shutdown(fast=True)
         for _name in ("_device_refresh_thread", "_stats_refresh_thread"):
             th = getattr(self, _name, None)
             if th is not None:
@@ -445,10 +448,20 @@ class MainWindow(QMainWindow):
             get_serial=lambda: self.terminal.current_adb_serial(),
             config=self.config,
         )
+        self.camera = CameraTab(
+            self.append_log,
+            get_output_dir=self.get_camera_output_dir,
+            set_output_dir=self.set_camera_output_dir,
+        )
         st = self.style()
         self.tabs.addTab(self.terminal, st.standardIcon(QStyle.SP_FileDialogDetailedView), "Terminal")
         self.tabs.addTab(self.file_explorer, st.standardIcon(QStyle.SP_DirLinkIcon), "File Explorer")
         self.tabs.addTab(self.scrcpy, st.standardIcon(QStyle.SP_ComputerIcon), "Screen Control")
+        self.tabs.addTab(
+            self.camera,
+            st.standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)),
+            "Camera",
+        )
         self.tabs.tabBar().setIconSize(QSize(18, 18))
         self.tabs.currentChanged.connect(self._on_main_tab_changed)
         self.terminal.device_combo.currentTextChanged.connect(self._on_device_combo_changed)
@@ -867,6 +880,11 @@ class MainWindow(QMainWindow):
         a_scr.setShortcut(QKeySequence("Ctrl+3"))
         a_scr.triggered.connect(lambda: self.tabs.setCurrentIndex(2))
         view.addAction(a_scr)
+        a_cam = QAction("&Camera", self)
+        a_cam.setIcon(st.standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)))
+        a_cam.setShortcut(QKeySequence("Ctrl+4"))
+        a_cam.triggered.connect(lambda: self.tabs.setCurrentIndex(3))
+        view.addAction(a_cam)
         a_cmd_palette = QAction("Command &palette…", self)
         a_cmd_palette.setShortcut(QKeySequence("Ctrl+Shift+P"))
         a_cmd_palette.setIcon(self.style().standardIcon(QStyle.SP_FileDialogContentsView))
@@ -962,6 +980,7 @@ class MainWindow(QMainWindow):
             "Open Terminal",
             "Open File Explorer",
             "Open Screen Control",
+            "Open Camera",
             "Reconnect ADB",
             "Reconnect Screen Mirror",
             "Reconnect Explorer Remote",
@@ -977,6 +996,8 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentIndex(1)
         elif choice == "Open Screen Control":
             self.tabs.setCurrentIndex(2)
+        elif choice == "Open Camera":
+            self.tabs.setCurrentIndex(3)
         elif choice == "Reconnect ADB":
             self._menu_session_adb_reconnect()
         elif choice == "Reconnect Screen Mirror":
@@ -1051,7 +1072,7 @@ class MainWindow(QMainWindow):
                 "Terminal and File Explorer — and try again.",
             )
             return
-        path, _ = QFileDialog.getOpenFileName(
+        path, _ = get_open_filename(
             self,
             "Install APK",
             "",
@@ -1137,6 +1158,7 @@ PyQt5 and Python {py_ver} on {plat}.</p>
 <li><b>File Explorer</b> — WinSCP-style <b>Local | Remote</b> panes per session: ADB device storage, SFTP, or FTP.
 Pull, push, drag-and-drop, find files, and external editors with sync where supported.</li>
 <li><b>Screen Control</b> — Launch and manage <b>scrcpy</b> mirroring (paths and options in Preferences).</li>
+<li><b>Camera</b> — USB or built-in webcam preview, snapshots, optional MP4 recording; choose the save folder from the tab.</li>
 </ul>
 
 <h3 style="margin-bottom:6px;">Menus worth knowing</h3>
@@ -1146,7 +1168,7 @@ Pull, push, drag-and-drop, find files, and external editors with sync where supp
 <li><b>Session</b> — Refresh devices (F5), ADB tools (including <b>Install APK</b> on the selected device),
 open SSH using Explorer’s SFTP host or a new session.</li>
 <li><b>Commands</b> — ADB shortcuts (root, remount, reboot) and your custom SSH lines from Preferences.</li>
-<li><b>View</b> — Jump tabs (Ctrl+1–3), stop screen mirror, toggle dark theme.</li>
+<li><b>View</b> — Jump tabs (<b>Ctrl+1</b> Terminal, <b>Ctrl+2</b> Explorer, <b>Ctrl+3</b> Screen, <b>Ctrl+4</b> Camera), stop screen mirror, toggle dark theme.</li>
 </ul>
 
 <h3 style="margin-bottom:6px;">Tips</h3>
@@ -1176,7 +1198,7 @@ open SSH using Explorer’s SFTP host or a new session.</li>
 
     def _save_app_log(self) -> None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path, _ = QFileDialog.getSaveFileName(
+        path, _ = get_save_filename(
             self,
             "Save application log",
             f"adbnik_log_{ts}.txt",
@@ -1215,6 +1237,16 @@ open SSH using Explorer’s SFTP host or a new session.</li>
         except OSError:
             pass
         return raw
+
+    def get_camera_output_dir(self) -> str:
+        return str(getattr(self.config, "camera_output_dir", "") or "").strip()
+
+    def set_camera_output_dir(self, path: str) -> None:
+        self.config.camera_output_dir = (path or "").strip()
+        try:
+            self.config.save()
+        except Exception:
+            pass
 
     def get_scrcpy_path(self) -> str:
         raw = (self.config.scrcpy_path or "").strip()
