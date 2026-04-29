@@ -113,8 +113,8 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
         path="#4ade80",
         sig="#fb923c",
         ps_prefix="#c4b5fd",
-        prompt_input="#fef08a",
-        line_output="#94a3b8",
+        prompt_input="#fff382",
+        line_output="#64748b",
         sig_hash="#22c55e",
     ),
     # ADB: device vs path vs marker vs input vs listing output
@@ -125,8 +125,8 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
         path="#e2e8f0",
         sig="#fb923c",
         ps_prefix="#ddd6fe",
-        prompt_input="#fde047",
-        line_output="#a1a1aa",
+        prompt_input="#fef08a",
+        line_output="#71717a",
     ),
     "powershell": PromptPalette(
         user="#a78bfa",
@@ -135,8 +135,8 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
         path="#7dd3fc",
         sig="#f472b6",
         ps_prefix="#e9d5ff",
-        prompt_input="#fca5a5",
-        line_output="#b4c6d6",
+        prompt_input="#fda4af",
+        line_output="#8899aa",
     ),
     "cmd": PromptPalette(
         user="#38bdf8",
@@ -145,8 +145,8 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
         path="#93c5fd",
         sig="#facc15",
         ps_prefix="#d8b4fe",
-        prompt_input="#fde047",
-        line_output="#b8c4ce",
+        prompt_input="#fef08a",
+        line_output="#8899aa",
     ),
     "serial": PromptPalette(
         user="#fbbf24",
@@ -155,8 +155,8 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
         path="#fde047",
         sig="#f87171",
         ps_prefix="#e879f9",
-        prompt_input="#fdba74",
-        line_output="#a8a29e",
+        prompt_input="#fcd34d",
+        line_output="#78716c",
     ),
     "local": PromptPalette(
         user="#79c0ff",
@@ -165,8 +165,8 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
         path="#7ee787",
         sig="#ff7b72",
         ps_prefix="#d2a8ff",
-        prompt_input="#f0ab68",
-        line_output="#b8c4ce",
+        prompt_input="#ffc266",
+        line_output="#94a3b8",
     ),
 }
 

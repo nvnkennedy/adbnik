@@ -26,6 +26,11 @@ _LIGHT_STYLESHEET = """
         font-size: 14px;
         background: transparent;
     }
+    QLabel#CameraFooterLabel {
+        color: #475569;
+        font-size: 12px;
+        background: transparent;
+    }
     QWidget#CameraTabRoot QPushButton#CameraChromeBtn {
         background: #f8fafc;
         border: 1px solid #cbd5e1;
@@ -47,11 +52,13 @@ _LIGHT_STYLESHEET = """
         border-bottom: 1px solid #e2e8f0;
         padding: 2px 4px;
         spacing: 6px;
+        color: #0f172a;
     }
     QMenuBar#AppMenuBar::item {
         padding: 5px 12px;
         background: transparent;
         border-radius: 4px;
+        color: #0f172a;
     }
     QMenuBar#AppMenuBar::item:selected {
         background: #e2e8f0;
@@ -1165,6 +1172,11 @@ _DARK_APPEND = """
     QWidget#CameraTabRoot QPushButton#CameraChromeBtn:hover {
         background: #334155;
         border-color: #64748b;
+    }
+    QLabel#CameraFooterLabel {
+        color: #94a3b8;
+        font-size: 12px;
+        background: transparent;
     }
     QDialog { background: #111827; color: #f1f5f9; }
     QDialog QWidget { background: #111827; color: #f1f5f9; }

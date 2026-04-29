@@ -169,34 +169,20 @@ class MainWindow(QMainWindow):
         dark = bool(getattr(self.config, "dark_theme", False))
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg_l = (message or "").lower()
-        color = "#e2e8f0" if dark else "#0f172a"
-        level = "INFO"
-        badge_bg = "#334155" if dark else "#e2e8f0"
-        badge_fg = "#f8fafc" if dark else "#0f172a"
         ts_color = "#94a3b8" if dark else "#64748b"
         fs = "15px"
+        msg_color = "#e2e8f0" if dark else "#0f172a"
         if any(k in msg_l for k in ("error", "failed", "warning", "denied", "not found", "timed out")):
-            color = "#fca5a5" if dark else "#b91c1c"
-            level = "ERR"
-            badge_bg = "#991b1b" if dark else "#fee2e2"
-            badge_fg = "#fef2f2" if dark else "#7f1d1d"
+            msg_color = "#fca5a5" if dark else "#b91c1c"
         elif any(k in msg_l for k in ("saved", "ok", "success", "running", "started", "connected")):
-            color = "#86efac" if dark else "#15803d"
-            level = "OK"
-            badge_bg = "#166534" if dark else "#dcfce7"
-            badge_fg = "#f0fdf4" if dark else "#14532d"
+            msg_color = "#86efac" if dark else "#15803d"
         elif any(k in msg_l for k in ("refresh", "adb:", "screen:", "session")):
-            color = "#7dd3fc" if dark else "#0369a1"
-            level = "INFO"
-            badge_bg = "#1e3a8a" if dark else "#e0f2fe"
-            badge_fg = "#eff6ff" if dark else "#0c4a6e"
+            msg_color = "#7dd3fc" if dark else "#0369a1"
         safe_msg = html.escape(message)
         line = (
-            f'<div style="margin:2px 0 4px 0;">'
-            f'<span style="color:{ts_color}; font-size:{fs};">{ts}</span> '
-            f'<span style="background:{badge_bg}; color:{badge_fg}; padding:1px 6px; border-radius:4px; '
-            f'font-size:{fs}; font-weight:700;">{level}</span>'
-            f'<span style="color:{color}; margin-left:6px; font-size:{fs};">{safe_msg}</span>'
+            f'<div style="margin:4px 0 6px 0;line-height:1.45;">'
+            f'<span style="color:{ts_color};font-size:{fs};">{ts}</span>'
+            f'<span style="color:{msg_color};margin-left:10px;font-size:{fs};">{safe_msg}</span>'
             f"</div>"
         )
         self.log_view.append(line)
@@ -582,9 +568,12 @@ class MainWindow(QMainWindow):
             cam = getattr(self, "camera", None)
             if cam is not None:
                 try:
-                    cam.shutdown(fast=True)
+                    cam.pause_for_background()
                 except Exception:
-                    pass
+                    try:
+                        cam.shutdown(fast=True)
+                    except Exception:
+                        pass
         self._prev_main_tab_index = index
         if index == 0 and hasattr(self, "terminal"):
             self.terminal._reload_bookmark_sidebar()

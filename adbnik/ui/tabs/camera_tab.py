@@ -163,11 +163,11 @@ class CameraTab(QWidget):
 
         if _QT_MULTIMEDIA:
             self._view = QVideoWidget()
-            self._view.setMinimumSize(400, 225)
+            self._view.setMinimumSize(480, 270)
             self._view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            # Keep native aspect + max viewfinder resolution (set on Start) — less stretch blur than IgnoreAspectRatio.
-            self._view.setAspectRatioMode(Qt.KeepAspectRatio)
-            self._view.setStyleSheet("background-color:#0f172a;border-radius:8px;")
+            # Fill the tab; pair with highest viewfinder resolution on Start to limit softness.
+            self._view.setAspectRatioMode(Qt.IgnoreAspectRatio)
+            self._view.setStyleSheet("background-color:#0f172a;border-radius:10px;")
             vb.addWidget(self._view, 1)
         else:
             self._view = QLabel(
@@ -177,14 +177,15 @@ class CameraTab(QWidget):
             self._view.setAlignment(Qt.AlignCenter)
             vb.addWidget(self._view, 1)
 
-        root.addWidget(video_box, 1)
+        root.addWidget(video_box, 10)
 
         self._footer = QLabel(
-            "Captures are written from the camera session; keep this tab open while recording."
+            "Photos/videos save to the folder above. Recording stops automatically when you pause or leave this tab."
         )
         self._footer.setWordWrap(True)
         self._footer.setObjectName("CameraFooterLabel")
-        root.addWidget(self._footer)
+        self._footer.setMaximumHeight(52)
+        root.addWidget(self._footer, 0)
 
         self._refresh_devices()
         self._combo.currentIndexChanged.connect(self._on_device_changed)
@@ -245,15 +246,45 @@ class CameraTab(QWidget):
         if self._camera is not None:
             self._on_stop()
 
-    def _teardown_camera(self) -> None:
-        if self._recording and self._recorder:
+    def _stop_recording_safe(self) -> None:
+        """Stop MP4 capture without leaving the UI checked 'recording'."""
+        if self._recorder is None:
+            self._recording = False
             try:
-                self._recorder.stop()
+                self._btn_record.blockSignals(True)
+                self._btn_record.setChecked(False)
+                self._btn_record.blockSignals(False)
             except Exception:
                 pass
-            self._recording = False
-            self._btn_record.setChecked(False)
+            return
+        try:
+            self._recorder.stop()
+        except Exception:
+            pass
         self._recorder = None
+        self._recording = False
+        try:
+            self._btn_record.blockSignals(True)
+            self._btn_record.setChecked(False)
+            self._btn_record.blockSignals(False)
+        except Exception:
+            pass
+
+    def pause_for_background(self) -> None:
+        """Pause preview when leaving the Camera tab — fast return without full teardown."""
+        self._stop_recording_safe()
+        if self._camera is None:
+            return
+        try:
+            self._camera.stop()
+        except Exception:
+            pass
+        self._paused = True
+        self._status.setText("Paused")
+        self._apply_button_states()
+
+    def _teardown_camera(self) -> None:
+        self._stop_recording_safe()
         if self._image_capture is not None:
             try:
                 self._image_capture = None
@@ -276,6 +307,19 @@ class CameraTab(QWidget):
         if not _QT_MULTIMEDIA:
             QMessageBox.information(self, "Camera", "Qt Multimedia is not available.")
             return
+        # Resume after tab-background pause (same device object — avoids slow recreate).
+        if self._camera is not None and self._paused:
+            try:
+                self._camera.start()
+                self._paused = False
+                self._status.setText("Running")
+                self._append_log("Camera: resumed")
+                self._apply_button_states()
+                return
+            except Exception as exc:
+                self._append_log(f"Camera: resume failed — {exc}")
+                self._teardown_camera()
+
         info = self._selected_camera_info()
         if info is None:
             QMessageBox.warning(self, "Camera", "Select a camera device first.")
@@ -322,6 +366,7 @@ class CameraTab(QWidget):
     def _on_pause(self) -> None:
         if self._camera is None:
             return
+        self._stop_recording_safe()
         try:
             if self._paused:
                 self._camera.start()
@@ -361,6 +406,10 @@ class CameraTab(QWidget):
             self._btn_record.setChecked(False)
             QMessageBox.information(self, "Camera", "Start the camera before recording.")
             return
+        if self._paused:
+            self._btn_record.setChecked(False)
+            QMessageBox.information(self, "Camera", "Resume preview (Start) before recording.")
+            return
         if want:
             dest_dir = self._ensure_output_dir()
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -382,26 +431,20 @@ class CameraTab(QWidget):
                     f"{exc}\n\nTry another camera driver or install OS codecs.",
                 )
         else:
-            if self._recorder:
-                try:
-                    self._recorder.stop()
-                except Exception:
-                    pass
-                self._append_log("Camera: recording stopped")
-            self._recorder = None
-            self._recording = False
+            self._stop_recording_safe()
+            self._append_log("Camera: recording stopped")
             self._status.setText("Running" if self._camera and not self._paused else "Paused")
         self._apply_button_states()
 
     def _apply_button_states(self) -> None:
         running = self._camera is not None and not self._paused
         paused = self._camera is not None and self._paused
-        self._btn_start.setEnabled(self._camera is None)
+        self._btn_start.setEnabled(self._camera is None or paused)
         self._btn_stop.setEnabled(self._camera is not None)
         self._btn_pause.setEnabled(self._camera is not None)
         self._btn_restart.setEnabled(True)
         self._btn_photo.setEnabled(running or paused)
-        self._btn_record.setEnabled(self._camera is not None)
+        self._btn_record.setEnabled(running)
 
     def shutdown(self, *, fast: bool = False) -> None:
         """Stop camera when the app exits (does not destroy the tab widget)."""

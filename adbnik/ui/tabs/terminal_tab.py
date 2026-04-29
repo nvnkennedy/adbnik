@@ -1267,7 +1267,11 @@ class SessionWidget(QWidget):
             lift_black_foreground=True,
             prompt_highlight=True,
             prompt_palette=get_prompt_palette(self._session_prompt_palette_name()),
-            reset_fg_each_physical_line=self._is_ssh_session or self._is_adb_shell,
+            reset_fg_each_physical_line=(
+                self._is_ssh_session
+                or self._is_adb_shell
+                or self._shell_profile in ("cmd", "powershell")
+            ),
         )
         self._welcome_is_reconnect = False
         self._scroll_output_on_newline_only = True
@@ -1368,22 +1372,23 @@ class SessionWidget(QWidget):
         if extra:
             lines_plain.append(extra)
         plain = "\n".join(lines_plain) + "\n" + sep_plain + "\n\n"
-        fz = "13px"
+        fz = "16px"
+        fz_meta = "14px"
         h = (
-            f'<div style="color:#8b949e;font-size:{fz};line-height:1.5;margin:0;padding:0 0 8px 0;'
+            f'<div style="color:#8b949e;font-size:{fz_meta};line-height:1.55;margin:0;padding:0 0 10px 0;'
             'width:100%;box-sizing:border-box">'
-            f'<span style="color:#58a6ff;font-weight:600;font-size:{fz}">Welcome to adbnik</span><br/>'
-            f'<span style="color:#7ee787;font-size:{fz}">{html_escape(kind)}</span>'
+            f'<span style="color:#58a6ff;font-weight:700;font-size:{fz}">Welcome to adbnik</span><br/>'
+            f'<span style="color:#7ee787;font-size:{fz_meta}">{html_escape(kind)}</span>'
             f'<span style="color:#6e7681"> · </span>'
-            f'<span style="color:#a371f7;font-size:{fz}">{html_escape(tag)}</span><br/>'
-            f'<span style="color:#6e7681;font-size:{fz}">{html_escape(dt)}</span>'
+            f'<span style="color:#a371f7;font-size:{fz_meta}">{html_escape(tag)}</span><br/>'
+            f'<span style="color:#6e7681;font-size:{fz_meta}">{html_escape(dt)}</span>'
         )
         if extra:
-            h += f'<br/><span style="color:#8b949e;font-size:{fz}">{html_escape(extra)}</span>'
+            h += f'<br/><span style="color:#8b949e;font-size:{fz_meta}">{html_escape(extra)}</span>'
         h += (
             '</div>'
-            '<div style="width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 10px 0;'
-            'border-bottom:2px solid #3d444d">&nbsp;</div><br/>'
+            '<div style="width:100%;max-width:100%;box-sizing:border-box;margin:8px 0 14px 0;padding:0;'
+            'height:0;border:none;border-top:3px solid #484f58">&nbsp;</div>'
         )
         return h, plain
 
@@ -2138,9 +2143,20 @@ class SessionWidget(QWidget):
             if not doc or doc.endswith("> ") or not doc.rstrip().endswith(">"):
                 return
             last = self._last_nonempty_line().rstrip()
-            if not re.search(r"[A-Za-z]:\\[^>\n]*>$", last):
+            # ``C:\path>``, ``C:>``, ``D:\>``
+            if not re.search(r"[A-Za-z]:[^>\n]*>$", last):
                 return
             self._append_plain_ui(" ")
+            return
+        if self._shell_profile == "powershell":
+            raw = self._last_nonempty_line()
+            if not raw.strip():
+                return
+            bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r")).rstrip()
+            if bare.endswith("> "):
+                return
+            if re.match(r"^PS\s+", bare.strip()) and bare.rstrip().endswith(">") and not bare.endswith("> "):
+                self._append_plain_ui(" ")
             return
         if self._is_adb_shell or self._is_ssh_session:
             raw = self._last_nonempty_line()
@@ -2198,7 +2214,7 @@ class SessionWidget(QWidget):
         last = self._last_nonempty_line().rstrip()
         if not last:
             return False
-        return bool(re.search(r"[A-Za-z]:\\[^>\n]*>\s*$", last))
+        return bool(re.search(r"[A-Za-z]:[^>\n]*>\s*$", last))
 
     def _maybe_append_synthetic_prompt(self) -> None:
         if not self._shell_profile or self.proc.state() != QProcess.Running:
@@ -2400,6 +2416,9 @@ class SessionWidget(QWidget):
             self.output.setUpdatesEnabled(True)
         self._maybe_reset_ansi_after_prompt()
         self._ensure_prompt_trailing_space()
+        if self._shell_profile == "cmd":
+            self._maybe_append_synthetic_prompt()
+            self._ensure_prompt_trailing_space()
         self._update_session_footer()
         if self._pending_chunks:
             self._arm_flush_timer()
@@ -2422,7 +2441,9 @@ class SessionWidget(QWidget):
             return
         last = self._last_nonempty_line()
         py_prompt = bool(re.search(r"(>>>|\.\.\.)\s*$", last))
-        shell_prompt = bool(re.search(r"(?:^[A-Za-z]:\\.*>\s*$)|(?:^PS\s+.*>\s*$)", last))
+        shell_prompt = bool(
+            re.search(r"(?:^[A-Za-z]:[^>\n]*>\s*$)|(?:^PS\s+.*>\s*$)", last)
+        )
         if py_prompt:
             self._python_repl_mode = True
             self.output.set_preserve_typed_input(True)

@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.5.4] - 2026-04-29
+
+### Changed
+
+- **All terminals:** Stronger **typed input vs command output** colors (`prompt_input` brighter, `line_output` more muted) for SSH, ADB, PowerShell, CMD, serial, and local palettes; **per-line SGR reset** enabled for **CMD** and **PowerShell** like SSH/ADB.
+- **Prompt caret gap:** One space after **`>`** for CMD (**including `C:>` paths**) and after **`PS …>`** for PowerShell.
+- **Welcome banner:** **16px** title and **14px** meta lines, thicker **separator** rule after the block.
+- **Application log:** Timestamp + message only — **removed** loud INFO/OK/ERR badge pills; message color still hints severity.
+- **Camera:** **Pause-for-background** when leaving the tab (fast return + **Resume** via Start); **recording** stops cleanly on pause/stop/tab leave; **Record** disabled while preview paused; preview **fills** the tab stretch with **IgnoreAspectRatio** + max resolution; footer shortened.
+
+### Fixed
+
+- **CMD:** Synthetic prompt (`_maybe_append_synthetic_prompt`) is **called after output flushes**, so after **`ls`** / unknown-command errors the **`C:\…>`** line appears again with correct spacing regex **`[A-Za-z]:[^>\n]*>`**.
+- **Light theme:** **Menu bar** menu titles use explicit **`#0f172a`** text (no invisible labels).
+
 ## [2.5.3] - 2026-04-29
 
 ### Changed
