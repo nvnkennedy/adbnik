@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.2.0] - 2026-04-29
+
+### Added
+
+- **File Explorer tab bar:** Right-click a session tab for **Close**, **Close others**, **Close to the right**, **Close to the left**, **Close all**, and **Reconnect**.
+
+### Fixed
+
+- **Explorer reconnect prompt:** Remote listing failures now always offer the **Reconnect / New session…** dialog (except standalone permission-denied warnings). **ADB** listings treat stderr-with-errors and empty shell output as failures so disconnects are detected instead of a blank remote pane with only **Up**.
+- **Background threads:** Explorer waits longer for transfers/listings/deletes to stop when closing a tab; if something still will not finish, a **clear log message** names the task and suggests opening a new session. Tab pages are **deleteLater**’d after close to avoid leaks.
+- **QThread cleanup:** Stopping work before tab removal is more reliable, reducing *QThread: destroyed while thread is still running* issues after long runs.
+
 ## [2.1.2] - 2026-04-29
 
 ### Added

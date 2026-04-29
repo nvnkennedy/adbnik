@@ -1659,9 +1659,32 @@ class _RemoteListThread(QThread):
                     self._adb_path,
                     [*self._adb_args, "shell", f'ls -la "{safe_rp}"'],
                 )
+                err_out = (stderr or "").strip()
                 if code != 0:
-                    err = (stderr or "ADB list failed.").strip()
+                    err = err_out or "ADB list failed."
                     self.done.emit(rows, err)
+                    return
+                # adb sometimes writes errors to stderr even with exit 0; empty stdout often means a dead session.
+                lo = err_out.lower()
+                if err_out and any(
+                    k in lo
+                    for k in (
+                        "error:",
+                        "cannot connect",
+                        "closed",
+                        "offline",
+                        "unauthorized",
+                        "no devices",
+                        "protocol fault",
+                    )
+                ):
+                    self.done.emit(rows, err_out)
+                    return
+                if not (stdout or "").strip():
+                    self.done.emit(
+                        rows,
+                        "ADB returned no listing output. The device may be disconnected, offline, or the path is invalid.",
+                    )
                     return
                 for line in stdout.splitlines():
                     parsed = _parse_ls_line(line)
@@ -2387,22 +2410,32 @@ class ExplorerSessionPage(QWidget):
             kill_all_adb_subprocesses()
         except Exception:
             pass
-        threads = [
-            self._adb_transfer_thread,
-            self._remote_transfer_thread,
-            self._remote_refresh_thread,
-            self._delete_thread,
-            self._sftp_ftp_delete_thread,
-        ]
-        for th in threads:
+        stuck: List[str] = []
+        for name, th in (
+            ("ADB transfer", getattr(self, "_adb_transfer_thread", None)),
+            ("Remote transfer", getattr(self, "_remote_transfer_thread", None)),
+            ("Remote listing", getattr(self, "_remote_refresh_thread", None)),
+            ("Delete", getattr(self, "_delete_thread", None)),
+            ("SFTP/FTP delete", getattr(self, "_sftp_ftp_delete_thread", None)),
+        ):
             if th is None:
                 continue
             try:
                 if th.isRunning():
                     th.requestInterruption()
-                    if not th.wait(400):
+                    if not th.wait(4000):
                         th.terminate()
-                        th.wait(800)
+                        if not th.wait(8000):
+                            stuck.append(name or "task")
+            except Exception:
+                stuck.append(name or "task")
+        if stuck:
+            try:
+                self._log(
+                    "Explorer: background task did not finish cleanly (%s). "
+                    "If the UI misbehaves, close this session tab and open a new one."
+                    % ", ".join(stuck)
+                )
             except Exception:
                 pass
         self._adb_transfer_thread = None
@@ -4059,38 +4092,6 @@ class ExplorerSessionPage(QWidget):
                 self._last_error_popup_key = key
                 QMessageBox.warning(self, "Remote permission denied", txt)
 
-    @staticmethod
-    def _looks_like_transport_disconnect(msg: str) -> bool:
-        t = (msg or "").strip().lower()
-        if not t:
-            return False
-        if "permission denied" in t and "connection" not in t:
-            return False
-        needles = (
-            "connection",
-            "reset",
-            "refused",
-            "timeout",
-            "closed",
-            "broken pipe",
-            "not connected",
-            "eof",
-            "socket",
-            "network",
-            "unreachable",
-            "abort",
-            "lost",
-            "gone away",
-            "device offline",
-            "no devices/emulators",
-            "adb:",
-            "ssh",
-            "sftp",
-            "ftp",
-            "errno",
-        )
-        return any(n in t for n in needles)
-
     def _open_new_session_from_explorer_parent(self) -> None:
         w = self.parentWidget()
         while w is not None:
@@ -4123,9 +4124,14 @@ class ExplorerSessionPage(QWidget):
         return f"FTP · {host}"
 
     def _maybe_offer_disconnect_popup(self, msg: str) -> None:
-        if not self._looks_like_transport_disconnect(msg):
+        """Offer reconnect after remote listing errors. Any non-empty failure qualifies except pure permission popups."""
+        txt = (msg or "").strip()
+        if not txt:
             return
-        key = f"{self.kind}:{msg[:240]}"
+        # _report_remote_error already showed a modal for permission denied — avoid stacking two dialogs.
+        if "permission denied" in txt.lower():
+            return
+        key = f"{self.kind}:{txt[:240]}"
         now = time.monotonic()
         if key == self._disconnect_popup_key and (now - self._last_disconnect_popup_at) < 12.0:
             return
@@ -5839,6 +5845,8 @@ class FileExplorerTab(QWidget):
         etb = self.session_tabs.tabBar()
         etb.setElideMode(Qt.ElideNone)
         etb.setUsesScrollButtons(True)
+        etb.setContextMenuPolicy(Qt.CustomContextMenu)
+        etb.customContextMenuRequested.connect(self._on_explorer_tab_bar_context_menu)
         self.session_tabs.currentChanged.connect(lambda _i: self._update_status_bar())
         self.session_tabs.tabCloseRequested.connect(self._on_tab_close_requested)
         self._empty_state = QLabel(
@@ -5874,6 +5882,70 @@ class FileExplorerTab(QWidget):
         page = self._current_page()
         if page is not None:
             page.reconnect_remote_session()
+
+    def _close_explorer_tab_at(self, index: int) -> None:
+        """Stop sessions for this tab, remove it, and schedule destruction."""
+        if index < 0 or index >= self.session_tabs.count():
+            return
+        w = self.session_tabs.widget(index)
+        if isinstance(w, ExplorerSessionPage):
+            w.disconnect_session()
+        self.session_tabs.removeTab(index)
+        if isinstance(w, ExplorerSessionPage):
+            w.deleteLater()
+        self._update_status_bar()
+
+    def _close_other_explorer_tabs(self, keep_index: int) -> None:
+        for i in range(self.session_tabs.count() - 1, -1, -1):
+            if i != keep_index:
+                self._close_explorer_tab_at(i)
+
+    def _close_explorer_tabs_to_the_right_of(self, index: int) -> None:
+        for i in range(self.session_tabs.count() - 1, index, -1):
+            self._close_explorer_tab_at(i)
+
+    def _close_explorer_tabs_to_the_left_of(self, index: int) -> None:
+        for i in range(index - 1, -1, -1):
+            self._close_explorer_tab_at(i)
+
+    def _close_all_explorer_tabs(self) -> None:
+        for i in range(self.session_tabs.count() - 1, -1, -1):
+            self._close_explorer_tab_at(i)
+
+    def _on_explorer_tab_bar_context_menu(self, pos) -> None:
+        tb = self.session_tabs.tabBar()
+        idx = tb.tabAt(pos)
+        if idx < 0:
+            return
+        m = QMenu(self)
+        a_close = m.addAction("Close")
+        a_close.setToolTip("Close this explorer session")
+        a_others = m.addAction("Close others")
+        a_others.setToolTip("Close all explorer tabs except this one")
+        a_right = m.addAction("Close to the right")
+        a_right.setToolTip("Close every tab to the right of this one")
+        a_left = m.addAction("Close to the left")
+        a_left.setToolTip("Close every tab to the left of this one")
+        a_all = m.addAction("Close all")
+        a_all.setToolTip("Close all explorer session tabs")
+        m.addSeparator()
+        a_reconnect = m.addAction("Reconnect")
+        a_reconnect.setToolTip("Reconnect the remote for this session (Ctrl+R)")
+        chosen = m.exec_(tb.mapToGlobal(pos))
+        if chosen == a_close:
+            self._close_explorer_tab_at(idx)
+        elif chosen == a_others:
+            self._close_other_explorer_tabs(idx)
+        elif chosen == a_right:
+            self._close_explorer_tabs_to_the_right_of(idx)
+        elif chosen == a_left:
+            self._close_explorer_tabs_to_the_left_of(idx)
+        elif chosen == a_all:
+            self._close_all_explorer_tabs()
+        elif chosen == a_reconnect:
+            w = self.session_tabs.widget(idx)
+            if isinstance(w, ExplorerSessionPage):
+                w.reconnect_remote_session()
 
     @staticmethod
     def _is_descendant_of(widget: Optional[QWidget], parent: Optional[QWidget]) -> bool:
@@ -5966,11 +6038,7 @@ class FileExplorerTab(QWidget):
         self._update_status_bar()
 
     def _on_tab_close_requested(self, index: int) -> None:
-        w = self.session_tabs.widget(index)
-        if isinstance(w, ExplorerSessionPage):
-            w.disconnect_session()
-        self.session_tabs.removeTab(index)
-        self._update_status_bar()
+        self._close_explorer_tab_at(index)
 
     def closeEvent(self, event) -> None:
         try:
