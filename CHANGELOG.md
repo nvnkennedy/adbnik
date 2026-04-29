@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.5.6] - 2026-04-29
+
+### Changed
+
+- **Camera:** **OpenCV** (`opencv-python-headless`) is now a **direct dependency**. Preview runs on a **background thread** with frames capped ~960px wide; recording uses **OpenCV VideoWriter** for immediate finalize on stop (no long Qt Multimedia stall). Qt Multimedia remains fallback when OpenCV cannot enumerate devices.
+- **Terminals:** **Prompt-line preprocessor** inserts a space after **`$`** / **`#`** when output glued commands (`vivo:/$ls` → `vivo:/$ ls`), plus **`>`** gaps for CMD/PowerShell-style glued tails — applies to **SSH, ADB, serial**, and **local** shells.
+- **Terminals:** **Typed input** vs **command output**: distinct **`typed_input`** color vs **`line_output`** in ANSI HTML; **plain PTY stream** and **typing at prompt** use matching hex colors (`set_stream_plain_foreground` / `set_typing_foreground`).
+- **Palettes:** Brighter **`prompt_input`**, **`line_output`**, and **`typed_input`** across ssh/adb/cmd/powershell/serial/local; default ANSI foreground slightly brighter.
+- **Terminal widget:** Slightly brighter base text on dark preview pane.
+
+### Fixed
+
+- **Qt recording:** Faster finalize polling (**35ms** intervals; shorter sync wait when fallback needed).
+
 ## [2.5.5] - 2026-04-29
 
 ### Changed

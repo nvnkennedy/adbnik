@@ -677,6 +677,8 @@ class ShellPlainTextEdit(QTextEdit):
         self._collapse_commit_whitespace = False
         # When True, LineWrapMode + WordWrapMode + document must stay NoWrap (font/zoom must not re-enable wrap).
         self._force_no_wrap = False
+        self._stream_plain_fg = "#f4f7fb"
+        self._typing_fg: Optional[str] = None
         self.setCursorWidth(2)
         self.setUndoRedoEnabled(False)
         self.setAcceptRichText(True)
@@ -758,6 +760,22 @@ class ShellPlainTextEdit(QTextEdit):
     def set_preserve_typed_input(self, enabled: bool) -> None:
         self._preserve_typed_input = bool(enabled)
 
+    def set_stream_plain_foreground(self, hex_color: str) -> None:
+        """Plain PTY stream ``append_stream_plain`` / completion tint (command output vs shell chrome)."""
+        self._stream_plain_fg = (hex_color or "#f4f7fb").strip() or "#f4f7fb"
+
+    def set_typing_foreground(self, hex_color: str) -> None:
+        """Characters typed at the prompt — distinct from streamed output."""
+        t = (hex_color or "").strip()
+        self._typing_fg = t or None
+
+    def insertFromMimeData(self, source) -> None:
+        if self._typing_fg and self.textCursor().position() >= self._anchor:
+            cfmt = QTextCharFormat()
+            cfmt.setForeground(QBrush(QColor(self._typing_fg)))
+            self.mergeCurrentCharFormat(cfmt)
+        super().insertFromMimeData(source)
+
     def set_terminal_font_size(self, pt: int) -> None:
         self._font_pt = max(8, min(24, int(pt)))
         f = QFont(self.font())
@@ -823,7 +841,7 @@ class ShellPlainTextEdit(QTextEdit):
         from html import escape as _html_escape
 
         h = _html_escape(text).replace("\n", "<br/>")
-        frag = f'<span style="color:#f0f3f6">{h}</span>'
+        frag = f'<span style="color:{self._stream_plain_fg}">{h}</span>'
         user_cur = QTextCursor(self.textCursor())
         ins = QTextCursor(self.document())
         ins.movePosition(QTextCursor.End)
@@ -854,7 +872,7 @@ class ShellPlainTextEdit(QTextEdit):
         ins.movePosition(QTextCursor.End)
         insert_at = ins.position()
         fmt = QTextCharFormat()
-        fmt.setForeground(QBrush(QColor("#f0f3f6")))
+        fmt.setForeground(QBrush(QColor(self._stream_plain_fg)))
         ins.setCharFormat(fmt)
         ins.insertText(text)
         self._anchor = ins.position()
@@ -1136,6 +1154,26 @@ class ShellPlainTextEdit(QTextEdit):
         if pos < self._anchor and ev.text():
             self.moveCursor(QTextCursor.End)
 
+        if (
+            self._typing_fg
+            and alive
+            and pos >= self._anchor
+            and ev.text()
+            and not (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+            and k
+            not in (
+                Qt.Key_Backspace,
+                Qt.Key_Delete,
+                Qt.Key_Tab,
+                Qt.Key_Backtab,
+                Qt.Key_Return,
+                Qt.Key_Enter,
+            )
+        ):
+            cfmt = QTextCharFormat()
+            cfmt.setForeground(QBrush(QColor(self._typing_fg)))
+            self.mergeCurrentCharFormat(cfmt)
+
         # One logical input line: typing and backspace only at the document end of the tail (copy/select anywhere).
         if alive and self._anchor >= 0:
             endp = self._document_end_position()
@@ -1357,6 +1395,15 @@ class SessionWidget(QWidget):
         if self._shell_profile == "cmd":
             return "cmd"
         return "local"
+
+    def _apply_terminal_edit_palette(self) -> None:
+        """Streamed plain output vs user typing: match ANSI palette (all session kinds)."""
+        try:
+            pal = self._ansi._prompt_palette
+            self.output.set_stream_plain_foreground(pal.line_output)
+            self.output.set_typing_foreground(pal.typed_input)
+        except Exception:
+            pass
 
     def _welcome_banner_parts(self) -> Tuple[str, str]:
         dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1637,6 +1684,7 @@ class SessionWidget(QWidget):
         self._zoom_in_sc_alt.activated.connect(lambda: self.output.adjust_terminal_font_size(+1))
         self._zoom_out_sc_alt.activated.connect(lambda: self.output.adjust_terminal_font_size(-1))
         self._zoom_reset_sc.activated.connect(lambda: self.output.set_terminal_font_size(10))
+        self._apply_terminal_edit_palette()
         layout.addWidget(self.output, 1)
         if self._is_remote_pty_shell:
             try:
@@ -2343,6 +2391,9 @@ class SessionWidget(QWidget):
         # Serial + SSH + ADB: same ANSI → HTML path as local shells (Moba-style colors). Flush caps keep UI responsive.
         if self._is_serial_session:
             self._ansi.reset()
+            data = preprocess_prompt_lines_for_highlight(
+                data, palette_kind=self._session_prompt_palette_name()
+            )
             html_frag, plain_frag = self._ansi.feed(data)
             if html_frag:
                 html_frag = re.sub(r"(?:<br/>){3,}", "<br/>", html_frag)
@@ -2373,6 +2424,9 @@ class SessionWidget(QWidget):
             self._pending_chunks.append(html_frag)
             self._arm_flush_timer()
             return
+        data = preprocess_prompt_lines_for_highlight(
+            data, palette_kind=self._session_prompt_palette_name()
+        )
         html_frag, plain_frag = self._ansi.feed(data)
         if not html_frag and not plain_frag:
             return

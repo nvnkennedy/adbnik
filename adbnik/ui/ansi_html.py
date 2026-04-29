@@ -80,7 +80,7 @@ _ANSI_BG = {
     107: "#f5f5f5",
 }
 
-_DEFAULT_FG = "#f0f3f6"
+_DEFAULT_FG = "#f4f7fb"
 
 
 @dataclass(frozen=True)
@@ -95,6 +95,7 @@ class PromptPalette:
     ps_prefix: str
     prompt_input: str
     line_output: str
+    typed_input: str  # user-typed tail after $ / > — distinct from streamed command output
     # Optional color for ``#`` when it should differ from ``$`` (e.g. SSH root hash prompt).
     sig_hash: Optional[str] = None
 
@@ -108,65 +109,71 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
     # SSH: prompt segments vs typed tail vs command output (high contrast)
     "ssh": PromptPalette(
         user="#38bdf8",
-        sep="#64748b",
-        host="#22d3ee",
-        path="#4ade80",
-        sig="#fb923c",
-        ps_prefix="#c4b5fd",
-        prompt_input="#fff382",
-        line_output="#64748b",
-        sig_hash="#22c55e",
+        sep="#94a3b8",
+        host="#38f5ff",
+        path="#6ee7b7",
+        sig="#fdba74",
+        ps_prefix="#ddd6fe",
+        prompt_input="#fff9c4",
+        line_output="#a8b8d0",
+        typed_input="#fff3d6",
+        sig_hash="#4ade80",
     ),
     # ADB: device vs path vs marker vs input vs listing output
     "adb": PromptPalette(
-        user="#2dd4bf",
-        sep="#64748b",
-        host="#5eead4",
-        path="#e2e8f0",
-        sig="#fb923c",
-        ps_prefix="#ddd6fe",
-        prompt_input="#fef08a",
-        line_output="#71717a",
+        user="#5eead4",
+        sep="#94a3b8",
+        host="#99f6e4",
+        path="#f1f5f9",
+        sig="#fdba74",
+        ps_prefix="#e9d5ff",
+        prompt_input="#fef9c3",
+        line_output="#a1a1aa",
+        typed_input="#fff7d6",
     ),
     "powershell": PromptPalette(
-        user="#a78bfa",
-        sep="#94a3b8",
-        host="#c4b5fd",
-        path="#7dd3fc",
-        sig="#f472b6",
-        ps_prefix="#e9d5ff",
-        prompt_input="#fda4af",
-        line_output="#8899aa",
+        user="#c4b5fd",
+        sep="#a8b8d8",
+        host="#ddd6fe",
+        path="#93d9ff",
+        sig="#f9a8d4",
+        ps_prefix="#ede9fe",
+        prompt_input="#fecdd3",
+        line_output="#adbdd4",
+        typed_input="#ffe4e6",
     ),
     "cmd": PromptPalette(
-        user="#38bdf8",
-        sep="#8b949e",
-        host="#94a3b8",
-        path="#93c5fd",
-        sig="#facc15",
-        ps_prefix="#d8b4fe",
-        prompt_input="#fef08a",
-        line_output="#8899aa",
+        user="#60c8ff",
+        sep="#9ca3af",
+        host="#b8c5d6",
+        path="#a5d8ff",
+        sig="#fde047",
+        ps_prefix="#e9d5ff",
+        prompt_input="#fff3b0",
+        line_output="#b0bec8",
+        typed_input="#fff9e0",
     ),
     "serial": PromptPalette(
-        user="#fbbf24",
-        sep="#a8a29e",
-        host="#fcd34d",
-        path="#fde047",
-        sig="#f87171",
-        ps_prefix="#e879f9",
-        prompt_input="#fcd34d",
-        line_output="#78716c",
+        user="#fcd34d",
+        sep="#c4b5a5",
+        host="#fde68a",
+        path="#fef08a",
+        sig="#fb923c",
+        ps_prefix="#f5d0fe",
+        prompt_input="#fde68a",
+        line_output="#b5aaa0",
+        typed_input="#fffbeb",
     ),
     "local": PromptPalette(
-        user="#79c0ff",
-        sep="#8b949e",
-        host="#a5d6ff",
-        path="#7ee787",
-        sig="#ff7b72",
-        ps_prefix="#d2a8ff",
-        prompt_input="#ffc266",
-        line_output="#94a3b8",
+        user="#8ecbff",
+        sep="#9ca3af",
+        host="#c8e7ff",
+        path="#86efac",
+        sig="#ffa8a8",
+        ps_prefix="#e9d5ff",
+        prompt_input="#ffd699",
+        line_output="#b8c5d6",
+        typed_input="#fff4e0",
     ),
 }
 
@@ -490,6 +497,45 @@ def strip_sgr_sequences_for_prompt(line: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line)
 
 
+def inject_prompt_gap_after_unix_marker(bare_line: str) -> str:
+    """Insert one space after ``$`` or ``#`` when the next character is non-space (e.g. ``vivo:/$ls``)."""
+    s = bare_line.rstrip("\r")
+    if not s:
+        return bare_line
+    j_dollar = s.rfind("$")
+    j_hash = s.rfind("#")
+    j = max(j_dollar, j_hash)
+    if j < 0 or j + 1 >= len(s) or s[j + 1] in " \t":
+        return bare_line
+    return s[: j + 1] + " " + s[j + 1 :]
+
+
+def inject_prompt_gap_after_cmd_gt(bare_line: str) -> str:
+    """``C:\\path>cmd`` → ``C:\\path> cmd``."""
+    s = bare_line.rstrip("\r")
+    m = re.match(r"^([A-Za-z]:[^>\r\n]*)(>)([^\s>].*)$", s)
+    if m and m.group(3):
+        return m.group(1) + m.group(2) + " " + m.group(3)
+    return bare_line
+
+
+def inject_prompt_gap_after_ps_gt(bare_line: str) -> str:
+    """``PS path>cmd`` → space after ``>``."""
+    s = bare_line.rstrip("\r")
+    m = re.match(r"^(PS\s+.+)(>)([^\s>].*)$", s)
+    if m and m.group(3):
+        return m.group(1) + m.group(2) + " " + m.group(3)
+    return bare_line
+
+
+def inject_shell_prompt_gaps(bare_line: str) -> str:
+    """Apply unix / CMD / PS glue fixes so the caret can sit one space past the marker."""
+    s = inject_prompt_gap_after_unix_marker(bare_line)
+    s = inject_prompt_gap_after_cmd_gt(s)
+    s = inject_prompt_gap_after_ps_gt(s)
+    return s
+
+
 def style_prompt_line_html(
     line: str,
     bare: Optional[str] = None,
@@ -509,7 +555,7 @@ def style_prompt_line_html(
     def _tail_span(rest: str) -> str:
         if not rest:
             return ""
-        return f'<span style="color:{pal.prompt_input}">{html.escape(rest)}</span>'
+        return f'<span style="color:{pal.typed_input}">{html.escape(rest)}</span>'
 
     # PowerShell: PS C:\path>  optional tail
     m = re.match(r"^(PS\s+)(.+)(>+)(.*)$", s)
@@ -608,7 +654,7 @@ def preprocess_prompt_lines_for_highlight(data: str, *, palette_kind: str = "loc
     for line in lines:
         bare = strip_sgr_sequences_for_prompt(line)
         if style_prompt_line_html(line, bare, palette=pal) is not None:
-            out.append(bare)
+            out.append(inject_shell_prompt_gaps(bare))
         else:
             out.append(line)
     return "\n".join(out)

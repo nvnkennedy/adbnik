@@ -4,6 +4,7 @@ from adbnik.ui.ansi_html import (
     AnsiToHtmlConverter,
     ensure_remote_pty_visual_line_breaks,
     get_prompt_palette,
+    inject_shell_prompt_gaps,
     normalize_remote_pty_plain_text,
     preprocess_escape_noise,
     preprocess_prompt_lines_for_highlight,
@@ -57,8 +58,9 @@ def test_ensure_remote_pty_no_double_lead_when_chunk_starts_with_newline():
 
 
 def test_style_prompt_line_unix_ssh():
+    loc = get_prompt_palette("local")
     h = style_prompt_line_html("user@host:~$ ")
-    assert h and "#79c0ff" in h and "$" in h and "user" in h
+    assert h and loc.user in h and "$" in h and "user" in h
 
 
 def test_style_prompt_line_adb_device_path():
@@ -71,7 +73,17 @@ def test_style_prompt_line_adb_device_path():
 def test_style_prompt_line_adb_same_line_command():
     adb = get_prompt_palette("adb")
     h = style_prompt_line_html("vivo:/system/bin $ ls -la", palette=adb)
-    assert h and "vivo" in h and "ls" in h and adb.prompt_input in h
+    assert h and "vivo" in h and "ls" in h and adb.typed_input in h
+
+
+def test_inject_shell_prompt_gaps_glued_adb():
+    assert inject_shell_prompt_gaps("vivo_25:/$ls") == "vivo_25:/$ ls"
+    assert inject_shell_prompt_gaps("root@h:/data#id") == "root@h:/data# id"
+
+
+def test_preprocess_prompt_injects_gap():
+    out = preprocess_prompt_lines_for_highlight("vivo:/$ls\n", palette_kind="adb")
+    assert "$ ls" in out
 
 
 def test_style_prompt_ssh_minimal_hash_green():
@@ -101,9 +113,10 @@ def test_prompt_highlight_feed_unix():
 
 def test_prompt_line_with_leading_sgr():
     """Reset / SGR must not block prompt coloring."""
+    loc = get_prompt_palette("local")
     line = "\x1b[0muser@host:~$ ls"
     h = style_prompt_line_html(line, strip_sgr_sequences_for_prompt(line))
-    assert h and "ls" in h and "#79c0ff" in h
+    assert h and "ls" in h and loc.user in h
 
 
 def test_prompt_unix_same_line_command():

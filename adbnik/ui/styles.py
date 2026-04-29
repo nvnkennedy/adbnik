@@ -628,8 +628,8 @@ _LIGHT_STYLESHEET = """
     }
     QPlainTextEdit#MobaTerminalOutput,
     QTextEdit#MobaTerminalOutput {
-        background-color: #1e222a;
-        color: #e8ecf1;
+        background-color: #1a1e27;
+        color: #f1f5f9;
         border: 1px solid #3d4450;
         border-radius: 4px;
         padding: 10px 12px;
