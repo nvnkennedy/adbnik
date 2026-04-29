@@ -4317,7 +4317,8 @@ class ExplorerSessionPage(QWidget):
             self._ftp_last_error = msg
         if msg:
             self._report_remote_error(msg)
-            self._schedule_remote_auto_reconnect()
+            if "permission denied" not in msg.lower():
+                self._schedule_remote_auto_reconnect()
             self._maybe_offer_disconnect_popup(msg)
         else:
             self._last_error_popup_key = ""
