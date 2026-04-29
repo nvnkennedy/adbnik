@@ -2726,9 +2726,6 @@ class ExplorerSessionPage(QWidget):
         QShortcut(QKeySequence(Qt.Key_F5), self.remote_table, self.refresh_remote)
         QShortcut(QKeySequence(Qt.Key_Delete), self.remote_table, self.delete_selected_remote)
         QShortcut(QKeySequence(Qt.Key_F2), self.remote_table, self.rename_selected_remote)
-        self._sc_reconnect_remote = QShortcut(QKeySequence("Ctrl+R"), self)
-        self._sc_reconnect_remote.setContext(Qt.WidgetWithChildrenShortcut)
-        self._sc_reconnect_remote.activated.connect(self.reconnect_remote_session)
 
         header_grid = QGridLayout()
         header_grid.setContentsMargins(0, 0, 0, 0)
