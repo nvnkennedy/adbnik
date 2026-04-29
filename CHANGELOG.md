@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.1.2] - 2026-04-29
+
+### Added
+
+- **Reconnect shortcuts:** **Ctrl+R** and **Ctrl+Shift+R** both reconnect in **Terminal**, **File Explorer**, and **Screen Control** (case variations of the key are the same on Windows).
+- **Explorer disconnect dialog** names the **active session** (e.g. `ADB · <serial>`, `SFTP · user@host`, `FTP · …`) so the correct tab’s failure is obvious when multiple sessions are open.
+
+### Changed
+
+- **Typography & layout:** Larger default UI font (14px), taller main and explorer tab bars, slightly larger file table and path bar text, bigger terminal output (Consolas 11pt), wider screen-control config column, and a roomier **Log** panel with a better default split.
+- **Log panel & themes:** The application log is **re-colored when switching light/dark theme** so existing lines stay readable; light mode uses a **light log surface** (no longer a dark “card” in a light window).
+
 ## [2.1.1] - 2026-04-29
 
 ### Added

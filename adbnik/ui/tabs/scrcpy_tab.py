@@ -322,7 +322,7 @@ class ScrcpyTab(QWidget):
 
         left_wrap = QWidget()
         left_wrap.setObjectName("ScrcpyLeftPanel")
-        left_wrap.setMinimumWidth(260)
+        left_wrap.setMinimumWidth(270)
         left_wrap.setMaximumWidth(16777215)
         left_wrap.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
         left_l = QVBoxLayout(left_wrap)
@@ -485,7 +485,7 @@ class ScrcpyTab(QWidget):
         b_reconnect = QPushButton("Reconnect")
         b_reconnect.setObjectName("ScrcpyStartBtn")
         b_reconnect.setIcon(st.standardIcon(QStyle.SP_BrowserReload))
-        b_reconnect.setToolTip("Reconnect after device power cycle / USB drop (Ctrl+R)")
+        b_reconnect.setToolTip("Reconnect after device power cycle / USB drop (Ctrl+R or Ctrl+Shift+R)")
         b_reconnect.clicked.connect(self.reconnect_scrcpy)
         b_stop = QPushButton("Stop")
         b_stop.setObjectName("ScrcpyStopBtn")
@@ -565,12 +565,13 @@ class ScrcpyTab(QWidget):
         split.addWidget(right_wrap)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes([400, 2000])
+        split.setSizes([430, 2000])
 
         root.addWidget(split, 1)
-        self._sc_reconnect_scrcpy = QShortcut(QKeySequence("Ctrl+R"), self)
-        self._sc_reconnect_scrcpy.setContext(Qt.WidgetWithChildrenShortcut)
-        self._sc_reconnect_scrcpy.activated.connect(self.reconnect_scrcpy)
+        for _seq in ("Ctrl+R", "Ctrl+Shift+R"):
+            _sc = QShortcut(QKeySequence(_seq), self)
+            _sc.setContext(Qt.WidgetWithChildrenShortcut)
+            _sc.activated.connect(self.reconnect_scrcpy)
 
     def _clear_embed(self) -> None:
         self._embed_hwnd = 0

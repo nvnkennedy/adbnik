@@ -5,7 +5,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from PyQt5.QtCore import QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt5.QtGui import QDesktopServices, QFont, QKeySequence, QTextCursor
@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         self.resize(1450, 900)
         self.setMinimumSize(720, 480)
         self._shutting_down = False
+        self._log_history: List[str] = []
         self._build_ui()
         self._device_refresh_thread: Optional[_AdbDevicesRefreshThread] = None
         self._device_refresh_pending = False
@@ -157,6 +158,14 @@ class MainWindow(QMainWindow):
             self.refresh_device_stats()
 
     def append_log(self, message: str) -> None:
+        self._log_history.append(message or "")
+        if len(self._log_history) > 4000:
+            self._log_history = self._log_history[-4000:]
+        self._append_log_html(message or "")
+
+    def _append_log_html(self, message: str) -> None:
+        if not hasattr(self, "log_view"):
+            return
         dark = bool(getattr(self.config, "dark_theme", False))
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg_l = (message or "").lower()
@@ -165,6 +174,7 @@ class MainWindow(QMainWindow):
         badge_bg = "#334155" if dark else "#e2e8f0"
         badge_fg = "#f8fafc" if dark else "#0f172a"
         ts_color = "#94a3b8" if dark else "#64748b"
+        fs = "12px"
         if any(k in msg_l for k in ("error", "failed", "warning", "denied", "not found", "timed out")):
             color = "#fca5a5" if dark else "#b91c1c"
             level = "ERR"
@@ -183,14 +193,26 @@ class MainWindow(QMainWindow):
         safe_msg = html.escape(message)
         line = (
             f'<div style="margin:2px 0 4px 0;">'
-            f'<span style="color:{ts_color}; font-size:11px;">{ts}</span> '
+            f'<span style="color:{ts_color}; font-size:{fs};">{ts}</span> '
             f'<span style="background:{badge_bg}; color:{badge_fg}; padding:1px 6px; border-radius:4px; '
-            f'font-size:11px; font-weight:700;">{level}</span>'
-            f'<span style="color:{color}; margin-left:6px;">{safe_msg}</span>'
+            f'font-size:{fs}; font-weight:700;">{level}</span>'
+            f'<span style="color:{color}; margin-left:6px; font-size:{fs};">{safe_msg}</span>'
             f"</div>"
         )
         self.log_view.append(line)
         self.log_view.moveCursor(QTextCursor.End)
+
+    def _refresh_log_after_theme_change(self) -> None:
+        if not hasattr(self, "log_view"):
+            return
+        self.log_view.clear()
+        for m in self._log_history:
+            self._append_log_html(m)
+
+    def _clear_app_log(self) -> None:
+        self._log_history.clear()
+        if hasattr(self, "log_view"):
+            self.log_view.clear()
 
     def _apply_theme(self) -> None:
         """Defer stylesheet work via qt-thread-updater so the UI stays responsive after heavy terminal I/O."""
@@ -211,6 +233,7 @@ class MainWindow(QMainWindow):
         if _app is not None:
             _app.setWindowIcon(_icon)
         self._refresh_version_label_style()
+        self._refresh_log_after_theme_change()
 
     def _setup_version_status(self) -> None:
         self._version_label = QLabel(f"v{__version__}")
@@ -366,8 +389,8 @@ class MainWindow(QMainWindow):
         """Create the central splitter (tabs + log), wire tabs to services, then build the menu bar."""
         central = QWidget()
         root = QVBoxLayout(central)
-        root.setContentsMargins(6, 4, 6, 4)
-        root.setSpacing(4)
+        root.setContentsMargins(8, 6, 8, 6)
+        root.setSpacing(6)
 
         body = QWidget()
         body.setObjectName("MainBody")
@@ -430,7 +453,7 @@ class MainWindow(QMainWindow):
         clear_log = QPushButton("Clear")
         clear_log.setObjectName("HeaderMiniBtn")
         clear_log.setIcon(self.style().standardIcon(QStyle.SP_LineEditClearButton))
-        clear_log.clicked.connect(lambda: self.log_view.clear())
+        clear_log.clicked.connect(self._clear_app_log)
         log_row.addWidget(clear_log)
         save_log = QPushButton("Save log")
         save_log.setObjectName("HeaderMiniBtn")
@@ -444,11 +467,11 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setOpenExternalLinks(True)
         self.log_view.document().setMaximumBlockCount(4000)
-        self.log_view.setFont(QFont("Consolas", 9))
+        self.log_view.setFont(QFont("Consolas", 10))
         self.log_view.setPlaceholderText(
             "Application log — newest lines at the bottom. Tags: OK (green), ERR (red), INFO (blue)."
         )
-        self.log_view.setMinimumHeight(120)
+        self.log_view.setMinimumHeight(140)
         self.log_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.log_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.log_view.customContextMenuRequested.connect(self._log_context_menu)
@@ -457,7 +480,7 @@ class MainWindow(QMainWindow):
         body_split.addWidget(log_wrap)
         body_split.setStretchFactor(0, 1)
         body_split.setStretchFactor(1, 0)
-        body_split.setSizes([620, 220])
+        body_split.setSizes([720, 260])
 
         body_layout.addWidget(body_split, 1)
 
@@ -726,7 +749,7 @@ class MainWindow(QMainWindow):
         a_clear_log = QAction("C&lear log", self)
         a_clear_log.setIcon(self.style().standardIcon(QStyle.SP_LineEditClearButton))
         a_clear_log.setShortcut(QKeySequence("Ctrl+L"))
-        a_clear_log.triggered.connect(self.log_view.clear)
+        a_clear_log.triggered.connect(self._clear_app_log)
         edit_menu.addAction(a_clear_log)
         a_save_log = QAction("Save &log as…", self)
         a_save_log.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))

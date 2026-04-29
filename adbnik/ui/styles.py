@@ -3,7 +3,7 @@ _LIGHT_STYLESHEET = """
         background: #f3f5f9;
         color: #0f172a;
         font-family: "Segoe UI", Arial;
-        font-size: 13px;
+        font-size: 14px;
     }
     /* Terminal side panes are dark — global QWidget color would hide labels on dark chrome */
     QWidget#MobaLeftPane,
@@ -19,7 +19,7 @@ _LIGHT_STYLESHEET = """
     QLabel#LogPanelLabel {
         color: #0f172a;
         font-weight: 600;
-        font-size: 13px;
+        font-size: 14px;
     }
     QMainWindow {
         background: #f3f5f9;
@@ -58,7 +58,7 @@ _LIGHT_STYLESHEET = """
         border-radius: 16px;
     }
     QLabel#appTitle {
-        font-size: 21px;
+        font-size: 22px;
         font-weight: 700;
         color: #0b1324;
         padding: 8px 2px 4px 2px;
@@ -82,12 +82,12 @@ _LIGHT_STYLESHEET = """
         border-bottom: none;
         border-top-left-radius: 8px;
         border-top-right-radius: 8px;
-        min-height: 18px;
-        min-width: 88px;
-        padding: 2px 10px;
+        min-height: 24px;
+        min-width: 96px;
+        padding: 4px 12px;
         margin-right: 4px;
         font-weight: 600;
-        font-size: 11px;
+        font-size: 13px;
     }
     QTabWidget#MainTabs QTabBar::tab:selected {
         background-color: #ffffff;
@@ -107,12 +107,12 @@ _LIGHT_STYLESHEET = """
         border-bottom: none;
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
-        min-height: 18px;
-        min-width: 88px;
-        padding: 2px 8px;
+        min-height: 22px;
+        min-width: 92px;
+        padding: 3px 10px;
         margin-right: 2px;
         font-weight: 600;
-        font-size: 10px;
+        font-size: 12px;
     }
     QTabWidget#ExplorerSessionTabs QTabBar::tab:selected {
         background-color: #ffffff;
@@ -326,8 +326,8 @@ _LIGHT_STYLESHEET = """
         background: #ffffff;
         border: 1px solid #b8c2cf;
         border-radius: 1px;
-        padding: 4px 6px;
-        font-size: 12px;
+        padding: 5px 7px;
+        font-size: 13px;
     }
     QPushButton#WinScpToolBtn {
         background: #f8fafc;
@@ -346,7 +346,7 @@ _LIGHT_STYLESHEET = """
         background: #ffffff;
         border: 1px solid #bcc8d9;
         gridline-color: #eef2f7;
-        font-size: 12px;
+        font-size: 13px;
         icon-size: 24px;
         alternate-background-color: #f8fafc;
         selection-background-color: #2563eb;
@@ -355,11 +355,11 @@ _LIGHT_STYLESHEET = """
     QTableWidget#WinScpTable QHeaderView::section {
         background: #eef2f7;
         color: #0f172a;
-        padding: 6px 10px;
-        min-height: 24px;
+        padding: 7px 10px;
+        min-height: 26px;
         border: 1px solid #c5d0e0;
         font-weight: 600;
-        font-size: 12px;
+        font-size: 13px;
     }
     QTableWidget#WinScpTable::item:selected {
         background: #2563eb;
@@ -380,7 +380,7 @@ _LIGHT_STYLESHEET = """
     }
     QLabel#WinScpStatusText {
         color: #334155;
-        font-size: 11px;
+        font-size: 12px;
     }
     QLabel#WinScpMenuText {
         color: #0f172a;
@@ -432,6 +432,12 @@ _LIGHT_STYLESHEET = """
     QToolButton#WinScpMainToolBtn:hover {
         background: #eef4fb;
         border-color: #b7c7db;
+    }
+    QPushButton#ExplorerReconnectBtn {
+        font-size: 12px;
+        font-weight: 600;
+        min-height: 26px;
+        padding: 4px 10px;
     }
     QLabel#WinScpProtoBadge {
         background: #eef4fb;
@@ -589,12 +595,12 @@ _LIGHT_STYLESHEET = """
         background: #1b2230;
         border: 1px solid #2f3848;
         color: #b9c5dd;
-        padding: 3px 8px;
-        font-size: 11px;
+        padding: 4px 9px;
+        font-size: 12px;
     }
     QLabel#MobaSidebarHeading {
         color: #d0d7de;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 700;
         letter-spacing: 0.3px;
     }
@@ -622,12 +628,12 @@ _LIGHT_STYLESHEET = """
         background: #b91c1c;
     }
     QTextEdit#AppLogView {
-        background: #0f1419;
-        color: #cbd5e1;
-        border: 1px solid #334155;
-        border-radius: 4px;
-        padding: 4px 6px;
-        font-size: 11px;
+        background: #ffffff;
+        color: #0f172a;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
     }
     QPushButton#HeaderMiniBtn {
         background: #f1f5f9;
@@ -702,7 +708,7 @@ _LIGHT_STYLESHEET = """
     }
     QLabel#ScrcpyHintLabel {
         color: #64748b;
-        font-size: 11px;
+        font-size: 12px;
     }
     QWidget#ScrcpyLeftPanel {
         background: transparent;
@@ -720,7 +726,7 @@ _LIGHT_STYLESHEET = """
         border-radius: 4px;
     }
     QLabel#ExplorerSessionHint {
-        font-size: 11px;
+        font-size: 12px;
         color: #64748b;
         padding: 0px;
         margin: 0px;
@@ -744,9 +750,9 @@ _DARK_APPEND = """
         background-color: #21262d;
         color: #f0f6fc;
         border: 1px solid #30363d;
-        min-height: 18px;
-        padding: 2px 10px;
-        font-size: 11px;
+        min-height: 24px;
+        padding: 4px 12px;
+        font-size: 13px;
     }
     QTabWidget#MainTabs QTabBar::tab:selected {
         background-color: #0d1117;
@@ -759,9 +765,9 @@ _DARK_APPEND = """
         background-color: #21262d;
         color: #f0f6fc;
         border: 1px solid #30363d;
-        min-height: 18px;
-        padding: 2px 8px;
-        font-size: 10px;
+        min-height: 22px;
+        padding: 3px 10px;
+        font-size: 12px;
     }
     QTabWidget#ExplorerSessionTabs QTabBar::tab:selected {
         background-color: #0d1117;
@@ -801,10 +807,10 @@ _DARK_APPEND = """
         background: #f85149;
     }
     QTabWidget#MobaTabs QTabBar::tab {
-        min-height: 18px;
-        padding: 2px 10px;
-        font-size: 11px;
-        min-width: 108px;
+        min-height: 22px;
+        padding: 3px 11px;
+        font-size: 13px;
+        min-width: 112px;
     }
     QGroupBox { background: #111827; border: 1px solid #334155; color: #f1f5f9; }
     QGroupBox::title { color: #8b949e; }
@@ -905,6 +911,12 @@ _DARK_APPEND = """
         color: #dbeafe;
     }
     QToolButton#ExplorerEditBtn:hover { background: #1d4ed8; border-color: #93c5fd; }
+    QPushButton#ExplorerReconnectBtn {
+        font-size: 12px;
+        font-weight: 600;
+        min-height: 26px;
+        padding: 4px 11px;
+    }
     QToolButton#WinScpIconBtn {
         background: #1e293b;
         border: 1px solid #475569;
@@ -921,7 +933,14 @@ _DARK_APPEND = """
     QFrame#WinScpStatusBar { background: #252b3a; border: 1px solid #475569; }
     QLabel#WinScpStatusText { color: #94a3b8; }
     QLabel#WinScpStatusConn { color: #94a3b8; }
-    QTextEdit#AppLogView { background: #0f1419; color: #cbd5e1; border: 1px solid #334155; }
+    QTextEdit#AppLogView {
+        background: #0d1117;
+        color: #e6edf3;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+    }
     QPushButton#HeaderMiniBtn { background: #334155; border: 1px solid #475569; color: #e2e8f0; }
     QWidget#MainBody { background: #0b1220; }
     QWidget#ExplorerChrome { background: #111827; border: 1px solid #334155; }
@@ -942,7 +961,7 @@ _DARK_APPEND = """
     }
     QLabel#ScrcpyConfigTitle { color: #e2e8f0; }
     QLabel#ScrcpyStatusLabel { color: #c9d1d9; }
-    QLabel#ScrcpyHintLabel { color: #8b949e; font-size: 11px; }
+    QLabel#ScrcpyHintLabel { color: #8b949e; font-size: 12px; }
     QWidget#ScrcpyLeftPanel { background: #0d1117; }
     QWidget#ScrcpyLeftInner { background: #0d1117; }
     QWidget#ScrcpyEmbedHost {

@@ -2659,7 +2659,7 @@ class ExplorerSessionPage(QWidget):
         btn_reconnect = QPushButton("Reconnect")
         btn_reconnect.setObjectName("ExplorerReconnectBtn")
         btn_reconnect.setIcon(st.standardIcon(QStyle.SP_DriveNetIcon))
-        btn_reconnect.setToolTip("Reconnect remote session (Ctrl+R)")
+        btn_reconnect.setToolTip("Reconnect this session (Ctrl+R or Ctrl+Shift+R)")
         btn_reconnect.clicked.connect(self.reconnect_remote_session)
         rem_act.addWidget(btn_reconnect)
         for tip, icon, fn, oname in [
@@ -4100,6 +4100,28 @@ class ExplorerSessionPage(QWidget):
                 return
             w = w.parentWidget()
 
+    def _explorer_session_label(self) -> str:
+        if self.kind == "adb":
+            serial = _first_serial_token(self.get_device_serial()) or _first_serial_token(self._session_adb_serial)
+            if not serial:
+                serial = (self._session_adb_serial or "").strip() or "device"
+            return f"ADB · {serial}"
+        if self.kind == "sftp":
+            u = (self._ssh_user or "").strip()
+            h = (self._ssh_host or "").strip()
+            p = normalize_tcp_port(self._ssh_port, 22)
+            host = f"{u}@{h}" if u else (h or "SFTP")
+            if p != 22:
+                host = f"{host}:{p}"
+            return f"SFTP · {host}"
+        u = (self._ftp_user or "").strip()
+        h = (self._ftp_host or "").strip()
+        p = normalize_tcp_port(self._ftp_port, 21)
+        host = f"{u}@{h}" if u else (h or "FTP")
+        if p != 21:
+            host = f"{host}:{p}"
+        return f"FTP · {host}"
+
     def _maybe_offer_disconnect_popup(self, msg: str) -> None:
         if not self._looks_like_transport_disconnect(msg):
             return
@@ -4111,10 +4133,14 @@ class ExplorerSessionPage(QWidget):
         self._last_disconnect_popup_at = now
         parent = self.window()
         par = parent if isinstance(parent, QWidget) else self
+        sess = self._explorer_session_label()
         box = QMessageBox(par)
         box.setIcon(QMessageBox.Warning)
-        box.setWindowTitle("Remote disconnected")
-        box.setText("The remote connection was interrupted or lost.")
+        box.setWindowTitle(f"Disconnected — {sess}")
+        box.setText(
+            f"The explorer session «{sess}» lost connectivity.\n"
+            "You can reconnect the same session or start a new one."
+        )
         box.setInformativeText((msg or "").strip()[:900])
         btn_reconnect = box.addButton("Reconnect", QMessageBox.AcceptRole)
         btn_new = box.addButton("New session…", QMessageBox.ActionRole)
@@ -5839,9 +5865,10 @@ class FileExplorerTab(QWidget):
         sl.addWidget(self.status_conn_label)
         root.addWidget(self.status_bar)
 
-        self._sc_reconnect_explorer = QShortcut(QKeySequence("Ctrl+R"), self)
-        self._sc_reconnect_explorer.setContext(Qt.WidgetWithChildrenShortcut)
-        self._sc_reconnect_explorer.activated.connect(self._shortcut_reconnect_current_explorer_page)
+        for _seq in ("Ctrl+R", "Ctrl+Shift+R"):
+            _sc = QShortcut(QKeySequence(_seq), self)
+            _sc.setContext(Qt.WidgetWithChildrenShortcut)
+            _sc.activated.connect(self._shortcut_reconnect_current_explorer_page)
 
     def _shortcut_reconnect_current_explorer_page(self) -> None:
         page = self._current_page()

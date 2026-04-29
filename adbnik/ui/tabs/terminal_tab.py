@@ -1467,8 +1467,8 @@ class SessionWidget(QWidget):
 
         self.output = ShellPlainTextEdit()
         self.output.setObjectName("MobaTerminalOutput")
-        self.output.setFont(QFont("Consolas", 10))
-        self.output.set_terminal_font_size(10)
+        self.output.setFont(QFont("Consolas", 11))
+        self.output.set_terminal_font_size(11)
         # Block limit is set on QTextDocument inside ShellPlainTextEdit (QTextEdit has no setMaximumBlockCount).
         self.output.set_on_commit(self._send_line)
         self.output.setContextMenuPolicy(Qt.DefaultContextMenu)
@@ -1500,7 +1500,7 @@ class SessionWidget(QWidget):
                 pass
         self._session_footer = QLabel()
         self._session_footer.setObjectName("TerminalSessionFooter")
-        self._session_footer.setFont(QFont("Consolas", 10))
+        self._session_footer.setFont(QFont("Consolas", 11))
         self._session_footer.setWordWrap(True)
         self._session_footer.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self._session_footer.setToolTip(
@@ -2710,9 +2710,10 @@ class TerminalTab(QWidget):
         # Bookmarks refresh touches session tabs — run only after self.tabs exists.
         self._reload_bookmark_sidebar()
         QTimer.singleShot(0, self._sync_terminal_flush_pause)
-        self._sc_reconnect_session = QShortcut(QKeySequence("Ctrl+R"), self)
-        self._sc_reconnect_session.setContext(Qt.WidgetWithChildrenShortcut)
-        self._sc_reconnect_session.activated.connect(self._shortcut_reconnect_current_session)
+        for _seq in ("Ctrl+R", "Ctrl+Shift+R"):
+            _sc = QShortcut(QKeySequence(_seq), self)
+            _sc.setContext(Qt.WidgetWithChildrenShortcut)
+            _sc.activated.connect(self._shortcut_reconnect_current_session)
 
     def _shortcut_reconnect_current_session(self) -> None:
         w = self.tabs.currentWidget()
