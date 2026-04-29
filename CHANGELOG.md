@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.4.2] - 2026-04-29
+
+### Added
+
+- **Terminal prompts:** **ADB / device shell** prompts without `user@` (e.g. `vivo:/ $`) use the same segmented colors as SSH; text **after** `$` / `#` on that line uses a dedicated **input** tint; other plain lines use a muted **output** tint when ANSI is default.
+
+### Fixed
+
+- **Serial:** Stronger scrubbing of leaked **`[0;39m`** / **`0;39m`** / bracket-only CSI when **ESC** is lost, without dropping valid escape sequences that still start with **0x1b**.
+- **Serial typing:** **Preserve** typed lines at the prompt when the UART link does not echo locally (input remains visible after Enter).
+
 ## [2.4.1] - 2026-04-30
 
 ### Fixed

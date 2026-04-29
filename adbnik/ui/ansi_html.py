@@ -387,15 +387,17 @@ _CLR_PROMPT_HOST = "#a5d6ff"
 _CLR_PROMPT_PATH = "#7ee787"
 _CLR_PROMPT_SIG = "#ff7b72"
 _CLR_PS_PREFIX = "#d2a8ff"
-_CLR_PROMPT_TAIL = "#c9d1d9"
+# Text typed after $/#/> on the same line as the prompt (distinct from scrollback “output”).
+_CLR_PROMPT_INPUT = "#f0ab68"
+# Plain command output when SGR is default (slightly muted vs default fg).
+_CLR_LINE_OUTPUT = "#b8c4ce"
 
 
 def strip_sgr_sequences_for_prompt(line: str) -> str:
-    """Strip SGR CSI codes so prompt regexes match even when the shell wrapped output in \\x1b[…m."""
+    """Strip CSI sequences so prompt regexes match (SGR, cursor moves, EL/ED, etc.)."""
     if not line:
         return line
-    s = re.sub(r"\x1b\[[0-?]*[ -/]*m", "", line)
-    return s
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line)
 
 
 def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[str]:
@@ -411,7 +413,7 @@ def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[st
     def _tail_span(rest: str) -> str:
         if not rest:
             return ""
-        return f'<span style="color:{_CLR_PROMPT_TAIL}">{html.escape(rest)}</span>'
+        return f'<span style="color:{_CLR_PROMPT_INPUT}">{html.escape(rest)}</span>'
 
     # PowerShell: PS C:\path>  optional tail
     m = re.match(r"^(PS\s+)(.+)(>+)(.*)$", s)
@@ -442,6 +444,20 @@ def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[st
     for j, sig_ch in cand:
         head = t2[:j].rstrip()
         tail = t2[j + 1 :]
+        # ADB / embedded shell: hostname:/path #|$ tail (no user@), e.g. vivo:/ $
+        if "@" not in head:
+            colon = head.find(":")
+            if colon > 0:
+                dev = head[:colon]
+                rest_path = head[colon + 1 :]
+                if dev.strip():
+                    return (
+                        f'<span style="color:{_CLR_PROMPT_USER}">{html.escape(dev)}</span>'
+                        f'<span style="color:{_CLR_PROMPT_SEP}">:</span>'
+                        f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(rest_path)}</span>'
+                        f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(sig_ch)}</span>'
+                        f"{_tail_span(tail)}"
+                    )
         at = head.find("@")
         if at <= 0:
             continue
@@ -570,6 +586,8 @@ class AnsiToHtmlConverter:
                     html_parts.append(ph)
                     continue
             sem = _semantic_fg_for_plain_line(line) if use_semantic else None
+            if sem is None and use_semantic:
+                sem = _CLR_LINE_OUTPUT
             html_parts.append(f'<span style="{self._span_css(sem)}">{esc}</span>')
 
     def feed(self, chunk: str) -> Tuple[str, str]:

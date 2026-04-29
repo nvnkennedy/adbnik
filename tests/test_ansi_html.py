@@ -59,6 +59,17 @@ def test_style_prompt_line_unix_ssh():
     assert h and "#79c0ff" in h and "$" in h and "user" in h
 
 
+def test_style_prompt_line_adb_device_path():
+    """ADB/Android shell: hostname:/path $ tail — no user@."""
+    h = style_prompt_line_html("vivo:/ $ ")
+    assert h and "vivo" in h and "/" in h and "$" in h and "#79c0ff" in h
+
+
+def test_style_prompt_line_adb_same_line_command():
+    h = style_prompt_line_html("vivo:/system/bin $ ls -la")
+    assert h and "vivo" in h and "ls" in h and "#f0ab68" in h
+
+
 def test_style_prompt_line_powershell():
     h = style_prompt_line_html(r"PS C:\Windows\System32>")
     assert h and "PS" in h and "System32" in h
@@ -81,6 +92,14 @@ def test_prompt_line_with_leading_sgr():
 def test_prompt_unix_same_line_command():
     h = style_prompt_line_html("user@host:/data $ chmod +x a.sh")
     assert h and "chmod" in h and "$" in h
+
+
+def test_plain_output_line_uses_output_tint():
+    """Non-prompt lines with default SGR get a muted output color vs prompt input."""
+    c = AnsiToHtmlConverter(prompt_highlight=True)
+    html, plain = c.feed("hello world\n")
+    assert "hello world" in plain
+    assert "#b8c4ce" in html
 
 
 def test_embedded_terminal_ignores_background_colors():

@@ -79,12 +79,17 @@ def _filter_serial_miniterm_banner(text: str) -> str:
 
 
 def _scrub_serial_display_glitches(text: str) -> str:
-    """Drop UART artifacts like ``[0;39m`` / ``0:39m`` that leak as plain text after ESC loss."""
+    """Drop UART artifacts like ``[0;39m`` / ``0;39m`` / stray CSI bodies when ESC was lost or split."""
     if not text:
         return text
+    text = re.sub(r"(?i)(?<!\x1b)\[(?:\d{1,4};)*\d{1,4}m", "", text)
+    text = re.sub(r"(?i)(?<!\x1b)\[(?:0;)?39m", "", text)
+    text = re.sub(r"(?i)(?<!\x1b)\[0m\b", "", text)
     text = re.sub(r"(?i)(?<!\x1b)\[0?[;:]39m\]?", "", text)
     text = re.sub(r"(?i)(?<![\d\x1b\[])\b0[;:]39m\b", "", text)
     text = re.sub(r"(?m)^\s*\[?0[;:.]39m\]?\s*$", "", text)
+    text = re.sub(r"(?<![\[\x1b])0;39m", "", text)
+    text = re.sub(r"(?i)(?<![\[\x1b])0\.39m", "", text)
     return text
 
 
@@ -1545,6 +1550,9 @@ class SessionWidget(QWidget):
         self.output.set_collapse_commit_whitespace(self._is_serial_session or self._is_remote_pty_shell)
         self.output.set_on_clear_buffer(self._on_terminal_cleared)
         self.output.set_send_control_bytes(self._write_raw_to_shell)
+        # UART often does not echo locally; keep typed text visible until device echoes it back.
+        if self._is_serial_session:
+            self.output.set_preserve_typed_input(True)
         # Reliable font zoom shortcuts on terminal widget.
         self._zoom_in_sc = QShortcut(QKeySequence.ZoomIn, self.output)
         self._zoom_out_sc = QShortcut(QKeySequence.ZoomOut, self.output)
