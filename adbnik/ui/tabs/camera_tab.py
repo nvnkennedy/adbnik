@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt5.QtCore import QSize, Qt, QUrl
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtCore import QEventLoop, QSize, Qt, QTimer, QUrl
+from PyQt5.QtGui import QDesktopServices, QFont, QIcon
 from PyQt5.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QGroupBox,
@@ -61,6 +63,7 @@ class CameraTab(QWidget):
         self._recorder: Optional["QMediaRecorder"] = None
         self._recording = False
         self._paused = False
+        self._last_record_path: Optional[str] = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -163,9 +166,9 @@ class CameraTab(QWidget):
 
         if _QT_MULTIMEDIA:
             self._view = QVideoWidget()
-            self._view.setMinimumSize(480, 270)
+            self._view.setMinimumSize(320, 180)
             self._view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            # Fill the tab; pair with highest viewfinder resolution on Start to limit softness.
+            # Fill the tab; viewfinder resolution is capped on Start to keep preview lighter on the UI thread.
             self._view.setAspectRatioMode(Qt.IgnoreAspectRatio)
             self._view.setStyleSheet("background-color:#0f172a;border-radius:10px;")
             vb.addWidget(self._view, 1)
@@ -246,8 +249,104 @@ class CameraTab(QWidget):
         if self._camera is not None:
             self._on_stop()
 
-    def _stop_recording_safe(self) -> None:
-        """Stop MP4 capture without leaving the UI checked 'recording'."""
+    def _offer_open_saved(self, path: Path) -> None:
+        if not path.is_file():
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("Saved")
+        box.setIcon(QMessageBox.Information)
+        box.setText("File saved.")
+        box.setInformativeText(str(path))
+        box.setStandardButtons(QMessageBox.Ok)
+        open_btn = box.addButton("Open file", QMessageBox.ActionRole)
+        box.exec_()
+        if box.clickedButton() == open_btn:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+    def _on_image_saved(self, _id: int, file_name: str) -> None:
+        p = Path(file_name)
+        if p.is_file():
+            self._offer_open_saved(p)
+
+    def _sync_wait_recorder_stopped(self, rec: "QMediaRecorder", timeout_s: float = 5.0) -> None:
+        """Block briefly so the container is finalized before camera unload (app exit / Stop)."""
+        if not _QT_MULTIMEDIA:
+            return
+        deadline = time.monotonic() + timeout_s
+        while rec.state() != QMediaRecorder.StoppedState and time.monotonic() < deadline:
+            QApplication.processEvents(QEventLoop.AllEvents, 100)
+            time.sleep(0.02)
+
+    def _finalize_recorder_sync(self, *, offer_open: bool) -> None:
+        """Stop recorder and wait for filesystem finalize (tab leave / Stop camera / pause)."""
+        rec = self._recorder
+        if rec is None:
+            return
+        path = self._last_record_path
+        try:
+            rec.stop()
+        except Exception:
+            pass
+        self._sync_wait_recorder_stopped(rec)
+        self._recorder = None
+        self._recording = False
+        self._last_record_path = None
+        try:
+            self._btn_record.blockSignals(True)
+            self._btn_record.setChecked(False)
+            self._btn_record.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            rec.deleteLater()
+        except Exception:
+            pass
+        if path:
+            pth = Path(path)
+            if pth.is_file() and pth.stat().st_size > 0:
+                self._append_log(f"Camera: video saved — {pth}")
+                if offer_open:
+                    self._offer_open_saved(pth)
+            elif pth.is_file():
+                self._append_log(f"Camera: video file is empty — {pth}")
+
+    def _poll_recording_finished(
+        self, rec: "QMediaRecorder", path: Optional[str], offer_open: bool, attempt: int
+    ) -> None:
+        if not _QT_MULTIMEDIA:
+            return
+        if self._recorder is not rec:
+            return
+        stopped = rec.state() == QMediaRecorder.StoppedState
+        if stopped or attempt > 100:
+            if attempt > 100 and not stopped:
+                self._append_log("Camera: recording finalize timed out — file may be incomplete")
+            self._recorder = None
+            self._recording = False
+            self._last_record_path = None
+            try:
+                self._btn_record.blockSignals(True)
+                self._btn_record.setChecked(False)
+                self._btn_record.blockSignals(False)
+            except Exception:
+                pass
+            try:
+                rec.deleteLater()
+            except Exception:
+                pass
+            if stopped and path:
+                pth = Path(path)
+                if pth.is_file() and pth.stat().st_size > 0:
+                    self._append_log(f"Camera: video saved — {pth}")
+                    if offer_open:
+                        self._offer_open_saved(pth)
+                elif pth.is_file():
+                    self._append_log(f"Camera: video file is empty — {pth}")
+            return
+        QTimer.singleShot(120, lambda: self._poll_recording_finished(rec, path, offer_open, attempt + 1))
+
+    def _stop_recording_safe(self, *, offer_open: bool = True) -> None:
+        """Stop MP4 capture; wait until Stopped so the file is not truncated (async on UI thread)."""
         if self._recorder is None:
             self._recording = False
             try:
@@ -257,22 +356,17 @@ class CameraTab(QWidget):
             except Exception:
                 pass
             return
+        rec = self._recorder
+        path = self._last_record_path
         try:
-            self._recorder.stop()
+            rec.stop()
         except Exception:
             pass
-        self._recorder = None
-        self._recording = False
-        try:
-            self._btn_record.blockSignals(True)
-            self._btn_record.setChecked(False)
-            self._btn_record.blockSignals(False)
-        except Exception:
-            pass
+        self._poll_recording_finished(rec, path, offer_open, 0)
 
     def pause_for_background(self) -> None:
         """Pause preview when leaving the Camera tab — fast return without full teardown."""
-        self._stop_recording_safe()
+        self._finalize_recorder_sync(offer_open=False)
         if self._camera is None:
             return
         try:
@@ -284,7 +378,7 @@ class CameraTab(QWidget):
         self._apply_button_states()
 
     def _teardown_camera(self) -> None:
-        self._stop_recording_safe()
+        self._finalize_recorder_sync(offer_open=False)
         if self._image_capture is not None:
             try:
                 self._image_capture = None
@@ -333,10 +427,15 @@ class CameraTab(QWidget):
 
                 opts = cam.supportedViewfinderSettings()
                 if opts:
-                    best = max(
-                        opts,
-                        key=lambda s: s.resolution().width() * s.resolution().height(),
-                    )
+                    cap_px = 1280
+
+                    def area(s):
+                        r = s.resolution()
+                        return r.width() * r.height()
+
+                    under = [s for s in opts if s.resolution().width() <= cap_px]
+                    pool = under if under else opts
+                    best = max(pool, key=area)
                     cam.setViewfinderSettings(best)
                 else:
                     vs = QCameraViewfinderSettings()
@@ -345,6 +444,10 @@ class CameraTab(QWidget):
             except Exception:
                 pass
             cap = QCameraImageCapture(cam)
+            try:
+                cap.imageSaved.connect(self._on_image_saved)
+            except Exception:
+                pass
             self._camera = cam
             self._image_capture = cap
             cam.start()
@@ -366,7 +469,7 @@ class CameraTab(QWidget):
     def _on_pause(self) -> None:
         if self._camera is None:
             return
-        self._stop_recording_safe()
+        self._finalize_recorder_sync(offer_open=False)
         try:
             if self._paused:
                 self._camera.start()
@@ -420,6 +523,7 @@ class CameraTab(QWidget):
                 rec.record()
                 self._recorder = rec
                 self._recording = True
+                self._last_record_path = str(out.resolve())
                 self._append_log(f"Camera: recording → {out}")
                 self._status.setText("Recording…")
             except Exception as exc:
@@ -431,8 +535,8 @@ class CameraTab(QWidget):
                     f"{exc}\n\nTry another camera driver or install OS codecs.",
                 )
         else:
+            self._append_log("Camera: stopping recording…")
             self._stop_recording_safe()
-            self._append_log("Camera: recording stopped")
             self._status.setText("Running" if self._camera and not self._paused else "Paused")
         self._apply_button_states()
 

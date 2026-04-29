@@ -547,18 +547,24 @@ class MainWindow(QMainWindow):
         idx = self.tabs.indexOf(self._camera_placeholder)
         if idx < 0:
             return
-        self.tabs.removeTab(idx)
-        self.camera = CameraTab(
-            self.append_log,
-            get_output_dir=self.get_camera_output_dir,
-            set_output_dir=self.set_camera_output_dir,
-        )
-        self.tabs.insertTab(
-            idx,
-            self.camera,
-            self.style().standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)),
-            "Camera",
-        )
+        # removeTab() can switch current tab to another index; restore Camera after insert.
+        self.tabs.blockSignals(True)
+        try:
+            self.tabs.removeTab(idx)
+            self.camera = CameraTab(
+                self.append_log,
+                get_output_dir=self.get_camera_output_dir,
+                set_output_dir=self.set_camera_output_dir,
+            )
+            self.tabs.insertTab(
+                idx,
+                self.camera,
+                self.style().standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)),
+                "Camera",
+            )
+            self.tabs.setCurrentIndex(idx)
+        finally:
+            self.tabs.blockSignals(False)
 
     def _on_main_tab_changed(self, index: int) -> None:
         if index == 3:

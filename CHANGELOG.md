@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.5.5] - 2026-04-29
+
+### Changed
+
+- **Camera:** Video recording **finalizes after Stop** (wait for `QMediaRecorder` stopped state) so MP4 files are not truncated; leaving the tab or stopping the camera **sync-flushes** the recorder before unload.
+- **Camera:** **Save-folder** flow unchanged; folder picker remains **Qt non-native** for responsiveness on Windows (see 2.5.4 file dialogs).
+- **Camera:** Viewfinder picks the **largest resolution up to 1280px width** (fallback to max if none qualify) to reduce UI thread load; preview minimum size slightly reduced.
+- **Camera:** After **photo** (`imageSaved`) or **video** save, an **Open file** choice matches other Save dialogs.
+
+### Fixed
+
+- **Camera:** First switch to the **Camera** tab stays on Camera after lazy init (**tab signals** blocked during placeholder swap).
+- **Terminals:** **Local bash/zsh / Git Bash:** one visible space after **`$`** / **`#`** when the shell omits it (aligned with SSH/CMD/PowerShell behavior).
+
 ## [2.5.4] - 2026-04-29
 
 ### Changed

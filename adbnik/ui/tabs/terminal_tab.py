@@ -2168,6 +2168,17 @@ class SessionWidget(QWidget):
             # One visible gap after $/# so typing aligns past the shell marker (e.g. ``vivo_25:/$`` → ``$ ``).
             if bare.endswith("$") or bare.endswith("#"):
                 self._append_plain_ui(" ")
+            return
+        # Local bash/zsh / Git Bash (not CMD/PowerShell, not SSH/ADB above): same one-space rule.
+        if not self._shell_profile and not self._is_adb_shell and not self._is_ssh_session:
+            raw = self._last_nonempty_line()
+            if not raw.strip():
+                return
+            bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r")).rstrip()
+            if bare.endswith("$ ") or bare.endswith("# "):
+                return
+            if bare.endswith("$") or bare.endswith("#"):
+                self._append_plain_ui(" ")
 
     def _write_raw_to_shell(self, data: bytes) -> None:
         if self.proc.state() != QProcess.Running or not data:

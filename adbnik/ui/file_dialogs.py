@@ -44,5 +44,13 @@ def get_save_filename(
 
 
 def get_existing_directory(parent: Optional[QWidget], caption: str, directory: str = "") -> str:
-    d = QFileDialog.getExistingDirectory(parent, caption, _normalize_initial_path(directory))
-    return d or ""
+    """Folder picker: Qt non-native dialog is typically faster than the shell dialog on Windows."""
+    dlg = QFileDialog(parent, caption, _normalize_initial_path(directory))
+    dlg.setFileMode(QFileDialog.Directory)
+    dlg.setOption(QFileDialog.ShowDirsOnly, True)
+    dlg.setOption(QFileDialog.DontResolveSymlinks, True)
+    dlg.setOption(QFileDialog.DontUseNativeDialog, True)
+    if dlg.exec_() == QFileDialog.Accepted:
+        files = dlg.selectedFiles()
+        return files[0] if files else ""
+    return ""
