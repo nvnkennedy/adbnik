@@ -17,17 +17,27 @@ def infer_scrcpy_keyboard_mode(adb_path: str, serial: str) -> Optional[str]:
     if not serial:
         return None
     blob = ""
-    for cmd in (
-        ["shell", "getprop", "ro.build.characteristics"],
-        ["shell", "getprop", "ro.hardware"],
-        ["shell", "getprop", "ro.product.first_api_level"],
-    ):
-        code, out, _ = run_adb(adb_path, ["-s", serial, *cmd], timeout=5)
-        if code == 0 and out:
-            blob += out.lower()
+    # One round-trip covers OEM props that omit ro.build.characteristics but still expose automotive strings.
+    code, dump, _ = run_adb(adb_path, ["-s", serial, "shell", "getprop"], timeout=18)
+    if code == 0 and dump:
+        blob += dump.lower()
+    else:
+        for cmd in (
+            ["shell", "getprop", "ro.build.characteristics"],
+            ["shell", "getprop", "ro.hardware"],
+            ["shell", "getprop", "ro.product.manufacturer"],
+            ["shell", "getprop", "ro.product.model"],
+            ["shell", "getprop", "ro.board.platform"],
+            ["shell", "getprop", "ro.boot.hardware"],
+            ["shell", "getprop", "ro.product.first_api_level"],
+        ):
+            code2, out, _ = run_adb(adb_path, ["-s", serial, *cmd], timeout=5)
+            if code2 == 0 and out:
+                blob += out.lower()
     hints = (
         "automotive",
         "embedded",
+        "embedded automotive",
         "ivi",
         "android automotive",
         "android.hardware.type.automotive",
@@ -36,6 +46,9 @@ def infer_scrcpy_keyboard_mode(adb_path: str, serial: str) -> Optional[str]:
         "infotainment",
         "headunit",
         "head unit",
+        "cockpit",
+        "cluster",
+        "dashboard",
     )
     if any(h in blob for h in hints):
         return "uhid"

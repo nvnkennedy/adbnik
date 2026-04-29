@@ -55,6 +55,10 @@ class AppConfig:
     find_folder_history_remote: List[str] = field(default_factory=list)
     # Last app version for which the user confirmed welcome/setup (theme + paths). Shown again after upgrades.
     last_acknowledged_version: str = ""
+    # Optional resilience features (2.0 line): reconnect dropped sessions with bounded retries/backoff.
+    auto_reconnect_terminal: bool = True
+    auto_reconnect_screen: bool = True
+    auto_reconnect_explorer: bool = True
 
     @classmethod
     def load(cls) -> "AppConfig":

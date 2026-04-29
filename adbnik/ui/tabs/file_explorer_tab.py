@@ -2200,6 +2200,8 @@ class ExplorerSessionPage(QWidget):
         self._sftp_ftp_delete_dialog: Optional[QProgressDialog] = None
         self._remote_refresh_thread: Optional[_RemoteListThread] = None
         self._remote_refresh_pending: bool = False
+        self._remote_auto_reconnect_attempts: int = 0
+        self._remote_auto_reconnect_max: int = 3
         self._last_active_side: str = "local"
         self._local_history: List[str] = []
         self._local_root_map: Dict[str, str] = {}
@@ -2649,6 +2651,15 @@ class ExplorerSessionPage(QWidget):
         b_refresh_r.setToolTip("Refresh")
         b_refresh_r.clicked.connect(self.refresh_remote)
         ra.addWidget(b_refresh_r)
+        b_reconnect_r = QToolButton()
+        b_reconnect_r.setObjectName("WinScpIconBtn")
+        b_reconnect_r.setIcon(st.standardIcon(QStyle.SP_DriveNetIcon))
+        b_reconnect_r.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        b_reconnect_r.setIconSize(QSize(16, 16))
+        b_reconnect_r.setFixedSize(28, 28)
+        b_reconnect_r.setToolTip("Reconnect remote session")
+        b_reconnect_r.clicked.connect(self.reconnect_remote_session)
+        ra.addWidget(b_reconnect_r)
         rov.addLayout(ra)
         rem_act = QHBoxLayout()
         rem_act.setSpacing(4)
@@ -4093,6 +4104,55 @@ class ExplorerSessionPage(QWidget):
         self._set_remote_address(self.remote_path)
         self._start_remote_refresh()
 
+    def reconnect_remote_session(self) -> None:
+        """Reconnect ADB/SFTP/FTP backing session after link or power interruption."""
+        self._remote_auto_reconnect_attempts = 0
+        self._log(f"Explorer: reconnect requested ({self.kind}).")
+        if self.kind == "adb":
+            self._adb_last_error = ""
+            self._last_error_popup_key = ""
+            self.refresh_remote()
+            return
+        if self.kind == "sftp":
+            disconnect_sftp(self._sftp_transport, self._sftp_client)
+            self._sftp_transport = None
+            self._sftp_client = None
+            t, sftp, err = connect_sftp(
+                self._ssh_host,
+                self._ssh_port,
+                self._ssh_user,
+                self._ssh_password,
+            )
+            if err or sftp is None:
+                self._sftp_last_error = err or "SFTP reconnect failed."
+                self._report_remote_error(self._sftp_last_error)
+                self._notify_parent_status()
+                return
+            self._sftp_transport = t
+            self._sftp_client = sftp
+            self._sftp_last_error = ""
+            self._last_error_popup_key = ""
+            self.refresh_remote()
+            return
+        # FTP
+        disconnect_ftp(self._ftp_client)
+        self._ftp_client = None
+        ftp, err = connect_ftp(
+            self._ftp_host,
+            self._ftp_port,
+            self._ftp_user,
+            self._ftp_password,
+        )
+        if err or ftp is None:
+            self._ftp_last_error = err or "FTP reconnect failed."
+            self._report_remote_error(self._ftp_last_error)
+            self._notify_parent_status()
+            return
+        self._ftp_client = ftp
+        self._ftp_last_error = ""
+        self._last_error_popup_key = ""
+        self.refresh_remote()
+
     def _start_remote_refresh(self) -> None:
         if self._remote_refresh_thread and self._remote_refresh_thread.isRunning():
             self._remote_refresh_pending = True
@@ -4142,8 +4202,10 @@ class ExplorerSessionPage(QWidget):
             self._ftp_last_error = msg
         if msg:
             self._report_remote_error(msg)
+            self._schedule_remote_auto_reconnect()
         else:
             self._last_error_popup_key = ""
+            self._remote_auto_reconnect_attempts = 0
         self._last_refresh_note = datetime.now().strftime("%H:%M:%S")
         self._update_nav_buttons()
         self._update_explorer_header()
@@ -4152,6 +4214,15 @@ class ExplorerSessionPage(QWidget):
         if self._remote_refresh_pending:
             self._remote_refresh_pending = False
             self._start_remote_refresh()
+
+    def _schedule_remote_auto_reconnect(self) -> None:
+        if not bool(getattr(self._app_config, "auto_reconnect_explorer", True)):
+            return
+        if self._remote_auto_reconnect_attempts >= self._remote_auto_reconnect_max:
+            return
+        self._remote_auto_reconnect_attempts += 1
+        delay_ms = min(9000, 1500 * self._remote_auto_reconnect_attempts)
+        QTimer.singleShot(delay_ms, self.reconnect_remote_session)
 
     def _refresh_adb(self) -> None:
         serial = _first_serial_token(self.get_device_serial()) or _first_serial_token(self._session_adb_serial)

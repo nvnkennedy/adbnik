@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QInputDialog,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -513,7 +514,7 @@ class MainWindow(QMainWindow):
             return
         self._prev_selected_serial_for_refresh = self.terminal.current_adb_serial()
         th = _AdbDevicesRefreshThread(self.get_adb_path(), self)
-        th.done.connect(self._on_devices_refreshed)
+        th.done.connect(self._on_devices_refreshed, Qt.QueuedConnection)
         self._device_refresh_thread = th
         th.start()
 
@@ -656,7 +657,7 @@ class MainWindow(QMainWindow):
             self._stats_refresh_pending = True
             return
         th = _AdbDeviceStatsThread(self.get_adb_path(), serial, self)
-        th.done.connect(self._on_device_stats_ready)
+        th.done.connect(self._on_device_stats_ready, Qt.QueuedConnection)
         self._stats_refresh_thread = th
         th.start()
 
@@ -821,6 +822,11 @@ class MainWindow(QMainWindow):
         a_scr.setShortcut(QKeySequence("Ctrl+3"))
         a_scr.triggered.connect(lambda: self.tabs.setCurrentIndex(2))
         view.addAction(a_scr)
+        a_cmd_palette = QAction("Command &palette…", self)
+        a_cmd_palette.setShortcut(QKeySequence("Ctrl+Shift+P"))
+        a_cmd_palette.setIcon(self.style().standardIcon(QStyle.SP_FileDialogContentsView))
+        a_cmd_palette.triggered.connect(self._open_command_palette)
+        view.addAction(a_cmd_palette)
         view.addSeparator()
         a_stop_scr = QAction("Stop &screen mirror", self)
         a_stop_scr.setIcon(self.style().standardIcon(QStyle.SP_BrowserStop))
@@ -867,6 +873,70 @@ class MainWindow(QMainWindow):
     def _menu_stop_screen_mirror(self) -> None:
         if hasattr(self, "scrcpy"):
             self.scrcpy.stop_scrcpy()
+
+    def _show_health_dialog(self) -> None:
+        term_total = 0
+        term_running = 0
+        if hasattr(self, "terminal") and hasattr(self.terminal, "tabs"):
+            for i in range(self.terminal.tabs.count()):
+                w = self.terminal.tabs.widget(i)
+                if hasattr(w, "proc"):
+                    term_total += 1
+                    try:
+                        if w.proc.state() == 2:  # QProcess.Running
+                            term_running += 1
+                    except Exception:
+                        pass
+        scr_status = "idle"
+        if hasattr(self, "scrcpy") and getattr(self.scrcpy, "proc", None) is not None:
+            try:
+                scr_status = "running" if self.scrcpy.proc.state() == 2 else "stopped"
+            except Exception:
+                scr_status = "unknown"
+        exp_total = self.file_explorer.session_tabs.count() if hasattr(self, "file_explorer") else 0
+        QMessageBox.information(
+            self,
+            "Session Health",
+            f"Terminal sessions: {term_running}/{term_total} running\n"
+            f"Screen mirror: {scr_status}\n"
+            f"Explorer sessions: {exp_total}\n"
+            f"ADB selected: {(self.terminal.current_adb_serial() or 'none') if hasattr(self, 'terminal') else 'none'}",
+        )
+
+    def _open_command_palette(self) -> None:
+        items = [
+            "Open Terminal",
+            "Open File Explorer",
+            "Open Screen Control",
+            "Reconnect ADB",
+            "Reconnect Screen Mirror",
+            "Reconnect Explorer Remote",
+            "Show Session Health",
+            "Refresh Devices",
+        ]
+        choice, ok = QInputDialog.getItem(self, "Command Palette", "Action", items, 0, False)
+        if not ok or not choice:
+            return
+        if choice == "Open Terminal":
+            self.tabs.setCurrentIndex(0)
+        elif choice == "Open File Explorer":
+            self.tabs.setCurrentIndex(1)
+        elif choice == "Open Screen Control":
+            self.tabs.setCurrentIndex(2)
+        elif choice == "Reconnect ADB":
+            self._menu_session_adb_reconnect()
+        elif choice == "Reconnect Screen Mirror":
+            if hasattr(self, "scrcpy"):
+                self.scrcpy.reconnect_scrcpy()
+        elif choice == "Reconnect Explorer Remote":
+            if hasattr(self, "file_explorer"):
+                page = self.file_explorer._current_page()
+                if page is not None:
+                    page.reconnect_remote_session()
+        elif choice == "Show Session Health":
+            self._show_health_dialog()
+        elif choice == "Refresh Devices":
+            self.refresh_devices()
 
     def _open_preferences(self):
         dlg = PreferencesDialog(self.config, self)

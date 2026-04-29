@@ -170,6 +170,8 @@ class ScrcpyTab(QWidget):
         self._embed_poll: Optional[QTimer] = None
         self._embed_title: str = ""
         self._embed_hwnd: int = 0
+        self._auto_reconnect_attempts = 0
+        self._auto_reconnect_max = 4
         self._build_ui()
 
     def _sync_stop_hotkey(self, running: bool) -> None:
@@ -479,11 +481,17 @@ class ScrcpyTab(QWidget):
         b_start.setObjectName("ScrcpyStartBtn")
         b_start.setIcon(icon_media_play_green())
         b_start.clicked.connect(self.start_scrcpy)
+        b_reconnect = QPushButton("Reconnect")
+        b_reconnect.setObjectName("ScrcpyStartBtn")
+        b_reconnect.setIcon(st.standardIcon(QStyle.SP_BrowserReload))
+        b_reconnect.setToolTip("Reconnect after device power cycle / USB drop")
+        b_reconnect.clicked.connect(self.reconnect_scrcpy)
         b_stop = QPushButton("Stop")
         b_stop.setObjectName("ScrcpyStopBtn")
         b_stop.setIcon(icon_media_stop_red())
         b_stop.clicked.connect(self.stop_scrcpy)
         row.addWidget(b_start)
+        row.addWidget(b_reconnect)
         row.addWidget(b_stop)
         form.addLayout(row)
 
@@ -672,10 +680,12 @@ class ScrcpyTab(QWidget):
         self._drain_process_log()
         if self._stop_requested:
             self._append_log("Screen: scrcpy stopped.")
+            self.status.setText("Idle")
         else:
             self._append_log(f"Screen: scrcpy process finished — exit code {exit_code}, exit status {exit_status}.")
+            self.status.setText("Disconnected — click Reconnect")
+            self._schedule_auto_reconnect()
         self._stop_requested = False
-        self.status.setText("Idle")
         self._clear_embed()
 
     def _on_proc_error(self, _error) -> None:
@@ -693,6 +703,7 @@ class ScrcpyTab(QWidget):
 
     def _on_scrcpy_started(self) -> None:
         self.status.setText("Running")
+        self._auto_reconnect_attempts = 0
         self._sync_stop_hotkey(True)
         self._stop_embed_poll()
         if sys.platform == "win32" and not self.fullscreen_cb.isChecked() and self.embed_mirror_cb.isChecked():
@@ -873,6 +884,31 @@ class ScrcpyTab(QWidget):
             self.status.setText("Stopping…")
             self._append_log("Screen: stop requested.")
             self._request_graceful_scrcpy_stop()
+
+    def reconnect_scrcpy(self) -> None:
+        """Reconnect mirror after cable/device power cycle."""
+        self._append_log("Screen: reconnect requested.")
+        self._adb_reconnect()
+        if self.proc and self.proc.state() == QProcess.Running:
+            self.stop_scrcpy()
+            QTimer.singleShot(900, self.start_scrcpy)
+            return
+        self.start_scrcpy()
+
+    def _schedule_auto_reconnect(self) -> None:
+        if not bool(getattr(self.config, "auto_reconnect_screen", True)):
+            return
+        if self._stop_requested:
+            return
+        if self._auto_reconnect_attempts >= self._auto_reconnect_max:
+            self._append_log("Screen: auto-reconnect exhausted; click Reconnect to retry.")
+            return
+        self._auto_reconnect_attempts += 1
+        delay_ms = min(10000, 1200 * self._auto_reconnect_attempts)
+        self._append_log(
+            f"Screen: auto-reconnect {self._auto_reconnect_attempts}/{self._auto_reconnect_max} in {delay_ms // 1000}s."
+        )
+        QTimer.singleShot(delay_ms, self.reconnect_scrcpy)
 
     def _request_graceful_scrcpy_stop(self) -> None:
         if not self.proc or self.proc.state() != QProcess.Running:

@@ -16,7 +16,7 @@ from ...services.adb_devices import friendly_name_for_serial
 from ...services.commands import run_adb
 from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 
-from PyQt5.QtCore import QProcessEnvironment, QSize, Qt, QProcess, QTimer, pyqtSignal
+from PyQt5.QtCore import QProcessEnvironment, QSize, Qt, QProcess, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QTextCharFormat, QTextCursor, QTextOption
 from PyQt5.QtWidgets import (
     QAction,
@@ -80,11 +80,81 @@ def _filter_serial_miniterm_banner(text: str) -> str:
     return _SERIAL_MINITERM_BANNER_RE.sub("", text)
 
 
+class _SerialPortReleaseThread(QThread):
+    """Windows taskkill / miniterm cleanup and pacing sleeps — must not run on the GUI thread."""
+
+    finished_ok = pyqtSignal()
+
+    def __init__(self, com: str, serial_pid: Optional[int], still_running: bool, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._com = (com or "").strip()
+        self._serial_pid = serial_pid
+        self._still_running = bool(still_running)
+
+    def run(self) -> None:
+        if self._serial_pid and self._still_running:
+            _win_taskkill_serial_tree(self._serial_pid)
+            time.sleep(0.35)
+        if sys.platform == "win32" and self._com:
+            _win_kill_python_miniterm_for_com(self._com)
+            time.sleep(0.75)
+        else:
+            time.sleep(0.45)
+        self.finished_ok.emit()
+
+
 def _serial_from_combo_text(text: str) -> str:
     t = (text or "").strip()
     if not t or t.startswith("No ") or "not found" in t.lower():
         return ""
     return t.split()[0]
+
+
+def bookmark_session_tab_title(bm: dict) -> str:
+    """Tab label when opening a saved bookmark: name · kind · connection details."""
+    name = (bm.get("name") or "").strip() or "Bookmark"
+    k = str(bm.get("kind", "")).lower()
+    if k == "local_cmd":
+        return f"{name} · Local · CMD"
+    if k == "local_pwsh":
+        return f"{name} · Local · PowerShell"
+    if k == "adb":
+        ser = (bm.get("adb_serial") or "").strip()
+        label = (bm.get("adb_label") or "").strip()
+        if label and ser:
+            detail = f"{label} · {ser}"
+        elif ser:
+            detail = ser
+        elif label:
+            detail = label
+        else:
+            detail = ""
+        return f"{name} · ADB · {detail}" if detail else f"{name} · ADB"
+    if k == "ssh":
+        host = str(bm.get("ssh_host", "")).strip()
+        user = str(bm.get("ssh_user", "")).strip()
+        try:
+            sp = int(bm.get("ssh_port") or 22)
+        except (TypeError, ValueError):
+            sp = 22
+        sp = normalize_tcp_port(sp, 22)
+        base = f"{user}@{host}" if user else host
+        if sp != 22:
+            base = f"{base}:{sp}"
+        return f"{name} · SSH · {base}" if base.strip() else f"{name} · SSH"
+    if k == "serial":
+        port = str(bm.get("serial_port") or "").strip()
+        baud = str(bm.get("serial_baud") or "").strip()
+        if port and baud:
+            detail = f"{port} @ {baud}"
+        elif port:
+            detail = port
+        elif baud:
+            detail = baud
+        else:
+            detail = ""
+        return f"{name} · Serial · {detail}" if detail else f"{name} · Serial"
+    return name
 
 
 def bookmark_entry_fingerprint(bm: dict) -> str:
@@ -296,12 +366,14 @@ def _win_kill_python_miniterm_for_com(port_name: str) -> None:
     com = (port_name or "").strip().upper()
     if not re.match(r"^COM\d+$", com):
         return
+    # Word-boundary match: '*COM3*' wrongly matched COM30/COM31 and could kill other serial tabs.
     ps = (
         f"$com = '{com}'; "
+        "$pat = '\\b' + [regex]::Escape($com) + '\\b'; "
         "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | "
         "Where-Object { $_.CommandLine -and "
         "($_.CommandLine -like '*serial.tools.miniterm*' -or $_.CommandLine -like '*serial\\\\tools\\\\miniterm*') -and "
-        "($_.CommandLine -like ('*' + $com + '*')) } | "
+        "($_.CommandLine -match $pat) } | "
         "ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }"
     )
     try:
@@ -586,6 +658,8 @@ class ShellPlainTextEdit(QTextEdit):
         self._send_control_bytes_fn: Optional[Callable[[bytes], None]] = None
         # ADB/SSH/serial: join accidental block/paragraph breaks so one logical line is sent (Wrap + QText block model).
         self._collapse_commit_whitespace = False
+        # When True, LineWrapMode + WordWrapMode + document must stay NoWrap (font/zoom must not re-enable wrap).
+        self._force_no_wrap = False
         self.setCursorWidth(2)
         self.setUndoRedoEnabled(False)
         self.setAcceptRichText(True)
@@ -624,6 +698,27 @@ class ShellPlainTextEdit(QTextEdit):
         """When True, a committed line collapses internal whitespace/newlines to single spaces (remote PTY/serial)."""
         self._collapse_commit_whitespace = bool(enabled)
 
+    def set_force_no_wrap(self, enabled: bool) -> None:
+        """Optional horizontal-only layout; default remains wrap-at-widget-width for readability."""
+        self._force_no_wrap = bool(enabled)
+        if self._force_no_wrap:
+            self._apply_force_no_wrap()
+        else:
+            self.setLineWrapMode(QTextEdit.WidgetWidth)
+            self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+            opt = QTextOption(self.document().defaultTextOption())
+            opt.setWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+            self.document().setDefaultTextOption(opt)
+            self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+    def _apply_force_no_wrap(self) -> None:
+        self.setLineWrapMode(QTextEdit.NoWrap)
+        self.setWordWrapMode(QTextOption.NoWrap)
+        opt = QTextOption(self.document().defaultTextOption())
+        opt.setWrapMode(QTextOption.NoWrap)
+        self.document().setDefaultTextOption(opt)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
     def set_on_clear_buffer(self, fn: Optional[Callable[[], None]]) -> None:
         """Called after the user clears the terminal (reset scrollback / tail caches in SessionWidget)."""
         self._on_clear_buffer_fn = fn
@@ -660,6 +755,8 @@ class ShellPlainTextEdit(QTextEdit):
         ch.setFontPointSize(self._font_pt)
         cur.mergeCharFormat(ch)
         cur.endEditBlock()
+        if getattr(self, "_force_no_wrap", False):
+            self._apply_force_no_wrap()
 
     def adjust_terminal_font_size(self, delta: int) -> None:
         self.set_terminal_font_size(self._font_pt + int(delta))
@@ -739,27 +836,32 @@ class ShellPlainTextEdit(QTextEdit):
         self.setTextCursor(cur)
 
     def _plain_text_range(self, start: int, end: int) -> str:
-        """O(tail) slice — avoids scanning the whole buffer (critical for Tab completion / long logs)."""
+        """Slice [start,end) via QTextCursor — do not cap ``end`` to ``n-1`` or the last character is lost."""
         doc = self.document()
-        n = doc.characterCount()
-        if n <= 0:
+        nc = doc.characterCount()
+        if nc <= 0:
             return ""
-        start = max(0, min(start, n - 1))
-        end = max(start, min(end, n - 1))
+        start = max(0, min(int(start), nc - 1))
+        end = max(int(start), int(end))
         cur = self.textCursor()
         cur.setPosition(start)
         cur.setPosition(end, QTextCursor.KeepAnchor)
         return cur.selectedText().replace("\u2029", "\n")
 
+    def _document_end_position(self) -> int:
+        c = QTextCursor(self.document())
+        c.movePosition(QTextCursor.End)
+        return c.position()
+
     def current_input_tail(self) -> str:
+        """Full logical input after ``_anchor`` (same as anchor→document end; blocks joined as \\u2029 in Qt)."""
         doc = self.document()
-        n = doc.characterCount()
-        if n <= 0:
+        if doc.characterCount() <= 0 or self._anchor > self._document_end_position():
             return ""
-        end = n - 1
-        if end < self._anchor:
-            return ""
-        return self._plain_text_range(self._anchor, end)
+        cur = self.textCursor()
+        cur.setPosition(self._anchor)
+        cur.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
+        return cur.selectedText().replace("\u2029", "\n")
 
     def set_input_tail(self, text: str) -> None:
         self._replace_input_tail(text)
@@ -767,9 +869,7 @@ class ShellPlainTextEdit(QTextEdit):
     def _history_prev(self) -> None:
         if not self._cmd_history:
             return
-        doc = self.document()
-        n = doc.characterCount()
-        tail = self._plain_text_range(self._anchor, n - 1) if n > 0 else ""
+        tail = self.current_input_tail()
         if self._hist_browse_idx is None:
             self._hist_stash = tail
             self._hist_browse_idx = len(self._cmd_history) - 1
@@ -956,8 +1056,7 @@ class ShellPlainTextEdit(QTextEdit):
             return super().keyPressEvent(ev)
 
         if k in (Qt.Key_Return, Qt.Key_Enter):
-            if mods & Qt.ShiftModifier:
-                return super().keyPressEvent(ev)
+            # Never insert a paragraph inside the prompt (Shift+Enter used to add a second block and break commits).
             self._commit_current_line()
             ev.accept()
             return
@@ -976,6 +1075,23 @@ class ShellPlainTextEdit(QTextEdit):
         if pos < self._anchor and ev.text():
             self.moveCursor(QTextCursor.End)
 
+        # One logical input line: typing and backspace only at the document end of the tail (copy/select anywhere).
+        if alive and self._anchor >= 0:
+            endp = self._document_end_position()
+            if k == Qt.Key_Backspace and pos > self._anchor:
+                if pos != endp:
+                    self.moveCursor(QTextCursor.End)
+            elif k == Qt.Key_Delete and pos >= self._anchor and pos < endp:
+                self.moveCursor(QTextCursor.End)
+            elif (
+                ev.text()
+                and not (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+                and k not in (Qt.Key_Tab, Qt.Key_Backtab)
+                and pos >= self._anchor
+            ):
+                if pos != endp or cur.hasSelection():
+                    self.moveCursor(QTextCursor.End)
+
         super().keyPressEvent(ev)
 
     def wheelEvent(self, ev):
@@ -992,16 +1108,17 @@ class ShellPlainTextEdit(QTextEdit):
         if self._is_session_running_fn is not None and not self._is_session_running_fn():
             return
         cur = self.textCursor()
-        pos = cur.position()
-        raw = self._plain_text_range(self._anchor, pos)
+        # Always commit/remove the full input tail (anchor→doc end). Cursor-in-the-middle + QTextEdit wrap
+        # used to truncate or split what was sent vs what was deleted.
+        cur.setPosition(self._anchor)
+        cur.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
+        raw = cur.selectedText().replace("\u2029", "\n")
         if self._collapse_commit_whitespace:
-            line = " ".join(raw.replace("\u2029", "\n").split())
+            line = " ".join(raw.split())
         elif "\n" in raw:
             line = raw.split("\n", 1)[0]
         else:
             line = raw
-        # Collapsed send uses full typed span (anchor→cursor); split-line commit removes only the first segment.
-        end_input = pos if self._collapse_commit_whitespace else self._anchor + len(line)
         if line.strip():
             if not self._cmd_history or self._cmd_history[-1] != line:
                 self._cmd_history.append(line)
@@ -1011,7 +1128,7 @@ class ShellPlainTextEdit(QTextEdit):
             # Remove what we typed before sending: an interactive shell echoes the line from the PTY, so
             # keeping it here duplicates "ls" / blank lines and can interleave with async stdout if we send first.
             cur.setPosition(self._anchor)
-            cur.setPosition(end_input, QTextCursor.KeepAnchor)
+            cur.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
             cur.removeSelectedText()
             pos = self.textCursor().position()
             # If the shell did not end the previous line with a newline, insert one so the next prompt/output
@@ -1053,6 +1170,7 @@ class SessionWidget(QWidget):
         working_dir: Optional[str] = None,
         shell_profile: Optional[str] = None,
         path_extra_dirs: Optional[Sequence[str]] = None,
+        auto_reconnect: bool = False,
     ):
         super().__init__()
         self.session_label = session_label
@@ -1093,6 +1211,10 @@ class SessionWidget(QWidget):
         self._adb_complete_seq = 0
         self._remote_ui_tick = 0
         self._flush_paused = False
+        self._auto_reconnect_enabled = bool(auto_reconnect)
+        self._auto_reconnect_attempts = 0
+        self._auto_reconnect_max = 4
+        self._manual_shutdown = False
         self._tab_async_complete.connect(self._on_tab_async_complete)
         self._build_ui()
         self._start()
@@ -1210,7 +1332,7 @@ class SessionWidget(QWidget):
         return ""
 
     def _serial_force_kill_and_release(self) -> None:
-        """Kill miniterm QProcess and any stray ``python -m serial.tools.miniterm`` for the same COM (Windows)."""
+        """Kill miniterm; COM cleanup runs on a worker thread (bounded ``waitForFinished`` on the GUI thread)."""
         if not self._is_serial_session:
             return
         com = self._serial_com_port_from_command()
@@ -1222,20 +1344,65 @@ class SessionWidget(QWidget):
             except Exception:
                 serial_pid = None
         still_running = False
-        if st == QProcess.Running:
+        if st in (QProcess.Running, QProcess.Starting):
             self.proc.kill()
-            still_running = not self.proc.waitForFinished(12000)
-        elif st == QProcess.Starting:
-            self.proc.kill()
-            self.proc.waitForFinished(6000)
-        if serial_pid and still_running:
-            _win_taskkill_serial_tree(serial_pid)
-            time.sleep(0.35)
-        if sys.platform == "win32" and com:
-            _win_kill_python_miniterm_for_com(com)
-            time.sleep(0.75)
-        elif self._is_serial_session:
-            time.sleep(0.45)
+            still_running = not self.proc.waitForFinished(4000)
+        worker = _SerialPortReleaseThread(com, serial_pid, still_running, self)
+        worker.start()
+        worker.wait(25000)
+        worker.deleteLater()
+
+    def _serial_force_kill_and_release_async(self, on_released: Callable[[], None]) -> None:
+        """Restart path: avoid long ``waitForFinished`` / sleeps on the GUI thread; ``on_released`` runs after COM cleanup."""
+        if not self._is_serial_session:
+            QTimer.singleShot(0, on_released)
+            return
+        com = self._serial_com_port_from_command()
+        done = {"ok": False}
+
+        def finish(timer: Optional[QTimer], still_running: bool) -> None:
+            if done["ok"]:
+                return
+            done["ok"] = True
+            if timer is not None:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+            try:
+                self.proc.finished.disconnect(on_proc_finished)
+            except Exception:
+                pass
+            serial_pid: Optional[int] = None
+            try:
+                if self.proc.state() == QProcess.Running:
+                    serial_pid = int(self.proc.processId())
+            except Exception:
+                serial_pid = None
+            worker = _SerialPortReleaseThread(com, serial_pid, still_running, self)
+
+            def _after() -> None:
+                worker.deleteLater()
+                on_released()
+
+            worker.finished_ok.connect(_after)
+            worker.start()
+
+        st = self.proc.state()
+        if st == QProcess.NotRunning:
+            finish(None, False)
+            return
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+
+        def on_proc_finished() -> None:
+            finish(timer, False)
+
+        timer.timeout.connect(lambda: finish(timer, True))
+        self.proc.finished.connect(on_proc_finished)
+        self.proc.kill()
+        timer.start(4000)
 
     def _serial_maybe_retry_on_text(self, raw: str) -> None:
         """If miniterm reports the COM port is busy, tear down and reopen (limited retries)."""
@@ -1263,17 +1430,10 @@ class SessionWidget(QWidget):
         if not self._is_serial_session:
             return
         if self._serial_auto_retries_used >= 2:
-            self._append_plain_ui(
-                "\n[serial] Port is still busy after automatic retries. Close any other app using this COM "
-                "port, unplug/replug the USB adapter, or open Device Manager → Ports (COM & LPT) → your "
-                "adapter → Disable, wait a few seconds, Enable, then try a new serial tab.\n"
-            )
+            self._append_plain_ui("\n[serial] Port still busy after 2 retries.\n")
             return
         self._serial_auto_retries_used += 1
-        self._append_plain_ui(
-            f"\n[serial] Port busy or access denied — stopping serial console and retrying "
-            f"({self._serial_auto_retries_used}/2)…\n"
-        )
+        self._append_plain_ui(f"\n[serial] Retrying ({self._serial_auto_retries_used}/2)…\n")
         self._disconnect_proc_signals()
         self._stdout_pending.clear()
         self._stderr_pending.clear()
@@ -1282,10 +1442,10 @@ class SessionWidget(QWidget):
         self._stdout_drain_scheduled = False
         self._stderr_drain_scheduled = False
 
-        self._serial_force_kill_and_release()
-        # Do not run Disable/Enable-PnpDevice here: it blocks the UI thread for a long time and can leave
-        # the COM device stuck disabled. Process kill + delay above is enough for stale miniterm locks.
+        # Kill + COM release off the GUI thread where possible; then reconnect and reopen miniterm.
+        self._serial_force_kill_and_release_async(self._restart_serial_session_after_release)
 
+    def _restart_serial_session_after_release(self) -> None:
         self._ansi.reset()
         self._trim_first_pty_chunk = bool(self._banner)
         self._connect_proc_signals()
@@ -1338,12 +1498,6 @@ class SessionWidget(QWidget):
                 self.output.document().setMaximumBlockCount(6000)
             except Exception:
                 pass
-            # One logical command line stays on one row (horizontal scroll); wrap was splitting tokens visually.
-            self.output.setLineWrapMode(QTextEdit.NoWrap)
-            self.output.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-            _to = QTextOption(self.output.document().defaultTextOption())
-            _to.setWrapMode(QTextOption.NoWrap)
-            self.output.document().setDefaultTextOption(_to)
         self._session_footer = QLabel()
         self._session_footer.setObjectName("TerminalSessionFooter")
         self._session_footer.setFont(QFont("Consolas", 10))
@@ -1378,6 +1532,7 @@ class SessionWidget(QWidget):
     def _connect_proc_signals(self) -> None:
         self.proc.readyReadStandardOutput.connect(self._read_stdout)
         self.proc.readyReadStandardError.connect(self._read_stderr)
+        self.proc.started.connect(self._on_proc_started)
         self.proc.finished.connect(self._on_proc_finished)
         self.proc.errorOccurred.connect(self._on_proc_error)
 
@@ -1385,6 +1540,7 @@ class SessionWidget(QWidget):
         for sig in (
             self.proc.readyReadStandardOutput,
             self.proc.readyReadStandardError,
+            self.proc.started,
             self.proc.finished,
             self.proc.errorOccurred,
         ):
@@ -1731,6 +1887,7 @@ class SessionWidget(QWidget):
         On normal tab close, the kill is fire-and-forget. On application exit, pass
         ``wait_for_process=False`` so the window closes immediately (avoids Windows socket noise).
         """
+        self._manual_shutdown = True
         if self._is_serial_session:
             self._disconnect_proc_signals()
             self._serial_force_kill_and_release()
@@ -1742,6 +1899,49 @@ class SessionWidget(QWidget):
             wtime = 800 if wait_for_process else 400
             self.proc.waitForFinished(wtime)
         self._close_log()
+
+    def reconnect_session(self) -> None:
+        """Reconnect this tab with the same command/profile after a disconnect/power-cycle."""
+        self._manual_shutdown = False
+        self._auto_reconnect_attempts = 0
+        self._disconnect_proc_signals()
+        self._stdout_pending.clear()
+        self._stderr_pending.clear()
+        self._pending_chunks.clear()
+        self._flush_timer.stop()
+        self._stdout_drain_scheduled = False
+        self._stderr_drain_scheduled = False
+        self._ansi.reset()
+        self._trim_first_pty_chunk = bool(self._banner)
+        if self.proc.state() == QProcess.Running:
+            self.proc.kill()
+            self.proc.waitForFinished(1200)
+        if self._is_serial_session:
+            self._serial_auto_retries_used = 0
+            self._serial_force_kill_and_release()
+            self._serial_start_monotonic = time.monotonic()
+        self._connect_proc_signals()
+        self._append_plain_ui("\n[reconnecting session...]\n")
+        self._write_log("\n[reconnecting session...]\n")
+        self.proc.start(self.command[0], self.command[1:])
+        self._update_session_footer()
+
+    def _schedule_auto_reconnect(self) -> None:
+        if not self._auto_reconnect_enabled or self._manual_shutdown:
+            return
+        if self._auto_reconnect_attempts >= self._auto_reconnect_max:
+            self._append_plain_ui("\n[auto-reconnect] Max retries reached. Use tab menu -> Reconnect.\n")
+            return
+        self._auto_reconnect_attempts += 1
+        delay_ms = min(10000, 1200 * self._auto_reconnect_attempts)
+        self._append_plain_ui(
+            f"\n[auto-reconnect] Attempt {self._auto_reconnect_attempts}/{self._auto_reconnect_max} in {delay_ms // 1000}s...\n"
+        )
+        QTimer.singleShot(delay_ms, self.reconnect_session)
+
+    def _on_proc_started(self) -> None:
+        self._manual_shutdown = False
+        self._auto_reconnect_attempts = 0
 
     def _flush_pending_streams(self) -> None:
         """Drain chunked stdout/stderr when the process ends (no further readyRead)."""
@@ -1760,21 +1960,25 @@ class SessionWidget(QWidget):
     def _on_proc_finished(self):
         self._flush_pending_streams()
         self._ansi.reset()
-        self._append_plain_ui("\n[session terminated]\n")
-        self._write_log("\n[session terminated]\n")
+        self._append_plain_ui("\n[session terminated — right-click tab -> Reconnect]\n")
+        self._write_log("\n[session terminated — right-click tab -> Reconnect]\n")
         self._write_log(f"[full log path] {self._log_path}\n")
         if hasattr(self, "_session_footer"):
             self._session_footer.setText(f"Session · {self.session_label} — ended")
         self._close_log()
+        self._schedule_auto_reconnect()
 
     def _on_proc_error(self, _error) -> None:
         err = (self.proc.errorString() or "").strip()
-        cmd = " ".join(self.command)
         if not err:
             err = "Process failed to start."
+        if self._is_serial_session:
+            self._append_plain_ui(f"\n{err}\n")
+            if self._serial_recoverable_open_error(err):
+                self._schedule_serial_restart()
+            return
+        cmd = " ".join(self.command)
         self._append(f"\n[start error] {err}\nCommand: {cmd}\n")
-        if self._is_serial_session and self._serial_recoverable_open_error(err):
-            self._schedule_serial_restart()
 
     def _update_session_footer(self) -> None:
         if not hasattr(self, "_session_footer"):
@@ -1806,11 +2010,6 @@ class SessionWidget(QWidget):
     def _send_line(self, line: str) -> None:
         if self.proc.state() != QProcess.Running:
             return
-        # Empty Enter on serial: one visual newline so the next UART chunk does not glue to the prompt.
-        # SSH/ADB: do not inject — the PTY echoes line discipline; an extra \\n here stacked with echo looked like
-        # blank line / input / blank line per Enter.
-        if self._is_serial_session and not (line or "").strip():
-            self._append_plain_ui("\n")
         stripped = (line or "").strip().lower()
         if self._shell_profile in ("cmd", "powershell") and stripped in ("python", "py", "python.exe"):
             self._python_repl_mode = True
@@ -1974,8 +2173,8 @@ class SessionWidget(QWidget):
             plain = normalize_remote_pty_plain_text(plain)
             plain = ensure_remote_pty_visual_line_breaks(self._tail_cache, plain)
             plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
-            # Tame stacked blank lines from PTY + our glue (keeps at most one empty line between content).
-            plain = re.sub(r"\n{3,}", "\n\n", plain)
+            # Collapse triple+ blank runs (extra gaps after Enter / prompt glue).
+            plain = re.sub(r"\n{3,}", "\n", plain)
             self._write_log(plain)
             self._tail_cache = (self._tail_cache + plain)[-32768:]
             self._pending_chunks.append(plain)
@@ -2659,10 +2858,33 @@ class TerminalTab(QWidget):
     def _open_bookmark(self, bm: dict) -> None:
         k = bm.get("kind")
         if k == "local_cmd":
-            self._open_local_cmd()
+            cmd_exe = os.environ.get("COMSPEC", "cmd.exe")
+            self.add_session(
+                bookmark_session_tab_title(bm),
+                [cmd_exe, "/K", "doskey ls=dir"],
+                working_dir=os.getcwd(),
+                shell_profile="cmd",
+                path_extra_dirs=self._tool_bin_dirs_for_path(),
+            )
             return
         if k == "local_pwsh":
-            self._open_local_powershell()
+            sys_root = os.environ.get("SystemRoot", r"C:\Windows")
+            ps = Path(sys_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+            ps_exe = str(ps) if ps.is_file() else "powershell.exe"
+            self.add_session(
+                bookmark_session_tab_title(bm),
+                [
+                    ps_exe,
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-NoExit",
+                ],
+                working_dir=os.getcwd(),
+                shell_profile="powershell",
+                path_extra_dirs=self._tool_bin_dirs_for_path(),
+            )
             return
         if k == "adb":
             serial = (bm.get("adb_serial") or "").strip()
@@ -2671,7 +2893,7 @@ class TerminalTab(QWidget):
                 return
             adb = self.get_adb_path()
             cmd = adb_interactive_shell_command(adb, serial)
-            label = (bm.get("adb_label") or "").strip() or f"{friendly_name_for_serial(adb, serial)} · {serial}"
+            label = bookmark_session_tab_title(bm)
             self.add_session(label, cmd, banner=_adb_terminal_banner(adb, serial, label))
             return
         if k == "ssh":
@@ -2698,7 +2920,7 @@ class TerminalTab(QWidget):
                 ssh_password=bm.get("ssh_password", "") or "",
             )
             self.add_session(
-                self._ssh_tab_title(profile),
+                bookmark_session_tab_title(bm),
                 ssh_command_args(profile),
                 path_extra_dirs=self._tool_bin_dirs_for_path(),
             )
@@ -2718,7 +2940,7 @@ class TerminalTab(QWidget):
             port = bm.get("serial_port") or self.get_default_serial_port()
             baud = bm.get("serial_baud") or self.get_default_serial_baud()
             cmd = [sys.executable, "-m", "serial.tools.miniterm", str(port), str(baud)]
-            self.add_session(f"Serial console · {port}", cmd)
+            self.add_session(bookmark_session_tab_title(bm), cmd)
 
     def _open_local_cmd(self) -> None:
         # Native CMD behavior; keep command parsing/execution identical to real cmd.exe.
@@ -2825,6 +3047,9 @@ class TerminalTab(QWidget):
         a_left = m.addAction("Close to the left")
         a_left.setToolTip("Close every tab to the left of this one")
         m.addSeparator()
+        a_reconnect = m.addAction("Reconnect")
+        a_reconnect.setToolTip("Restart this session with the same command")
+        m.addSeparator()
         a_font_up = m.addAction("Increase font size")
         a_font_up.setToolTip("Larger text (Ctrl++ or Ctrl+mouse wheel)")
         a_font_down = m.addAction("Decrease font size")
@@ -2842,6 +3067,10 @@ class TerminalTab(QWidget):
             self._close_tabs_to_the_right_of(idx)
         elif chosen == a_left:
             self._close_tabs_to_the_left_of(idx)
+        elif chosen == a_reconnect:
+            w = self.tabs.widget(idx)
+            if isinstance(w, SessionWidget):
+                w.reconnect_session()
         elif chosen in (a_font_up, a_font_down, a_font_reset):
             w = self.tabs.widget(idx)
             if isinstance(w, SessionWidget):
@@ -2958,6 +3187,7 @@ class TerminalTab(QWidget):
             working_dir=working_dir,
             shell_profile=shell_profile,
             path_extra_dirs=path_extra_dirs,
+            auto_reconnect=bool(getattr(self.config, "auto_reconnect_terminal", True)),
         )
         tab_icon = QIcon()
         if widget._is_adb_shell:

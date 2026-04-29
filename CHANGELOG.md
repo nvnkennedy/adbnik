@@ -4,6 +4,78 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.0.0] - 2026-04-29
+
+### Added
+
+- **Auto-reconnect controls (core):**
+  - Terminal sessions support bounded auto-reconnect with backoff after unexpected disconnect.
+  - Screen Control supports bounded auto-reconnect when scrcpy drops unexpectedly.
+  - Explorer remote sessions support bounded auto-reconnect attempts after refresh/connect errors.
+- **Command palette:** `Ctrl+Shift+P` quick-action launcher for common navigation/reconnect actions.
+- **Session health dialog:** quick runtime view of terminal/screen/explorer session health from the command palette.
+
+### Changed
+
+- **Reconnect UX:** reconnect affordances are now available consistently across Terminal tabs, Screen Control, and Explorer remote sessions.
+- **Configuration:** new persisted reconnect toggles in config (`auto_reconnect_terminal`, `auto_reconnect_screen`, `auto_reconnect_explorer`).
+
+## [1.4.7] - 2026-04-23
+
+### Added
+
+- **Reconnect options:** Added explicit **Reconnect** actions for all three surfaces after power-off/cable drops:
+  - Terminal tabs: right-click session tab -> **Reconnect**
+  - Screen Control: **Reconnect** button next to Start/Stop
+  - File Explorer: **Reconnect remote session** button in the remote address bar
+
+### Changed
+
+- **Screen status:** Unexpected scrcpy process exits now show **Disconnected — click Reconnect** so recovery is obvious.
+- **Terminal status line:** Ended terminal tabs now print a reconnect hint (`right-click tab -> Reconnect`).
+
+## [1.4.6] - 2026-04-23
+
+### Changed
+
+- **Terminal input:** Typing and **Backspace** apply only at the **end** of the current input (after the prompt). You can still **move the caret and select** anywhere for **copy**. Wrapped lines are one logical line — the caret jumps to the true end before characters are inserted or the last character is erased.
+- **Enter / Shift+Enter:** Both **commit** the current line; Shift+Enter no longer inserts a second paragraph (that broke wrapped single-line input and commit/delete).
+
+### Fixed
+
+- **Commit / truncation:** Enter always commits and removes the **full** input tail (**anchor → document end**), not only to the caret — fixes truncated or split sends when QTextEdit wrapped the line or the caret was not at the end.
+
+## [1.4.5] - 2026-04-23
+
+### Fixed
+
+- **Terminal input:** Restored correct capture of the **full typed line** when text wraps in the pane — range slicing no longer drops the **last character**, and the input tail uses selection to the **document end** (fixes truncated sends and odd line splits after Enter).
+- **SSH / ADB output:** Fewer **stacked blank lines** between chunks (collapse 3+ newlines to one in the plain-text PTY path).
+- **Serial:** Opening failure shows **only the error text** (no command dump). Removed the extra blank line injected on **empty Enter**. Shortened automatic **retry** notices.
+
+## [1.4.4] - 2026-04-23
+
+### Changed
+
+- **Bookmarks:** Opening a bookmark from the sidebar sets the **session tab title** to **name · kind · details** (e.g. SSH host, ADB serial, serial COM @ baud, local CMD/PowerShell).
+
+### Fixed
+
+- **Terminal display:** Restored **wrap at pane width** for ADB/SSH/serial sessions (removed forced **NoWrap**) so long output and input **wrap within the window** instead of truncating until horizontal scroll.
+- **Serial / multiple COM ports:** Windows cleanup of orphan **miniterm** processes now matches the COM port with a **word boundary** (e.g. **COM3** no longer matches **COM30** / **COM31**), so closing or retrying one port does not kill sessions on nearby port numbers.
+
+## [1.4.3] - 2026-04-23
+
+### Changed
+
+- **Terminal / serial:** Automatic COM-port retry moves **taskkill / miniterm cleanup and pacing sleeps** to a **worker thread** so the UI thread is not blocked for seconds during reopen.
+- **Screen / scrcpy:** Automotive **UHID** inference uses a full **`adb shell getprop`** snapshot (with fallback to targeted props) plus extra keywords — fewer IVI head units misclassified as phones.
+
+### Fixed
+
+- **ADB / SSH / serial display:** Remote PTY and **serial** panes now lock **WordWrapMode** and **QTextOption** to **NoWrap** (not only `QTextEdit` line wrap), so long tokens are not split across visual rows; font zoom reapplies the same constraint.
+- **ADB workers:** Device list and stats threads deliver **`done`** via **QueuedConnection** so slots always run on the GUI thread.
+
 ## [1.4.2] - 2026-04-23
 
 ### Changed
