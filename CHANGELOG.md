@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.3.0] - 2026-04-29
+
+### Added
+
+- **SSH terminal resilience:** OpenSSH is invoked with **`ServerAliveInterval` / `ServerAliveCountMax`** so dropped networks tend to close the client process and trigger the same **auto-reconnect** path as other sessions (alongside existing **`TCPKeepAlive`**).
+- **Explorer remote resilience:** SFTP/FTP **auto-reconnect** allows more retry rounds (**6** attempts) like ADB-heavy usage patterns.
+
+### Changed
+
+- **Terminal colors (Moba-style):** **SSH, ADB shell, and serial** now use the same **ANSI → HTML** pipeline as **CMD/PowerShell**, so **foreground/256/truecolor** SGR codes render in the scrollback. Remote sessions reuse the **same flush budget** as local HTML output to limit UI stalls.
+- **Tab bar menus:** **Terminal** and **File Explorer** session tab context menus use **standard icons**; reconnect/tooltips reference **Ctrl+R** chords; terminal font reset matches the **default 11 pt** session font.
+- **Serial auto-reconnect:** When a serial session **ends**, the generic terminal auto-reconnect loop is **not** started (serial keeps its own recover/restart logic).
+- **Safer error lines:** Failed process start messages quote argv with **`shlex.quote`** so paths containing spaces are readable.
+- **SSH prompts with spaces:** ANSI reset-after-prompt detection allows **paths that contain spaces** before **`$` / `#`**.
+
 ## [2.2.0] - 2026-04-29
 
 ### Added

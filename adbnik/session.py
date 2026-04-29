@@ -80,6 +80,10 @@ def ssh_command_args(profile: SessionProfile) -> list:
         "ConnectTimeout=60",
         "-o",
         "TCPKeepAlive=yes",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
         "-p",
         str(port),
     ]
@@ -89,4 +93,5 @@ def ssh_command_args(profile: SessionProfile) -> list:
         placeholder = "user@_adbnik_missing_host.invalid"
         return [*common, placeholder]
     target = f"{user}@{host}" if user else host
+    # ``target`` is one argv element — embedded spaces are preserved by ``QProcess`` (no shell split).
     return [*common, target]

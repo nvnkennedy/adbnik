@@ -2226,7 +2226,7 @@ class ExplorerSessionPage(QWidget):
         self._remote_refresh_thread: Optional[_RemoteListThread] = None
         self._remote_refresh_pending: bool = False
         self._remote_auto_reconnect_attempts: int = 0
-        self._remote_auto_reconnect_max: int = 3
+        self._remote_auto_reconnect_max: int = 6
         self._last_active_side: str = "local"
         self._local_history: List[str] = []
         self._local_root_map: Dict[str, str] = {}
@@ -5917,20 +5917,21 @@ class FileExplorerTab(QWidget):
         idx = tb.tabAt(pos)
         if idx < 0:
             return
+        st = self.style()
         m = QMenu(self)
-        a_close = m.addAction("Close")
+        a_close = m.addAction(st.standardIcon(QStyle.SP_TitleBarCloseButton), "Close")
         a_close.setToolTip("Close this explorer session")
-        a_others = m.addAction("Close others")
+        a_others = m.addAction(st.standardIcon(QStyle.SP_DialogCancelButton), "Close others")
         a_others.setToolTip("Close all explorer tabs except this one")
-        a_right = m.addAction("Close to the right")
+        a_right = m.addAction(st.standardIcon(QStyle.SP_ArrowForward), "Close to the right")
         a_right.setToolTip("Close every tab to the right of this one")
-        a_left = m.addAction("Close to the left")
+        a_left = m.addAction(st.standardIcon(QStyle.SP_ArrowBack), "Close to the left")
         a_left.setToolTip("Close every tab to the left of this one")
-        a_all = m.addAction("Close all")
+        a_all = m.addAction(st.standardIcon(QStyle.SP_TrashIcon), "Close all")
         a_all.setToolTip("Close all explorer session tabs")
         m.addSeparator()
-        a_reconnect = m.addAction("Reconnect")
-        a_reconnect.setToolTip("Reconnect the remote for this session (Ctrl+R)")
+        a_reconnect = m.addAction(st.standardIcon(QStyle.SP_BrowserReload), "Reconnect")
+        a_reconnect.setToolTip("Reconnect the remote for this session (Ctrl+R or Ctrl+Shift+R)")
         chosen = m.exec_(tb.mapToGlobal(pos))
         if chosen == a_close:
             self._close_explorer_tab_at(idx)

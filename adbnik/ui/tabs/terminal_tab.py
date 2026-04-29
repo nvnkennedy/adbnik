@@ -47,8 +47,6 @@ from ..ansi_html import (
     ensure_remote_pty_visual_line_breaks,
     normalize_remote_pty_plain_text,
     preprocess_escape_noise,
-    preprocess_serial_stream,
-    strip_ansi_for_display,
 )
 from ..combo_utils import ExpandAllComboBox
 from ..icon_utils import (
@@ -62,9 +60,7 @@ from ..icon_utils import (
 
 # SSH/ADB use plain QTextCursor.insertText (not insertHtml); larger cap, still bounded per timer tick.
 # Smaller chunks + slightly faster timer yield smoother tab switches under heavy streams.
-_REMOTE_PLAIN_FLUSH_CAP = 128 * 1024
 _LOCAL_HTML_FLUSH_CAP = 96 * 1024
-_SERIAL_TEXT_FLUSH_CAP = 192 * 1024
 _SERIAL_MINITERM_BANNER_RE = re.compile(
     r"(?ms)^---[^\n]*(?:Miniterm|miniterm)[^\n]*\r?\n|"
     r"^---[^\n]*Quit:\s*Ctrl[^\n]*\r?\n|"
@@ -1966,7 +1962,8 @@ class SessionWidget(QWidget):
         if hasattr(self, "_session_footer"):
             self._session_footer.setText(f"Session · {self.session_label} — ended")
         self._close_log()
-        self._schedule_auto_reconnect()
+        if not self._is_serial_session:
+            self._schedule_auto_reconnect()
 
     def _on_proc_error(self, _error) -> None:
         err = (self.proc.errorString() or "").strip()
@@ -1977,7 +1974,7 @@ class SessionWidget(QWidget):
             if self._serial_recoverable_open_error(err):
                 self._schedule_serial_restart()
             return
-        cmd = " ".join(self.command)
+        cmd = " ".join(shlex.quote(str(x)) for x in self.command)
         self._append(f"\n[start error] {err}\nCommand: {cmd}\n")
 
     def _update_session_footer(self) -> None:
@@ -2138,7 +2135,7 @@ class SessionWidget(QWidget):
         if self._is_serial_session:
             self._serial_maybe_retry_on_text(data)
         if self._is_serial_session:
-            data = preprocess_serial_stream(data)
+            data = preprocess_escape_noise(data)
             data = _filter_serial_miniterm_banner(data)
         else:
             # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
@@ -2157,27 +2154,31 @@ class SessionWidget(QWidget):
         elif self._shell_profile in ("cmd", "powershell") and not self._python_repl_mode:
             data = re.sub(r"\n[ \t]*\n+", "\n", data)
             data = re.sub(r"\n{2,}", "\n", data)
-        # Serial: plain text only — avoids AnsiToHtmlConverter choking on partial UART escapes.
+        # Serial + SSH + ADB: same ANSI → HTML path as local shells (Moba-style colors). Flush caps keep UI responsive.
         if self._is_serial_session:
-            self._write_log(data)
-            self._tail_cache = (self._tail_cache + data)[-32768:]
-            self._pending_chunks.append(data)
+            html_frag, plain_frag = self._ansi.feed(data)
+            if not html_frag and not plain_frag:
+                return
+            pl = plain_frag or ""
+            self._write_log(pl)
+            if pl:
+                self._tail_cache = (self._tail_cache + pl)[-32768:]
+            self._pending_chunks.append(html_frag)
             self._arm_flush_timer()
             return
-        # SSH / ADB: QTextCursor.insertText + stripped ANSI (Moba-style: responsive under huge logs).
-        # insertHtml/ANSI-to-HTML cannot keep real-time UI with continuous slog2info-style output.
         if self._is_remote_pty_shell:
-            plain = strip_ansi_for_display(data)
-            if not plain:
+            data = normalize_remote_pty_plain_text(data)
+            data = ensure_remote_pty_visual_line_breaks(self._tail_cache, data)
+            data = re.sub(r"\n{6,}", "\n\n\n\n\n", data)
+            data = re.sub(r"\n{3,}", "\n", data)
+            html_frag, plain_frag = self._ansi.feed(data)
+            if not html_frag and not plain_frag:
                 return
-            plain = normalize_remote_pty_plain_text(plain)
-            plain = ensure_remote_pty_visual_line_breaks(self._tail_cache, plain)
-            plain = re.sub(r"\n{6,}", "\n\n\n\n\n", plain)
-            # Collapse triple+ blank runs (extra gaps after Enter / prompt glue).
-            plain = re.sub(r"\n{3,}", "\n", plain)
-            self._write_log(plain)
-            self._tail_cache = (self._tail_cache + plain)[-32768:]
-            self._pending_chunks.append(plain)
+            pl = plain_frag or ""
+            self._write_log(pl)
+            if pl:
+                self._tail_cache = (self._tail_cache + pl)[-32768:]
+            self._pending_chunks.append(html_frag)
             self._arm_flush_timer()
             return
         html_frag, plain_frag = self._ansi.feed(data)
@@ -2191,7 +2192,7 @@ class SessionWidget(QWidget):
 
     def _maybe_reset_ansi_after_prompt(self) -> None:
         """If the last line looks like a shell prompt, reset SGR state so the next line uses default colors."""
-        if self._is_serial_session or self._is_remote_pty_shell:
+        if self._is_serial_session:
             return
         tail = (self._tail_cache or "")[-4096:]
         last = ""
@@ -2204,18 +2205,13 @@ class SessionWidget(QWidget):
         s = last.strip()
         if self._is_adb_shell and re.search(r":(/[^ ]*)\s*[$#]\s*$", s):
             self._ansi.reset()
-        elif self._is_ssh_session and re.search(r"@[^:]+:\S+\s+[$#>]+\s*$", s):
+        elif self._is_ssh_session and re.search(r"@[^:]+:.+\s+[$#>]+\s*$", s):
             self._ansi.reset()
 
     def _flush_pending_output(self) -> None:
         if not self._pending_chunks:
             return
-        if self._is_serial_session:
-            cap = _SERIAL_TEXT_FLUSH_CAP
-        elif self._is_remote_pty_shell:
-            cap = _REMOTE_PLAIN_FLUSH_CAP
-        else:
-            cap = _LOCAL_HTML_FLUSH_CAP
+        cap = _LOCAL_HTML_FLUSH_CAP
         parts: List[str] = []
         total = 0
         for ch in self._pending_chunks:
@@ -2230,17 +2226,12 @@ class SessionWidget(QWidget):
         self.output.setUpdatesEnabled(False)
         try:
             if self._is_serial_session:
-                self.output.append_plain_fragment(text)
-                self._sync_python_repl_mode()
+                self._append_output_html(text, ensure_visible=True)
             elif self._is_remote_pty_shell:
                 self._remote_ui_tick += 1
                 backlog = self._pending_flush_backlog()
                 every = 24 if backlog > 500_000 else 14
-                self.output.append_stream_plain(
-                    text,
-                    ensure_visible=(self._remote_ui_tick % every == 0),
-                )
-                self._sync_python_repl_mode()
+                self._append_output_html(text, ensure_visible=(self._remote_ui_tick % every == 0))
             else:
                 self._append_output_html(text)
         finally:
@@ -3046,25 +3037,26 @@ class TerminalTab(QWidget):
         idx = tb.tabAt(pos)
         if idx < 0:
             return
+        st = self.style()
         m = QMenu(self)
-        a_close = m.addAction("Close")
+        a_close = m.addAction(st.standardIcon(QStyle.SP_TitleBarCloseButton), "Close")
         a_close.setToolTip("Close this tab")
-        a_others = m.addAction("Close others")
+        a_others = m.addAction(st.standardIcon(QStyle.SP_DialogCancelButton), "Close others")
         a_others.setToolTip("Close all tabs except this one")
-        a_right = m.addAction("Close to the right")
+        a_right = m.addAction(st.standardIcon(QStyle.SP_ArrowForward), "Close to the right")
         a_right.setToolTip("Close every tab to the right of this one")
-        a_left = m.addAction("Close to the left")
+        a_left = m.addAction(st.standardIcon(QStyle.SP_ArrowBack), "Close to the left")
         a_left.setToolTip("Close every tab to the left of this one")
         m.addSeparator()
-        a_reconnect = m.addAction("Reconnect")
-        a_reconnect.setToolTip("Restart this session with the same command")
+        a_reconnect = m.addAction(st.standardIcon(QStyle.SP_BrowserReload), "Reconnect")
+        a_reconnect.setToolTip("Restart this session (Ctrl+R or Ctrl+Shift+R)")
         m.addSeparator()
-        a_font_up = m.addAction("Increase font size")
+        a_font_up = m.addAction(st.standardIcon(QStyle.SP_ArrowUp), "Increase font size")
         a_font_up.setToolTip("Larger text (Ctrl++ or Ctrl+mouse wheel)")
-        a_font_down = m.addAction("Decrease font size")
+        a_font_down = m.addAction(st.standardIcon(QStyle.SP_ArrowDown), "Decrease font size")
         a_font_down.setToolTip("Smaller text (Ctrl+-)")
-        a_font_reset = m.addAction("Reset font size")
-        a_font_reset.setToolTip("Default 10 pt (Ctrl+0 in terminal)")
+        a_font_reset = m.addAction(st.standardIcon(QStyle.SP_DialogResetButton), "Reset font size")
+        a_font_reset.setToolTip("Default 11 pt (Ctrl+0 in terminal)")
         chosen = m.exec_(tb.mapToGlobal(pos))
         if chosen == a_close:
             self._remove_tab_at(idx)
@@ -3088,7 +3080,7 @@ class TerminalTab(QWidget):
                 elif chosen == a_font_down:
                     w.output.adjust_terminal_font_size(-1)
                 else:
-                    w.output.set_terminal_font_size(10)
+                    w.output.set_terminal_font_size(11)
 
     def _close_all_tabs_except(self, keep_index: int) -> None:
         for i in range(self.tabs.count() - 1, -1, -1):
