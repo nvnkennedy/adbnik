@@ -44,6 +44,7 @@ from PyQt5.QtWidgets import (
 from ...config import AppConfig
 from ..ansi_html import (
     AnsiToHtmlConverter,
+    bare_shell_gt_needs_trailing_space,
     bare_unix_prompt_needs_trailing_space,
     ensure_remote_pty_visual_line_breaks,
     get_prompt_palette,
@@ -1309,7 +1310,13 @@ class SessionWidget(QWidget):
             reset_fg_each_physical_line=(
                 self._is_ssh_session
                 or self._is_adb_shell
+                or self._is_serial_session
                 or self._shell_profile in ("cmd", "powershell")
+                or (
+                    self._shell_profile is None
+                    and not self._is_adb_shell
+                    and not self._is_ssh_session
+                )
             ),
         )
         self._welcome_is_reconnect = False
@@ -2218,7 +2225,7 @@ class SessionWidget(QWidget):
             if not raw.strip():
                 return
             bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r")).rstrip()
-            if bare_unix_prompt_needs_trailing_space(bare):
+            if bare_unix_prompt_needs_trailing_space(bare) or bare_shell_gt_needs_trailing_space(bare):
                 self._append_plain_ui(" ")
             return
 

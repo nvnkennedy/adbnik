@@ -497,6 +497,21 @@ def strip_sgr_sequences_for_prompt(line: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line)
 
 
+def bare_shell_gt_needs_trailing_space(bare_stripped: str) -> bool:
+    """Fish / bash prompts ending with ``>`` (not Windows ``C:\\`` or ``PS``)."""
+    s = (bare_stripped or "").rstrip("\r")
+    if not s.strip() or re.search(r">\s+$", s):
+        return False
+    t = s.rstrip()
+    if not t.endswith(">"):
+        return False
+    u = t.strip()
+    if re.match(r"^[A-Za-z]:", u) or re.match(r"^PS\s+", u):
+        return False
+    head = t[:-1].rstrip()
+    return bool(head and ("@" in head or "~" in head or ("/" in head and "://" not in head)))
+
+
 def bare_unix_prompt_needs_trailing_space(bare_stripped: str) -> bool:
     """True when the visible line ends at ``$`` / ``#`` / zsh ``%`` with no gap before typed input."""
     s = (bare_stripped or "").rstrip("\r")
@@ -549,9 +564,24 @@ def inject_prompt_gap_after_ps_gt(bare_line: str) -> str:
     return bare_line
 
 
+def inject_prompt_gap_after_unix_gt(bare_line: str) -> str:
+    """``user@h ~/src>ls`` (fish / bash) → space after ``>`` — not Windows ``C:\\`` prompts."""
+    s = bare_line.rstrip("\r")
+    if not s or re.match(r"^[A-Za-z]:", s.strip()):
+        return bare_line
+    j = s.rfind(">")
+    if j < 0 or j + 1 >= len(s) or s[j + 1] in " \t":
+        return bare_line
+    head = s[:j]
+    if not (("@" in head or "~" in head or ("/" in head and "://" not in head))):
+        return bare_line
+    return s[: j + 1] + " " + s[j + 1 :]
+
+
 def inject_shell_prompt_gaps(bare_line: str) -> str:
     """Apply unix / CMD / PS glue fixes so the caret can sit one space past the marker."""
     s = inject_prompt_gap_after_unix_marker(bare_line)
+    s = inject_prompt_gap_after_unix_gt(s)
     s = inject_prompt_gap_after_cmd_gt(s)
     s = inject_prompt_gap_after_ps_gt(s)
     return s
@@ -662,6 +692,19 @@ def style_prompt_line_html(
             f"{_tail_span(tail)}"
         )
 
+    # Fish / Git bash style: ``user@host ~/dir>`` tail (prompt ends with ``>``, not a Windows drive path)
+    if not re.match(r"^[A-Za-z]:", t2.strip()):
+        j_gt = t2.rfind(">")
+        if j_gt > 0:
+            head = t2[:j_gt].rstrip()
+            tail_gt = t2[j_gt + 1 :]
+            if head and ("@" in head or "~" in head or ("/" in head and "://" not in head)):
+                return (
+                    f'<span style="color:{pal.path}">{html.escape(head)}</span>'
+                    f'<span style="color:{pal.sig}">{html.escape(">")}</span>'
+                    f"{_tail_span(tail_gt)}"
+                )
+
     return None
 
 
@@ -704,10 +747,13 @@ class AnsiToHtmlConverter:
         self._prompt_highlight = bool(prompt_highlight)
         self._prompt_palette = prompt_palette or get_prompt_palette("local")
         self._reset_fg_each_physical_line = bool(reset_fg_each_physical_line)
+        # First non-prompt line after a styled prompt is often the echoed command (adb/bash).
+        self._expect_command_echo_line = False
 
     def reset(self) -> None:
         self._pending = ""
         self._state = _SgrState()
+        self._expect_command_echo_line = False
 
     def _apply_sgr(self, params: List[int]) -> None:
         i = 0
@@ -793,8 +839,23 @@ class AnsiToHtmlConverter:
                 ph = style_prompt_line_html(line, bare, palette=self._prompt_palette)
                 if ph:
                     html_parts.append(ph)
+                    if self._reset_fg_each_physical_line:
+                        self._expect_command_echo_line = True
                     continue
             sem = _semantic_fg_for_plain_line(line) if use_semantic else None
+            if (
+                self._reset_fg_each_physical_line
+                and self._expect_command_echo_line
+                and line.strip()
+            ):
+                if len(line) > 480:
+                    self._expect_command_echo_line = False
+                else:
+                    bare_chk = strip_sgr_sequences_for_prompt(line)
+                    if style_prompt_line_html(line, bare_chk, palette=self._prompt_palette) is None:
+                        if sem is None and use_semantic:
+                            sem = self._prompt_palette.typed_input
+                        self._expect_command_echo_line = False
             if sem is None and use_semantic:
                 sem = self._prompt_palette.line_output
             html_parts.append(f'<span style="{self._span_css(sem)}">{esc}</span>')

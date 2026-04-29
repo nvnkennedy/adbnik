@@ -37,7 +37,7 @@ def _windows_capture_apis():
     return tuple(apis)
 
 
-def list_camera_indices(max_probe: int = 8) -> List[int]:
+def list_camera_indices(max_probe: int = 6) -> List[int]:
     """Return indices where ``VideoCapture(i)`` opens (best-effort)."""
     if not _HAS_CV2:
         return []
@@ -114,7 +114,7 @@ class FrameGrabThread(QThread):
         self._running = True
         frame_period = 1.0 / self._fps
         next_deadline = time.perf_counter()
-        preview_max_w = 720
+        preview_max_w = 520
         while self._running:
             ok, frame = cap.read()
             if ok and frame is not None and np is not None:
@@ -181,3 +181,15 @@ def bgr_from_qimage(img: QImage):
     arr = np.frombuffer(buf, dtype=np.uint8).reshape((h, bpl))
     arr = arr[:, : w * 3].reshape(h, w, 3).copy()
     return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+
+
+class CameraIndexProbeThread(QThread):
+    """Enumerate USB cameras off the GUI thread (``list_camera_indices`` can block)."""
+
+    indices_ready = pyqtSignal(list)
+
+    def run(self) -> None:
+        if not _HAS_CV2:
+            self.indices_ready.emit([])
+            return
+        self.indices_ready.emit(list_camera_indices())

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import Callable, List, Optional, TYPE_CHECKING
 
 from PyQt5.QtCore import QEventLoop, QSize, Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QFont, QIcon, QImage, QPixmap
@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..camera_opencv import (
+    CameraIndexProbeThread,
     FrameGrabThread,
     OpenCvVideoRecorder,
     list_camera_indices,
@@ -79,6 +80,9 @@ class CameraTab(QWidget):
         self._recording = False
         self._paused = False
         self._last_record_path: Optional[str] = None
+        self._cam_probe: Optional[CameraIndexProbeThread] = None
+        self._last_preview_paint = 0.0
+        self._preview_interval_s = 1.0 / 22.0
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -211,7 +215,11 @@ class CameraTab(QWidget):
         self._footer.setMaximumHeight(52)
         root.addWidget(self._footer, 0)
 
-        self._refresh_devices()
+        if self._opencv_mode:
+            self._combo.addItem("(detecting cameras…)", None)
+            QTimer.singleShot(0, self._start_opencv_probe)
+        else:
+            self._refresh_devices()
         self._combo.currentIndexChanged.connect(self._on_device_changed)
         self._apply_button_states()
 
@@ -229,6 +237,25 @@ class CameraTab(QWidget):
         except OSError:
             pass
         return base
+
+    def _start_opencv_probe(self) -> None:
+        if self._cam_probe is not None and self._cam_probe.isRunning():
+            return
+        th = CameraIndexProbeThread()
+        th.indices_ready.connect(self._on_opencv_indices, Qt.QueuedConnection)
+        th.finished.connect(th.deleteLater)
+        self._cam_probe = th
+        th.start()
+
+    def _on_opencv_indices(self, ids: List[int]) -> None:
+        self._combo.blockSignals(True)
+        self._combo.clear()
+        if not ids:
+            self._combo.addItem("(no camera detected)", None)
+        else:
+            for i in ids:
+                self._combo.addItem(f"Camera {i}", i)
+        self._combo.blockSignals(False)
 
     def _pick_folder(self) -> None:
         start = (self._get_output_dir() or "").strip() or str(Path.home() / "Pictures")
@@ -451,7 +478,7 @@ class CameraTab(QWidget):
     def _start_cv_thread(self, index: int) -> None:
         self._stop_cv_thread()
         self._cv_index = index
-        th = FrameGrabThread(index, 640, 480, 30.0)
+        th = FrameGrabThread(index, 640, 480, 24.0)
         th.frame_ready.connect(self._on_cv_frame)
         th.bgr_ready.connect(self._on_cv_bgr_frame)
         th.failed.connect(self._on_cv_failed)
@@ -471,16 +498,30 @@ class CameraTab(QWidget):
         except Exception:
             pass
 
+    def _paint_preview_label(self) -> None:
+        if (
+            not self._opencv_mode
+            or not isinstance(self._view, QLabel)
+            or self._last_cv_frame is None
+            or self._last_cv_frame.isNull()
+        ):
+            return
+        pix = QPixmap.fromImage(self._last_cv_frame)
+        self._view.setPixmap(
+            pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
+        )
+
     def _on_cv_frame(self, img: object) -> None:
         if not isinstance(img, QImage):
             return
         self._last_cv_frame = img
         if not self._opencv_mode or not isinstance(self._view, QLabel):
             return
-        pix = QPixmap.fromImage(img)
-        self._view.setPixmap(
-            pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
-        )
+        now = time.monotonic()
+        if now - self._last_preview_paint < self._preview_interval_s:
+            return
+        self._last_preview_paint = now
+        self._paint_preview_label()
 
     def _on_cv_failed(self, msg: str) -> None:
         self._append_log(f"Camera: OpenCV error — {msg}")
@@ -698,7 +739,7 @@ class CameraTab(QWidget):
                 out = dest_dir / f"adbnik_video_{ts}.mp4"
                 try:
                     w, h = self._last_cv_frame.width(), self._last_cv_frame.height()
-                    self._cv_writer = OpenCvVideoRecorder(out, (w, h), 30.0)
+                    self._cv_writer = OpenCvVideoRecorder(out, (w, h), 24.0)
                     self._recording = True
                     if self._cv_thread is not None:
                         self._cv_thread.set_emit_bgr_for_record(True)
@@ -765,16 +806,7 @@ class CameraTab(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if (
-            self._opencv_mode
-            and self._last_cv_frame
-            and not self._last_cv_frame.isNull()
-            and isinstance(self._view, QLabel)
-        ):
-            pix = QPixmap.fromImage(self._last_cv_frame)
-            self._view.setPixmap(
-                pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
-            )
+        self._paint_preview_label()
 
     def shutdown(self, *, fast: bool = False) -> None:
         try:

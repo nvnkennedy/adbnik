@@ -2,6 +2,7 @@
 
 from adbnik.ui.ansi_html import (
     AnsiToHtmlConverter,
+    bare_shell_gt_needs_trailing_space,
     bare_unix_prompt_needs_trailing_space,
     ensure_remote_pty_visual_line_breaks,
     get_prompt_palette,
@@ -91,6 +92,31 @@ def test_bare_unix_prompt_needs_trailing_space_zsh():
 
 def test_inject_shell_prompt_gaps_zsh_glued():
     assert inject_shell_prompt_gaps("user@host:~%ls") == "user@host:~% ls"
+
+
+def test_inject_shell_prompt_gaps_fish_gt():
+    assert inject_shell_prompt_gaps("user@h ~/src>ls") == "user@h ~/src> ls"
+
+
+def test_bare_shell_gt_trailing_space():
+    assert bare_shell_gt_needs_trailing_space("user@h ~/w>") is True
+    assert bare_shell_gt_needs_trailing_space("user@h ~/w> ") is False
+    assert bare_shell_gt_needs_trailing_space("C:\\foo>") is False
+
+
+def test_command_echo_line_after_prompt_distinct_from_output():
+    """First plain line after a styled prompt → typed_input; next lines → line_output."""
+    pal = get_prompt_palette("adb")
+    c = AnsiToHtmlConverter(
+        prompt_highlight=True,
+        prompt_palette=pal,
+        reset_fg_each_physical_line=True,
+    )
+    html, plain = c.feed("vivo:/ $ \nls\nbin\n")
+    assert plain.strip()
+    assert pal.typed_input in html
+    assert pal.line_output in html
+    assert "ls" in html and "bin" in html
 
 
 def test_preprocess_prompt_injects_gap():
