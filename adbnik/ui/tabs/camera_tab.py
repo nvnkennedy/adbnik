@@ -5,14 +5,14 @@ from __future__ import annotations
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Optional, TYPE_CHECKING
+from typing import Callable, List, Optional, Tuple, TYPE_CHECKING
 
 from PyQt5.QtCore import QEventLoop, QSize, Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QFont, QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
-    QGroupBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -82,141 +82,164 @@ class CameraTab(QWidget):
         self._last_record_path: Optional[str] = None
         self._cam_probe: Optional[CameraIndexProbeThread] = None
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(12)
+        self.setAutoFillBackground(True)
+        try:
+            self.setAttribute(Qt.WA_StyledBackground, True)
+        except Exception:
+            pass
 
-        title_row = QHBoxLayout()
-        title = QLabel("Camera")
-        title.setObjectName("CameraTitleLabel")
-        f = QFont("Segoe UI", 14)
-        f.setWeight(QFont.DemiBold)
-        title.setFont(f)
-        title_row.addWidget(title)
-        title_row.addStretch()
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        top_strip = QHBoxLayout()
+        top_strip.setContentsMargins(12, 10, 12, 6)
+        top_strip.setSpacing(12)
         self._status = QLabel("Stopped")
         self._status.setObjectName("CameraStatusLabel")
-        title_row.addWidget(self._status)
-        root.addLayout(title_row)
-
-        top = QHBoxLayout()
+        stf = QFont("Segoe UI", 11)
+        self._status.setFont(stf)
+        top_strip.addWidget(self._status)
+        top_strip.addStretch()
+        dev_lbl = QLabel("Camera")
+        dev_lbl.setObjectName("CameraDeviceLabel")
+        top_strip.addWidget(dev_lbl)
         self._combo = QComboBox()
-        self._combo.setMinimumWidth(260)
+        self._combo.setMinimumWidth(280)
         self._combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        top.addWidget(QLabel("Device:"), 0)
-        top.addWidget(self._combo, 1)
-        root.addLayout(top)
+        top_strip.addWidget(self._combo, 1)
+        root.addLayout(top_strip)
 
-        st = self.style()
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
-
-        def mk_btn(text: str, icon: QIcon, tip: str, slot) -> QPushButton:
-            b = QPushButton(text)
-            b.setObjectName("CameraChromeBtn")
-            b.setIcon(icon)
-            b.setIconSize(QSize(18, 18))
-            b.setToolTip(tip)
-            b.setCursor(Qt.PointingHandCursor)
-            b.setAutoDefault(False)
-            b.setDefault(False)
-            b.clicked.connect(slot)
-            b.setMinimumHeight(40)
-            b.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-            return b
-
-        self._btn_start = mk_btn(
-            "Start", st.standardIcon(QStyle.SP_MediaPlay), "Start camera preview", self._on_start
-        )
-        self._btn_stop = mk_btn(
-            "Stop", st.standardIcon(QStyle.SP_MediaStop), "Stop camera", self._on_stop
-        )
-        self._btn_pause = mk_btn(
-            "Pause", st.standardIcon(QStyle.SP_MediaPause), "Pause preview", self._on_pause
-        )
-        self._btn_restart = mk_btn(
-            "Restart",
-            st.standardIcon(QStyle.SP_BrowserReload),
-            "Stop and start the selected camera",
-            self._on_restart,
-        )
-        self._btn_folder = mk_btn(
-            "Save folder",
-            st.standardIcon(QStyle.SP_DialogOpenButton),
-            "Choose folder for photos and videos",
-            self._pick_folder,
-        )
-        self._btn_photo = mk_btn(
-            "Photo",
-            st.standardIcon(QStyle.SP_DialogSaveButton),
-            "Save a snapshot (JPEG)",
-            self._on_photo,
-        )
-        self._btn_record = mk_btn(
-            "Record",
-            st.standardIcon(QStyle.SP_MediaPlay),
-            "Toggle MP4 recording",
-            self._on_toggle_record,
-        )
-        self._btn_record.setCheckable(True)
-
-        for b in (
-            self._btn_start,
-            self._btn_stop,
-            self._btn_pause,
-            self._btn_restart,
-            self._btn_folder,
-            self._btn_photo,
-            self._btn_record,
-        ):
-            btn_row.addWidget(b)
-        btn_row.addStretch()
-        root.addLayout(btn_row)
-
+        path_strip = QHBoxLayout()
+        path_strip.setContentsMargins(12, 0, 12, 8)
         self._path_label = QLabel(self._format_save_label())
         self._path_label.setWordWrap(True)
         self._path_label.setObjectName("CameraPathLabel")
-        root.addWidget(self._path_label)
+        path_strip.addWidget(self._path_label, 1)
+        root.addLayout(path_strip)
 
-        video_box = QGroupBox("Preview")
-        video_box.setObjectName("CameraPreviewGroup")
-        vb = QVBoxLayout(video_box)
-        vb.setContentsMargins(6, 12, 6, 6)
+        preview_panel = QWidget()
+        preview_panel.setObjectName("CameraPreviewPanel")
+        pv_layout = QVBoxLayout(preview_panel)
+        pv_layout.setContentsMargins(0, 0, 0, 0)
+        pv_layout.setSpacing(0)
 
         if self._opencv_mode:
             self._view = QLabel()
-            self._view.setMinimumSize(320, 180)
+            self._view.setMinimumSize(64, 48)
             self._view.setAlignment(Qt.AlignCenter)
             self._view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            self._view.setStyleSheet("background-color:#0f172a;border-radius:10px;")
             try:
                 self._view.setAttribute(Qt.WA_OpaquePaintEvent, True)
             except Exception:
                 pass
-            vb.addWidget(self._view, 1)
+            pv_layout.addWidget(self._view, 1)
         elif _QT_MULTIMEDIA:
             self._view = QVideoWidget()
-            self._view.setMinimumSize(320, 180)
+            self._view.setMinimumSize(64, 48)
             self._view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self._view.setAspectRatioMode(Qt.IgnoreAspectRatio)
-            self._view.setStyleSheet("background-color:#0f172a;border-radius:10px;")
-            vb.addWidget(self._view, 1)
+            pv_layout.addWidget(self._view, 1)
         else:
             self._view = QLabel(
                 "Install opencv-python-headless or use a PyQt5 build with Qt Multimedia."
             )
             self._view.setAlignment(Qt.AlignCenter)
-            vb.addWidget(self._view, 1)
+            pv_layout.addWidget(self._view, 1)
 
-        root.addWidget(video_box, 10)
+        root.addWidget(preview_panel, 1)
+
+        st = self.style()
+        controls = QFrame()
+        controls.setObjectName("CameraControlBar")
+        controls.setFrameShape(QFrame.NoFrame)
+        ctl_row = QHBoxLayout(controls)
+        ctl_row.setContentsMargins(10, 10, 10, 10)
+        ctl_row.setSpacing(8)
+
+        def mk_btn(text: str, icon: QIcon, tip: str, slot) -> QPushButton:
+            b = QPushButton(text)
+            b.setObjectName("CameraChromeBtn")
+            b.setIcon(icon)
+            b.setIconSize(QSize(20, 20))
+            b.setToolTip(tip)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setAutoDefault(False)
+            b.setDefault(False)
+            b.clicked.connect(slot)
+            b.setMinimumHeight(36)
+            b.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+            return b
+
+        self._btn_start = mk_btn(
+            "Start preview",
+            st.standardIcon(QStyle.SP_MediaPlay),
+            "Turn on the camera preview",
+            self._on_start,
+        )
+        self._btn_stop = mk_btn(
+            "Stop preview",
+            st.standardIcon(QStyle.SP_MediaStop),
+            "Turn off the camera preview",
+            self._on_stop,
+        )
+        self._btn_pause = mk_btn(
+            "Pause preview",
+            st.standardIcon(QStyle.SP_MediaPause),
+            "Pause or resume the preview stream",
+            self._on_pause,
+        )
+        self._btn_rec_start = mk_btn(
+            "Start video recording",
+            st.standardIcon(QStyle.SP_DialogSaveButton),
+            "Start recording video (MP4) to the save folder",
+            self._on_start_recording,
+        )
+        self._btn_rec_stop = mk_btn(
+            "Stop video recording",
+            st.standardIcon(QStyle.SP_MediaStop),
+            "Stop recording and finalize the MP4 file",
+            self._on_stop_recording,
+        )
+        self._btn_photo = mk_btn(
+            "Take photo",
+            st.standardIcon(QStyle.SP_FileDialogContentsView),
+            "Save a snapshot (JPEG) to the save folder",
+            self._on_photo,
+        )
+        self._btn_folder = mk_btn(
+            "Save folder…",
+            st.standardIcon(QStyle.SP_DialogOpenButton),
+            "Choose where photos and videos are saved",
+            self._pick_folder,
+        )
+        self._btn_restart = mk_btn(
+            "Restart camera",
+            st.standardIcon(QStyle.SP_BrowserReload),
+            "Stop and restart the selected camera",
+            self._on_restart,
+        )
+
+        for b in (
+            self._btn_start,
+            self._btn_stop,
+            self._btn_pause,
+            self._btn_rec_start,
+            self._btn_rec_stop,
+            self._btn_photo,
+            self._btn_folder,
+            self._btn_restart,
+        ):
+            ctl_row.addWidget(b)
+        ctl_row.addStretch()
+        root.addWidget(controls, 0)
 
         self._footer = QLabel(
-            "Photos/videos save to the folder above. Preview and recording use OpenCV (bundled) "
-            "for lower latency than Qt Multimedia alone."
+            "Photos and videos use the save folder above. OpenCV drives preview and recording for smooth capture."
         )
         self._footer.setWordWrap(True)
         self._footer.setObjectName("CameraFooterLabel")
-        self._footer.setMaximumHeight(52)
+        self._footer.setContentsMargins(12, 4, 12, 8)
         root.addWidget(self._footer, 0)
 
         if self._opencv_mode:
@@ -251,14 +274,29 @@ class CameraTab(QWidget):
         self._cam_probe = th
         th.start()
 
+    def _make_device_entries(self, ids: List[int]) -> List[Tuple[int, str]]:
+        if not ids:
+            return []
+        ordered = sorted(ids)
+        if _QT_MULTIMEDIA:
+            infos = QCameraInfo.availableCameras()
+            out: List[Tuple[int, str]] = []
+            for k, idx in enumerate(ordered):
+                if k < len(infos):
+                    out.append((idx, infos[k].description()))
+                else:
+                    out.append((idx, f"Camera ({idx})"))
+            return out
+        return [(idx, f"Camera ({idx})") for idx in ordered]
+
     def _on_opencv_indices(self, ids: List[int]) -> None:
         self._combo.blockSignals(True)
         self._combo.clear()
         if not ids:
             self._combo.addItem("(no camera detected)", None)
         else:
-            for i in ids:
-                self._combo.addItem(f"Camera {i}", i)
+            for idx, label in self._make_device_entries(ids):
+                self._combo.addItem(label, idx)
         self._combo.blockSignals(False)
 
     def _pick_folder(self) -> None:
@@ -278,8 +316,8 @@ class CameraTab(QWidget):
             if not ids:
                 self._combo.addItem("(no camera detected)", None)
             else:
-                for i in ids:
-                    self._combo.addItem(f"Camera {i}", i)
+                for idx, label in self._make_device_entries(ids):
+                    self._combo.addItem(label, idx)
             self._combo.blockSignals(False)
             return
         if not _QT_MULTIMEDIA:
@@ -362,12 +400,7 @@ class CameraTab(QWidget):
                 pass
             self._cv_writer = None
         self._recording = False
-        try:
-            self._btn_record.blockSignals(True)
-            self._btn_record.setChecked(False)
-            self._btn_record.blockSignals(False)
-        except Exception:
-            pass
+        self._apply_button_states()
         if path:
             pth = Path(str(path))
             if pth.is_file() and pth.stat().st_size > 0:
@@ -393,12 +426,7 @@ class CameraTab(QWidget):
         self._recorder = None
         self._recording = False
         self._last_record_path = None
-        try:
-            self._btn_record.blockSignals(True)
-            self._btn_record.setChecked(False)
-            self._btn_record.blockSignals(False)
-        except Exception:
-            pass
+        self._apply_button_states()
         try:
             rec.deleteLater()
         except Exception:
@@ -426,12 +454,7 @@ class CameraTab(QWidget):
             self._recorder = None
             self._recording = False
             self._last_record_path = None
-            try:
-                self._btn_record.blockSignals(True)
-                self._btn_record.setChecked(False)
-                self._btn_record.blockSignals(False)
-            except Exception:
-                pass
+            self._apply_button_states()
             try:
                 rec.deleteLater()
             except Exception:
@@ -453,12 +476,7 @@ class CameraTab(QWidget):
             return
         if self._recorder is None:
             self._recording = False
-            try:
-                self._btn_record.blockSignals(True)
-                self._btn_record.setChecked(False)
-                self._btn_record.blockSignals(False)
-            except Exception:
-                pass
+            self._apply_button_states()
             return
         rec = self._recorder
         path = self._last_record_path
@@ -482,7 +500,7 @@ class CameraTab(QWidget):
     def _start_cv_thread(self, index: int) -> None:
         self._stop_cv_thread()
         self._cv_index = index
-        th = FrameGrabThread(index, 640, 480, 24.0)
+        th = FrameGrabThread(index, 1920, 1080, 30.0)
         th.frame_ready.connect(self._on_cv_frame)
         th.bgr_ready.connect(self._on_cv_bgr_frame)
         th.failed.connect(self._on_cv_failed)
@@ -512,7 +530,7 @@ class CameraTab(QWidget):
             return
         pix = QPixmap.fromImage(self._last_cv_frame)
         self._view.setPixmap(
-            pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
+            pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         )
 
     def _on_cv_frame(self, img: object) -> None:
@@ -613,7 +631,7 @@ class CameraTab(QWidget):
 
                 opts = cam.supportedViewfinderSettings()
                 if opts:
-                    cap_px = 960
+                    cap_px = 1920
 
                     def area(s):
                         r = s.resolution()
@@ -625,7 +643,7 @@ class CameraTab(QWidget):
                     cam.setViewfinderSettings(best)
                 else:
                     vs = QCameraViewfinderSettings()
-                    vs.setResolution(QSize(960, 540))
+                    vs.setResolution(QSize(1280, 720))
                     cam.setViewfinderSettings(vs)
             except Exception:
                 pass
@@ -722,75 +740,74 @@ class CameraTab(QWidget):
         except Exception as exc:
             QMessageBox.warning(self, "Camera", str(exc))
 
-    def _on_toggle_record(self) -> None:
-        want = self._btn_record.isChecked()
+    def _on_start_recording(self) -> None:
+        if self._recording:
+            return
         if self._opencv_mode:
             if not self._preview_on or self._paused:
-                self._btn_record.setChecked(False)
                 QMessageBox.information(self, "Camera", "Start the camera before recording.")
                 return
-            if want:
-                if self._last_cv_frame is None or self._last_cv_frame.isNull():
-                    self._btn_record.setChecked(False)
-                    QMessageBox.information(self, "Camera", "Wait until preview shows a frame.")
-                    return
-                dest_dir = self._ensure_output_dir()
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                out = dest_dir / f"adbnik_video_{ts}.mp4"
-                try:
-                    w, h = self._last_cv_frame.width(), self._last_cv_frame.height()
-                    self._cv_writer = OpenCvVideoRecorder(out, (w, h), 24.0)
-                    self._recording = True
-                    if self._cv_thread is not None:
-                        self._cv_thread.set_emit_bgr_for_record(True)
-                    self._append_log(f"Camera: recording (OpenCV) → {out}")
-                    self._status.setText("Recording…")
-                except Exception as exc:
-                    self._btn_record.setChecked(False)
-                    self._append_log(f"Camera: record failed — {exc}")
-                    QMessageBox.warning(self, "Recording unavailable", str(exc))
-            else:
-                self._append_log("Camera: stopping recording…")
-                self._finalize_cv_writer(offer_open=True)
-                self._status.setText("Running")
+            if self._last_cv_frame is None or self._last_cv_frame.isNull():
+                QMessageBox.information(self, "Camera", "Wait until preview shows a frame.")
+                return
+            dest_dir = self._ensure_output_dir()
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out = dest_dir / f"adbnik_video_{ts}.mp4"
+            try:
+                w, h = self._last_cv_frame.width(), self._last_cv_frame.height()
+                self._cv_writer = OpenCvVideoRecorder(out, (w, h), 30.0)
+                self._recording = True
+                if self._cv_thread is not None:
+                    self._cv_thread.set_emit_bgr_for_record(True)
+                self._append_log(f"Camera: recording (OpenCV) → {out}")
+                self._status.setText("Recording…")
+            except Exception as exc:
+                self._append_log(f"Camera: record failed — {exc}")
+                QMessageBox.warning(self, "Recording unavailable", str(exc))
             self._apply_button_states()
             return
 
         if not _QT_MULTIMEDIA:
             return
         if self._camera is None:
-            self._btn_record.setChecked(False)
             QMessageBox.information(self, "Camera", "Start the camera before recording.")
             return
         if self._paused:
-            self._btn_record.setChecked(False)
             QMessageBox.information(self, "Camera", "Resume preview (Start) before recording.")
             return
-        if want:
-            dest_dir = self._ensure_output_dir()
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            out = dest_dir / f"adbnik_video_{ts}.mp4"
-            try:
-                rec = QMediaRecorder(self._camera)
-                rec.setOutputLocation(QUrl.fromLocalFile(str(out.resolve())))
-                rec.record()
-                self._recorder = rec
-                self._recording = True
-                self._last_record_path = str(out.resolve())
-                self._append_log(f"Camera: recording → {out}")
-                self._status.setText("Recording…")
-            except Exception as exc:
-                self._btn_record.setChecked(False)
-                self._append_log(f"Camera: record failed — {exc}")
-                QMessageBox.warning(
-                    self,
-                    "Recording unavailable",
-                    f"{exc}\n\nTry another camera driver or install OS codecs.",
-                )
-        else:
+        dest_dir = self._ensure_output_dir()
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out = dest_dir / f"adbnik_video_{ts}.mp4"
+        try:
+            rec = QMediaRecorder(self._camera)
+            rec.setOutputLocation(QUrl.fromLocalFile(str(out.resolve())))
+            rec.record()
+            self._recorder = rec
+            self._recording = True
+            self._last_record_path = str(out.resolve())
+            self._append_log(f"Camera: recording → {out}")
+            self._status.setText("Recording…")
+        except Exception as exc:
+            self._append_log(f"Camera: record failed — {exc}")
+            QMessageBox.warning(
+                self,
+                "Recording unavailable",
+                f"{exc}\n\nTry another camera driver or install OS codecs.",
+            )
+        self._apply_button_states()
+
+    def _on_stop_recording(self) -> None:
+        if not self._recording:
+            return
+        if self._opencv_mode:
             self._append_log("Camera: stopping recording…")
-            self._stop_recording_safe()
-            self._status.setText("Running" if self._camera and not self._paused else "Paused")
+            self._finalize_cv_writer(offer_open=True)
+            self._status.setText("Running")
+            self._apply_button_states()
+            return
+        self._append_log("Camera: stopping recording…")
+        self._stop_recording_safe()
+        self._status.setText("Running" if self._camera and not self._paused else "Paused")
         self._apply_button_states()
 
     def _apply_button_states(self) -> None:
@@ -802,7 +819,8 @@ class CameraTab(QWidget):
         self._btn_pause.setEnabled(active)
         self._btn_restart.setEnabled(True)
         self._btn_photo.setEnabled(running or paused)
-        self._btn_record.setEnabled(running)
+        self._btn_rec_start.setEnabled(running and not self._recording)
+        self._btn_rec_stop.setEnabled(self._recording)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

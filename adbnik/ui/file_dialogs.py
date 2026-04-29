@@ -8,6 +8,8 @@ from typing import Optional, Tuple
 
 from PyQt5.QtWidgets import QFileDialog, QWidget
 
+_DIR_OPTIONS = QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+
 
 def _normalize_initial_path(directory: str) -> str:
     """Turn optional filename or relative path into an absolute path Qt shows correctly."""
@@ -44,13 +46,7 @@ def get_save_filename(
 
 
 def get_existing_directory(parent: Optional[QWidget], caption: str, directory: str = "") -> str:
-    """Folder picker: Qt non-native dialog is typically faster than the shell dialog on Windows."""
-    dlg = QFileDialog(parent, caption, _normalize_initial_path(directory))
-    dlg.setFileMode(QFileDialog.Directory)
-    dlg.setOption(QFileDialog.ShowDirsOnly, True)
-    dlg.setOption(QFileDialog.DontResolveSymlinks, True)
-    dlg.setOption(QFileDialog.DontUseNativeDialog, True)
-    if dlg.exec_() == QFileDialog.Accepted:
-        files = dlg.selectedFiles()
-        return files[0] if files else ""
-    return ""
+    """Folder picker using the OS-native dialog on Windows (Explorer-style)."""
+    initial = _normalize_initial_path(directory) or str(Path.home())
+    path = QFileDialog.getExistingDirectory(parent, caption, initial, _DIR_OPTIONS)
+    return path or ""
