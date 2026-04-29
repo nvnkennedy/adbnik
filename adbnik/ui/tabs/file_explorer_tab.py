@@ -29,6 +29,7 @@ from PyQt5.QtCore import (
     QFileInfo,
     QFileSystemWatcher,
     QMimeData,
+    QObject,
     QSize,
     Qt,
     QThread,
@@ -1635,8 +1636,9 @@ class _RemoteListThread(QThread):
         sftp_transport: Any = None,
         sftp_client: Any = None,
         ftp_client: Any = None,
+        parent: Optional[QObject] = None,
     ):
-        super().__init__(None)
+        super().__init__(parent)
         self._kind = kind
         self._adb_path = adb_path
         self._adb_args = list(adb_args)
@@ -1698,6 +1700,10 @@ class _RemoteListThread(QThread):
                 if borrowed:
                     t = self._borrowed_sftp_transport
                     sftp = self._borrowed_sftp_client
+                    tr = t.get_transport() if (t is not None and hasattr(t, "get_transport")) else t
+                    if tr is not None and hasattr(tr, "is_active") and not tr.is_active():
+                        self.done.emit(rows, "SFTP connection closed.")
+                        return
                 else:
                     t, sftp, e = connect_sftp(
                         self._creds.get("host", ""),
@@ -2693,7 +2699,7 @@ class ExplorerSessionPage(QWidget):
         btn_reconnect.setObjectName("ExplorerReconnectBtn")
         btn_reconnect.setIcon(st.standardIcon(QStyle.SP_DriveNetIcon))
         btn_reconnect.setToolTip("Reconnect this session (Ctrl+R or Ctrl+Shift+R)")
-        btn_reconnect.clicked.connect(self.reconnect_remote_session)
+        btn_reconnect.clicked.connect(self.user_requested_reconnect_remote)
         rem_act.addWidget(btn_reconnect)
         for tip, icon, fn, oname in [
             ("Refresh listing", QStyle.SP_BrowserReload, self.refresh_remote, "WinScpIconBtn"),
@@ -4154,7 +4160,7 @@ class ExplorerSessionPage(QWidget):
         box.exec_()
         clicked = box.clickedButton()
         if clicked == btn_reconnect:
-            self.reconnect_remote_session()
+            self.user_requested_reconnect_remote()
         elif clicked == btn_new:
             self._open_new_session_from_explorer_parent()
 
@@ -4202,9 +4208,13 @@ class ExplorerSessionPage(QWidget):
         self._set_remote_address(self.remote_path)
         self._start_remote_refresh()
 
+    def user_requested_reconnect_remote(self) -> None:
+        """Manual reconnect (button, shortcut, dialog): reset backoff so immediate retries are allowed."""
+        self._remote_auto_reconnect_attempts = 0
+        self.reconnect_remote_session()
+
     def reconnect_remote_session(self) -> None:
         """Reconnect ADB/SFTP/FTP backing session after link or power interruption."""
-        self._remote_auto_reconnect_attempts = 0
         self._log(f"Explorer: reconnect requested ({self.kind}).")
         if self.kind == "adb":
             self._adb_last_error = ""
@@ -4225,6 +4235,7 @@ class ExplorerSessionPage(QWidget):
                 self._sftp_last_error = err or "SFTP reconnect failed."
                 self._report_remote_error(self._sftp_last_error)
                 self._notify_parent_status()
+                self._schedule_remote_auto_reconnect()
                 return
             self._sftp_transport = t
             self._sftp_client = sftp
@@ -4245,6 +4256,7 @@ class ExplorerSessionPage(QWidget):
             self._ftp_last_error = err or "FTP reconnect failed."
             self._report_remote_error(self._ftp_last_error)
             self._notify_parent_status()
+            self._schedule_remote_auto_reconnect()
             return
         self._ftp_client = ftp
         self._ftp_last_error = ""
@@ -4279,9 +4291,9 @@ class ExplorerSessionPage(QWidget):
             sftp_transport=self._sftp_transport if self.kind == "sftp" else None,
             sftp_client=self._sftp_client if self.kind == "sftp" else None,
             ftp_client=self._ftp_client if self.kind == "ftp" else None,
+            parent=self,
         )
         th.done.connect(self._on_remote_refresh_done)
-        th.finished.connect(th.deleteLater)
         self._remote_refresh_thread = th
         th.start()
 
@@ -4290,6 +4302,11 @@ class ExplorerSessionPage(QWidget):
         if th is not self._remote_refresh_thread:
             return
         self._remote_refresh_thread = None
+        try:
+            th.done.disconnect(self._on_remote_refresh_done)
+        except Exception:
+            pass
+        th.deleteLater()
         _fill_remote_table(self.remote_table, rows or [], self.style(), self.icon_provider)
         msg = (err or "").strip()
         if self.kind == "adb":
@@ -4300,8 +4317,8 @@ class ExplorerSessionPage(QWidget):
             self._ftp_last_error = msg
         if msg:
             self._report_remote_error(msg)
-            self._maybe_offer_disconnect_popup(msg)
             self._schedule_remote_auto_reconnect()
+            self._maybe_offer_disconnect_popup(msg)
         else:
             self._last_error_popup_key = ""
             self._remote_auto_reconnect_attempts = 0
@@ -5881,7 +5898,7 @@ class FileExplorerTab(QWidget):
     def _shortcut_reconnect_current_explorer_page(self) -> None:
         page = self._current_page()
         if page is not None:
-            page.reconnect_remote_session()
+            page.user_requested_reconnect_remote()
 
     def _close_explorer_tab_at(self, index: int) -> None:
         """Stop sessions for this tab, remove it, and schedule destruction."""
@@ -5946,7 +5963,7 @@ class FileExplorerTab(QWidget):
         elif chosen == a_reconnect:
             w = self.session_tabs.widget(idx)
             if isinstance(w, ExplorerSessionPage):
-                w.reconnect_remote_session()
+                w.user_requested_reconnect_remote()
 
     @staticmethod
     def _is_descendant_of(widget: Optional[QWidget], parent: Optional[QWidget]) -> bool:

@@ -545,10 +545,14 @@ class MainWindow(QMainWindow):
         th = self.sender()
         if th is not self._device_refresh_thread:
             if isinstance(th, QThread):
+                if th.isRunning():
+                    th.wait(15000)
                 th.deleteLater()
             return
         self._device_refresh_thread = None
         if isinstance(th, QThread):
+            if th.isRunning():
+                th.wait(15000)
             th.deleteLater()
         prev_selected_serial = getattr(self, "_prev_selected_serial_for_refresh", "")
         prev_sig = getattr(self, "_last_adb_device_sig", None)
@@ -688,10 +692,14 @@ class MainWindow(QMainWindow):
         th = self.sender()
         if th is not self._stats_refresh_thread:
             if isinstance(th, QThread):
+                if th.isRunning():
+                    th.wait(15000)
                 th.deleteLater()
             return
         self._stats_refresh_thread = None
         if isinstance(th, QThread):
+            if th.isRunning():
+                th.wait(15000)
             th.deleteLater()
         current = (self.terminal.current_adb_serial() or "").strip() if hasattr(self, "terminal") else ""
         if serial and current and serial != current:
@@ -955,7 +963,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, "file_explorer"):
                 page = self.file_explorer._current_page()
                 if page is not None:
-                    page.reconnect_remote_session()
+                    page.user_requested_reconnect_remote()
         elif choice == "Show Session Health":
             self._show_health_dialog()
         elif choice == "Refresh Devices":

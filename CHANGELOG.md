@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.3.1] - 2026-04-29
+
+### Fixed
+
+- **Serial terminal:** ANSI/color rendering no longer inserts ~three blank lines per line — stacked `<br/>` from chunked ANSI parsing is collapsed, and excess newline runs are tightened before conversion.
+- **Explorer SFTP/FTP auto-reconnect:** Scheduled retries now keep their backoff (reconnect no longer resets the attempt counter at the start of each try); failed SFTP/FTP reconnect attempts schedule further auto-retries; SFTP listing no longer treats a dead connection as an empty folder when both `listdir_attr` and `listdir` fail; borrowed SFTP sessions detect inactive transports before listing; the reconnect timer is started before the disconnect dialog so recovery can run while the message box is open.
+- **QThread cleanup:** Remote list worker threads are parented to the explorer page, disconnected and `deleteLater`’d from the done-handler (instead of `finished → deleteLater` alone); ADB device/stats refresh threads are waited on if still running before deletion; async serial COM release waits for the worker before `deleteLater`.
+
 ## [2.3.0] - 2026-04-29
 
 ### Added

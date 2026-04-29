@@ -222,8 +222,9 @@ def sftp_listdir_attr_safe(sftp: Any, path: str) -> List[Any]:
         pass
     try:
         names = [n for n in sftp.listdir(path) if n not in (".", "..")]
-    except Exception:
-        return []
+    except Exception as exc:
+        # Do not swallow dead-socket / reset errors as an empty folder — Explorer must see failure and auto-reconnect.
+        raise exc
     base = (path or "").rstrip("/") or "/"
     out: List[Any] = []
     for n in names:

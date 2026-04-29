@@ -1378,6 +1378,8 @@ class SessionWidget(QWidget):
             worker = _SerialPortReleaseThread(com, serial_pid, still_running, self)
 
             def _after() -> None:
+                if worker.isRunning():
+                    worker.wait(30000)
                 worker.deleteLater()
                 on_released()
 
@@ -2156,7 +2158,11 @@ class SessionWidget(QWidget):
             data = re.sub(r"\n{2,}", "\n", data)
         # Serial + SSH + ADB: same ANSI → HTML path as local shells (Moba-style colors). Flush caps keep UI responsive.
         if self._is_serial_session:
+            # ANSI splits can leave bare \\n runs per chunk; _emit_text turns those into stacked <br/> (looks like ~3 blank lines per line).
+            data = re.sub(r"\n{3,}", "\n", data)
             html_frag, plain_frag = self._ansi.feed(data)
+            if html_frag:
+                html_frag = re.sub(r"(?:<br/>){3,}", "<br/>", html_frag)
             if not html_frag and not plain_frag:
                 return
             pl = plain_frag or ""
