@@ -2,6 +2,7 @@
 
 from adbnik.ui.ansi_html import (
     AnsiToHtmlConverter,
+    bare_unix_prompt_needs_trailing_space,
     ensure_remote_pty_visual_line_breaks,
     get_prompt_palette,
     inject_shell_prompt_gaps,
@@ -79,6 +80,17 @@ def test_style_prompt_line_adb_same_line_command():
 def test_inject_shell_prompt_gaps_glued_adb():
     assert inject_shell_prompt_gaps("vivo_25:/$ls") == "vivo_25:/$ ls"
     assert inject_shell_prompt_gaps("root@h:/data#id") == "root@h:/data# id"
+
+
+def test_bare_unix_prompt_needs_trailing_space_zsh():
+    assert bare_unix_prompt_needs_trailing_space("host:~%") is True
+    assert bare_unix_prompt_needs_trailing_space("host:~% ") is False
+    assert bare_unix_prompt_needs_trailing_space("user@host:/path%ls") is False
+    assert bare_unix_prompt_needs_trailing_space("progress 100%") is False
+
+
+def test_inject_shell_prompt_gaps_zsh_glued():
+    assert inject_shell_prompt_gaps("user@host:~%ls") == "user@host:~% ls"
 
 
 def test_preprocess_prompt_injects_gap():

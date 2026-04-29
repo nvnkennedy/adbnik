@@ -26,7 +26,6 @@ from PyQt5.QtWidgets import (
 from ..camera_opencv import (
     FrameGrabThread,
     OpenCvVideoRecorder,
-    bgr_from_qimage,
     list_camera_indices,
     opencv_available,
 )
@@ -204,7 +203,8 @@ class CameraTab(QWidget):
         root.addWidget(video_box, 10)
 
         self._footer = QLabel(
-            "Photos/videos save to the folder above. OpenCV is used when installed for smooth preview."
+            "Photos/videos save to the folder above. Preview and recording use OpenCV (bundled) "
+            "for lower latency than Qt Multimedia alone."
         )
         self._footer.setWordWrap(True)
         self._footer.setObjectName("CameraFooterLabel")
@@ -317,6 +317,11 @@ class CameraTab(QWidget):
             time.sleep(0.015)
 
     def _finalize_cv_writer(self, *, offer_open: bool) -> None:
+        if self._cv_thread is not None:
+            try:
+                self._cv_thread.set_emit_bgr_for_record(False)
+            except Exception:
+                pass
         path: Optional[str] = None
         if self._cv_writer is not None:
             try:
@@ -446,8 +451,9 @@ class CameraTab(QWidget):
     def _start_cv_thread(self, index: int) -> None:
         self._stop_cv_thread()
         self._cv_index = index
-        th = FrameGrabThread(index, 848, 480, 24.0)
+        th = FrameGrabThread(index, 640, 480, 30.0)
         th.frame_ready.connect(self._on_cv_frame)
+        th.bgr_ready.connect(self._on_cv_bgr_frame)
         th.failed.connect(self._on_cv_failed)
         th.start()
         self._cv_thread = th
@@ -456,23 +462,25 @@ class CameraTab(QWidget):
         self._status.setText("Running")
         self._append_log(f"Camera: started (OpenCV · device {index})")
 
+    def _on_cv_bgr_frame(self, bgr: object) -> None:
+        w = self._cv_writer
+        if w is None or bgr is None:
+            return
+        try:
+            w.write_frame_bgr(bgr)
+        except Exception:
+            pass
+
     def _on_cv_frame(self, img: object) -> None:
         if not isinstance(img, QImage):
             return
-        self._last_cv_frame = img.copy()
+        self._last_cv_frame = img
         if not self._opencv_mode or not isinstance(self._view, QLabel):
             return
         pix = QPixmap.fromImage(img)
         self._view.setPixmap(
             pix.scaled(self._view.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
         )
-        if self._cv_writer is not None:
-            bgr = bgr_from_qimage(img)
-            if bgr is not None:
-                try:
-                    self._cv_writer.write_frame_bgr(bgr)
-                except Exception:
-                    pass
 
     def _on_cv_failed(self, msg: str) -> None:
         self._append_log(f"Camera: OpenCV error — {msg}")
@@ -690,8 +698,10 @@ class CameraTab(QWidget):
                 out = dest_dir / f"adbnik_video_{ts}.mp4"
                 try:
                     w, h = self._last_cv_frame.width(), self._last_cv_frame.height()
-                    self._cv_writer = OpenCvVideoRecorder(out, (w, h), 24.0)
+                    self._cv_writer = OpenCvVideoRecorder(out, (w, h), 30.0)
                     self._recording = True
+                    if self._cv_thread is not None:
+                        self._cv_thread.set_emit_bgr_for_record(True)
                     self._append_log(f"Camera: recording (OpenCV) → {out}")
                     self._status.setText("Recording…")
                 except Exception as exc:

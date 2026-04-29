@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtGui import QImage
 
 try:
     import cv2
@@ -24,19 +25,37 @@ def opencv_available() -> bool:
     return bool(_HAS_CV2)
 
 
+def _windows_capture_apis():
+    """Prefer MSMF (often lower latency); fall back to DirectShow then default."""
+    if sys.platform != "win32":
+        return (cv2.CAP_ANY,)
+    apis = []
+    if hasattr(cv2, "CAP_MSMF"):
+        apis.append(cv2.CAP_MSMF)
+    apis.append(cv2.CAP_DSHOW)
+    apis.append(cv2.CAP_ANY)
+    return tuple(apis)
+
+
 def list_camera_indices(max_probe: int = 8) -> List[int]:
     """Return indices where ``VideoCapture(i)`` opens (best-effort)."""
     if not _HAS_CV2:
         return []
     found: List[int] = []
-    backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+    apis = _windows_capture_apis()
     for i in range(max_probe):
-        cap = cv2.VideoCapture(i, backend)
-        try:
-            if cap.isOpened():
-                found.append(i)
-        finally:
-            cap.release()
+        opened = False
+        for api in apis:
+            cap = cv2.VideoCapture(i, api)
+            try:
+                if cap.isOpened():
+                    found.append(i)
+                    opened = True
+                    break
+            finally:
+                cap.release()
+        if not opened:
+            continue
     return found
 
 
@@ -49,6 +68,7 @@ class FrameGrabThread(QThread):
     """Reads frames off the UI thread; emits RGB ``QImage`` copies."""
 
     frame_ready = pyqtSignal(object)  # QImage
+    bgr_ready = pyqtSignal(object)  # numpy BGR (scaled, same size as preview) for recording
     failed = pyqtSignal(str)
 
     def __init__(self, index: int, width: int, height: int, fps: float, parent: Optional[QObject] = None):
@@ -58,6 +78,11 @@ class FrameGrabThread(QThread):
         self._height = max(120, min(height, 1080))
         self._fps = max(8.0, min(fps, 60.0))
         self._running = False
+        self._emit_bgr_for_record = False
+
+    def set_emit_bgr_for_record(self, enabled: bool) -> None:
+        """When True, emit ``bgr_ready`` with scaled BGR frames (for MP4; avoids RGB→BGR round-trip)."""
+        self._emit_bgr_for_record = bool(enabled)
 
     def stop(self) -> None:
         self._running = False
@@ -66,36 +91,53 @@ class FrameGrabThread(QThread):
         if not _HAS_CV2:
             self.failed.emit("OpenCV is not available.")
             return
-        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
-        cap = cv2.VideoCapture(self._index, backend)
-        if not cap.isOpened():
+        cap = None
+        for api in _windows_capture_apis():
+            c = cv2.VideoCapture(self._index, api)
+            if c.isOpened():
+                cap = c
+                break
+            c.release()
+        if cap is None:
             self.failed.emit(f"Cannot open camera index {self._index}.")
             return
         try:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self._width))
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self._height))
             cap.set(cv2.CAP_PROP_FPS, self._fps)
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
         except Exception:
             pass
         self._running = True
-        interval_ms = max(8, int(1000.0 / self._fps))
+        frame_period = 1.0 / self._fps
+        next_deadline = time.perf_counter()
+        preview_max_w = 720
         while self._running:
             ok, frame = cap.read()
             if ok and frame is not None and np is not None:
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                hh, ww, _ch = rgb.shape
-                if ww > 960:
-                    scale = 960.0 / float(ww)
-                    rgb = cv2.resize(
-                        rgb,
-                        (max(1, int(ww * scale)), max(1, int(hh * scale))),
-                        interpolation=cv2.INTER_AREA,
-                    )
-                hh, ww, _ch = rgb.shape
-                bytes_per_line = 3 * ww
-                img = QImage(rgb.data, ww, hh, bytes_per_line, QImage.Format_RGB888).copy()
+                hh, ww = frame.shape[:2]
+                work_bgr = frame
+                if ww > preview_max_w:
+                    scale = preview_max_w / float(ww)
+                    nw = max(1, int(ww * scale))
+                    nh = max(1, int(hh * scale))
+                    work_bgr = cv2.resize(work_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+                rgb = cv2.cvtColor(work_bgr, cv2.COLOR_BGR2RGB)
+                h2, w2, _ch = rgb.shape
+                bpl = 3 * w2
+                img = QImage(rgb.data, w2, h2, bpl, QImage.Format_RGB888).copy()
                 self.frame_ready.emit(img)
-            self.msleep(interval_ms)
+                if self._emit_bgr_for_record:
+                    self.bgr_ready.emit(work_bgr.copy())
+            next_deadline += frame_period
+            sleep_s = next_deadline - time.perf_counter()
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+            else:
+                next_deadline = time.perf_counter()
         cap.release()
 
 

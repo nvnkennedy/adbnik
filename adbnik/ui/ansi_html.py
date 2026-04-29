@@ -80,7 +80,7 @@ _ANSI_BG = {
     107: "#f5f5f5",
 }
 
-_DEFAULT_FG = "#f4f7fb"
+_DEFAULT_FG = "#f8fafc"
 
 
 @dataclass(frozen=True)
@@ -106,74 +106,74 @@ def get_prompt_palette(kind: str) -> PromptPalette:
 
 
 _PROMPT_PALETTES: Dict[str, PromptPalette] = {
-    # SSH: prompt segments vs typed tail vs command output (high contrast)
+    # SSH: prompt segments vs typed tail vs command output (high contrast, readable on dark pane)
     "ssh": PromptPalette(
-        user="#38bdf8",
-        sep="#94a3b8",
-        host="#38f5ff",
-        path="#6ee7b7",
+        user="#5ecfff",
+        sep="#b8c6d8",
+        host="#5ff8ff",
+        path="#86f5c0",
         sig="#fdba74",
         ps_prefix="#ddd6fe",
-        prompt_input="#fff9c4",
-        line_output="#a8b8d0",
-        typed_input="#fff3d6",
-        sig_hash="#4ade80",
+        prompt_input="#fffde7",
+        line_output="#c5d4eb",
+        typed_input="#fff5e0",
+        sig_hash="#6ee7b7",
     ),
     # ADB: device vs path vs marker vs input vs listing output
     "adb": PromptPalette(
-        user="#5eead4",
-        sep="#94a3b8",
-        host="#99f6e4",
-        path="#f1f5f9",
+        user="#6efce8",
+        sep="#b0bec8",
+        host="#b7fff4",
+        path="#f8fafc",
         sig="#fdba74",
-        ps_prefix="#e9d5ff",
-        prompt_input="#fef9c3",
-        line_output="#a1a1aa",
-        typed_input="#fff7d6",
+        ps_prefix="#ede9fe",
+        prompt_input="#fffbeb",
+        line_output="#c6ccd6",
+        typed_input="#fff8ec",
     ),
     "powershell": PromptPalette(
-        user="#c4b5fd",
-        sep="#a8b8d8",
-        host="#ddd6fe",
-        path="#93d9ff",
-        sig="#f9a8d4",
-        ps_prefix="#ede9fe",
-        prompt_input="#fecdd3",
-        line_output="#adbdd4",
-        typed_input="#ffe4e6",
+        user="#d4c8ff",
+        sep="#c4d4ec",
+        host="#ebe4ff",
+        path="#a8e5ff",
+        sig="#fbcfe8",
+        ps_prefix="#f4f0ff",
+        prompt_input="#ffe8ec",
+        line_output="#c8d6e8",
+        typed_input="#fff0f2",
     ),
     "cmd": PromptPalette(
-        user="#60c8ff",
-        sep="#9ca3af",
-        host="#b8c5d6",
-        path="#a5d8ff",
+        user="#7ad4ff",
+        sep="#b4bcc8",
+        host="#d0dce8",
+        path="#c0e8ff",
         sig="#fde047",
-        ps_prefix="#e9d5ff",
-        prompt_input="#fff3b0",
-        line_output="#b0bec8",
-        typed_input="#fff9e0",
-    ),
-    "serial": PromptPalette(
-        user="#fcd34d",
-        sep="#c4b5a5",
-        host="#fde68a",
-        path="#fef08a",
-        sig="#fb923c",
-        ps_prefix="#f5d0fe",
-        prompt_input="#fde68a",
-        line_output="#b5aaa0",
+        ps_prefix="#ede9fe",
+        prompt_input="#fff8d6",
+        line_output="#c9d6df",
         typed_input="#fffbeb",
     ),
+    "serial": PromptPalette(
+        user="#fde047",
+        sep="#d4c8b8",
+        host="#fef08a",
+        path="#fef9c3",
+        sig="#fdba74",
+        ps_prefix="#f5d0fe",
+        prompt_input="#fef3c7",
+        line_output="#d4ccc0",
+        typed_input="#fffdf5",
+    ),
     "local": PromptPalette(
-        user="#8ecbff",
-        sep="#9ca3af",
-        host="#c8e7ff",
-        path="#86efac",
-        sig="#ffa8a8",
-        ps_prefix="#e9d5ff",
-        prompt_input="#ffd699",
-        line_output="#b8c5d6",
-        typed_input="#fff4e0",
+        user="#a8dcff",
+        sep="#b8c2cc",
+        host="#dcf4ff",
+        path="#a7f3d0",
+        sig="#ffb4b4",
+        ps_prefix="#ede9fe",
+        prompt_input="#ffe8cc",
+        line_output="#ccd8e6",
+        typed_input="#fffaf0",
     ),
 }
 
@@ -497,14 +497,35 @@ def strip_sgr_sequences_for_prompt(line: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line)
 
 
+def bare_unix_prompt_needs_trailing_space(bare_stripped: str) -> bool:
+    """True when the visible line ends at ``$`` / ``#`` / zsh ``%`` with no gap before typed input."""
+    s = (bare_stripped or "").rstrip("\r")
+    if not s.strip():
+        return False
+    # Line already ends with marker + whitespace → caret has room (do not strip spaces before this check).
+    if re.search(r"[$#%]\s+$", s):
+        return False
+    t = s.rstrip()
+    if t.endswith("$") or t.endswith("#"):
+        return True
+    # zsh user prompts often end with ``%`` when ``user@host`` or a path is present
+    if t.endswith("%") and ("@" in t or ":" in t):
+        return True
+    return False
+
+
 def inject_prompt_gap_after_unix_marker(bare_line: str) -> str:
-    """Insert one space after ``$`` or ``#`` when the next character is non-space (e.g. ``vivo:/$ls``)."""
+    """Insert one space after ``$``, ``#``, or zsh ``%`` when the next character is non-space."""
     s = bare_line.rstrip("\r")
     if not s:
         return bare_line
     j_dollar = s.rfind("$")
     j_hash = s.rfind("#")
-    j = max(j_dollar, j_hash)
+    j_pct = s.rfind("%")
+    candidates = [j_dollar, j_hash]
+    if j_pct >= 0 and ("@" in s[:j_pct] or ":" in s[:j_pct]):
+        candidates.append(j_pct)
+    j = max(candidates)
     if j < 0 or j + 1 >= len(s) or s[j + 1] in " \t":
         return bare_line
     return s[: j + 1] + " " + s[j + 1 :]

@@ -44,6 +44,7 @@ from PyQt5.QtWidgets import (
 from ...config import AppConfig
 from ..ansi_html import (
     AnsiToHtmlConverter,
+    bare_unix_prompt_needs_trailing_space,
     ensure_remote_pty_visual_line_breaks,
     get_prompt_palette,
     normalize_remote_pty_plain_text,
@@ -677,7 +678,7 @@ class ShellPlainTextEdit(QTextEdit):
         self._collapse_commit_whitespace = False
         # When True, LineWrapMode + WordWrapMode + document must stay NoWrap (font/zoom must not re-enable wrap).
         self._force_no_wrap = False
-        self._stream_plain_fg = "#f4f7fb"
+        self._stream_plain_fg = "#f8fafc"
         self._typing_fg: Optional[str] = None
         self.setCursorWidth(2)
         self.setUndoRedoEnabled(False)
@@ -762,7 +763,7 @@ class ShellPlainTextEdit(QTextEdit):
 
     def set_stream_plain_foreground(self, hex_color: str) -> None:
         """Plain PTY stream ``append_stream_plain`` / completion tint (command output vs shell chrome)."""
-        self._stream_plain_fg = (hex_color or "#f4f7fb").strip() or "#f4f7fb"
+        self._stream_plain_fg = (hex_color or "#f8fafc").strip() or "#f8fafc"
 
     def set_typing_foreground(self, hex_color: str) -> None:
         """Characters typed at the prompt — distinct from streamed output."""
@@ -2206,27 +2207,20 @@ class SessionWidget(QWidget):
             if re.match(r"^PS\s+", bare.strip()) and bare.rstrip().endswith(">") and not bare.endswith("> "):
                 self._append_plain_ui(" ")
             return
-        if self._is_adb_shell or self._is_ssh_session:
+        # ADB / SSH / serial UART / local Unix shells: one visible gap after ``$`` / ``#`` / zsh ``%``.
+        if (
+            self._is_adb_shell
+            or self._is_ssh_session
+            or self._is_serial_session
+            or (not self._shell_profile and not self._is_adb_shell and not self._is_ssh_session)
+        ):
             raw = self._last_nonempty_line()
             if not raw.strip():
                 return
             bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r")).rstrip()
-            if bare.endswith("$ ") or bare.endswith("# "):
-                return
-            # One visible gap after $/# so typing aligns past the shell marker (e.g. ``vivo_25:/$`` → ``$ ``).
-            if bare.endswith("$") or bare.endswith("#"):
+            if bare_unix_prompt_needs_trailing_space(bare):
                 self._append_plain_ui(" ")
             return
-        # Local bash/zsh / Git Bash (not CMD/PowerShell, not SSH/ADB above): same one-space rule.
-        if not self._shell_profile and not self._is_adb_shell and not self._is_ssh_session:
-            raw = self._last_nonempty_line()
-            if not raw.strip():
-                return
-            bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r")).rstrip()
-            if bare.endswith("$ ") or bare.endswith("# "):
-                return
-            if bare.endswith("$") or bare.endswith("#"):
-                self._append_plain_ui(" ")
 
     def _write_raw_to_shell(self, data: bytes) -> None:
         if self.proc.state() != QProcess.Running or not data:
