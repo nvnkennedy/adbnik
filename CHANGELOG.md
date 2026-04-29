@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.1.1] - 2026-04-29
+
+### Added
+
+- **File Explorer:** Prominent **Reconnect** button in the remote action row (with **Ctrl+R**), plus a **disconnect** dialog when the remote session appears lost (choices: **Reconnect**, **New session…**, **Dismiss**).
+- **Keyboard:** **Ctrl+R** reconnects the current session in **Terminal**, **Screen Control**, and **File Explorer** (when that surface has focus in the window).
+
 ## [2.0.0] - 2026-04-29
 
 ### Added

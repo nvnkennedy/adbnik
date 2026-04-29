@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from PyQt5.QtCore import QProcess, QProcessEnvironment, Qt, QTimer
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QKeySequence
 from PyQt5.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QFileDialog,
     QScrollArea,
+    QShortcut,
     QSizePolicy,
     QSplitter,
     QStyle,
@@ -484,7 +485,7 @@ class ScrcpyTab(QWidget):
         b_reconnect = QPushButton("Reconnect")
         b_reconnect.setObjectName("ScrcpyStartBtn")
         b_reconnect.setIcon(st.standardIcon(QStyle.SP_BrowserReload))
-        b_reconnect.setToolTip("Reconnect after device power cycle / USB drop")
+        b_reconnect.setToolTip("Reconnect after device power cycle / USB drop (Ctrl+R)")
         b_reconnect.clicked.connect(self.reconnect_scrcpy)
         b_stop = QPushButton("Stop")
         b_stop.setObjectName("ScrcpyStopBtn")
@@ -567,6 +568,9 @@ class ScrcpyTab(QWidget):
         split.setSizes([400, 2000])
 
         root.addWidget(split, 1)
+        self._sc_reconnect_scrcpy = QShortcut(QKeySequence("Ctrl+R"), self)
+        self._sc_reconnect_scrcpy.setContext(Qt.WidgetWithChildrenShortcut)
+        self._sc_reconnect_scrcpy.activated.connect(self.reconnect_scrcpy)
 
     def _clear_embed(self) -> None:
         self._embed_hwnd = 0

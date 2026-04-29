@@ -2710,6 +2710,14 @@ class TerminalTab(QWidget):
         # Bookmarks refresh touches session tabs — run only after self.tabs exists.
         self._reload_bookmark_sidebar()
         QTimer.singleShot(0, self._sync_terminal_flush_pause)
+        self._sc_reconnect_session = QShortcut(QKeySequence("Ctrl+R"), self)
+        self._sc_reconnect_session.setContext(Qt.WidgetWithChildrenShortcut)
+        self._sc_reconnect_session.activated.connect(self._shortcut_reconnect_current_session)
+
+    def _shortcut_reconnect_current_session(self) -> None:
+        w = self.tabs.currentWidget()
+        if isinstance(w, SessionWidget):
+            w.reconnect_session()
 
     def _on_terminal_stack_changed(self, _index: int) -> None:
         self._refresh_bookmark_open_indicators()

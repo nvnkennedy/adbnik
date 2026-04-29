@@ -2176,6 +2176,8 @@ class ExplorerSessionPage(QWidget):
         self._ftp_last_error = ""
         self._last_refresh_note = ""
         self._last_error_popup_key = ""
+        self._last_disconnect_popup_at = 0.0
+        self._disconnect_popup_key = ""
         # When a file is opened in an external app (Word, PDF reader), sync saves back to the remote path.
         self._ext_sync_remote: Dict[str, str] = {}
         self._ext_sync_timers: Dict[str, QTimer] = {}
@@ -2651,18 +2653,15 @@ class ExplorerSessionPage(QWidget):
         b_refresh_r.setToolTip("Refresh")
         b_refresh_r.clicked.connect(self.refresh_remote)
         ra.addWidget(b_refresh_r)
-        b_reconnect_r = QToolButton()
-        b_reconnect_r.setObjectName("WinScpIconBtn")
-        b_reconnect_r.setIcon(st.standardIcon(QStyle.SP_DriveNetIcon))
-        b_reconnect_r.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        b_reconnect_r.setIconSize(QSize(16, 16))
-        b_reconnect_r.setFixedSize(28, 28)
-        b_reconnect_r.setToolTip("Reconnect remote session")
-        b_reconnect_r.clicked.connect(self.reconnect_remote_session)
-        ra.addWidget(b_reconnect_r)
         rov.addLayout(ra)
         rem_act = QHBoxLayout()
         rem_act.setSpacing(4)
+        btn_reconnect = QPushButton("Reconnect")
+        btn_reconnect.setObjectName("ExplorerReconnectBtn")
+        btn_reconnect.setIcon(st.standardIcon(QStyle.SP_DriveNetIcon))
+        btn_reconnect.setToolTip("Reconnect remote session (Ctrl+R)")
+        btn_reconnect.clicked.connect(self.reconnect_remote_session)
+        rem_act.addWidget(btn_reconnect)
         for tip, icon, fn, oname in [
             ("Refresh listing", QStyle.SP_BrowserReload, self.refresh_remote, "WinScpIconBtn"),
             ("Find in list", QStyle.SP_FileDialogContentsView, self.find_in_remote, "WinScpIconBtn"),
@@ -2727,6 +2726,9 @@ class ExplorerSessionPage(QWidget):
         QShortcut(QKeySequence(Qt.Key_F5), self.remote_table, self.refresh_remote)
         QShortcut(QKeySequence(Qt.Key_Delete), self.remote_table, self.delete_selected_remote)
         QShortcut(QKeySequence(Qt.Key_F2), self.remote_table, self.rename_selected_remote)
+        self._sc_reconnect_remote = QShortcut(QKeySequence("Ctrl+R"), self)
+        self._sc_reconnect_remote.setContext(Qt.WidgetWithChildrenShortcut)
+        self._sc_reconnect_remote.activated.connect(self.reconnect_remote_session)
 
         header_grid = QGridLayout()
         header_grid.setContentsMargins(0, 0, 0, 0)
@@ -4060,6 +4062,73 @@ class ExplorerSessionPage(QWidget):
                 self._last_error_popup_key = key
                 QMessageBox.warning(self, "Remote permission denied", txt)
 
+    @staticmethod
+    def _looks_like_transport_disconnect(msg: str) -> bool:
+        t = (msg or "").strip().lower()
+        if not t:
+            return False
+        if "permission denied" in t and "connection" not in t:
+            return False
+        needles = (
+            "connection",
+            "reset",
+            "refused",
+            "timeout",
+            "closed",
+            "broken pipe",
+            "not connected",
+            "eof",
+            "socket",
+            "network",
+            "unreachable",
+            "abort",
+            "lost",
+            "gone away",
+            "device offline",
+            "no devices/emulators",
+            "adb:",
+            "ssh",
+            "sftp",
+            "ftp",
+            "errno",
+        )
+        return any(n in t for n in needles)
+
+    def _open_new_session_from_explorer_parent(self) -> None:
+        w = self.parentWidget()
+        while w is not None:
+            opener = getattr(w, "_open_login_dialog", None)
+            if callable(opener):
+                opener()
+                return
+            w = w.parentWidget()
+
+    def _maybe_offer_disconnect_popup(self, msg: str) -> None:
+        if not self._looks_like_transport_disconnect(msg):
+            return
+        key = f"{self.kind}:{msg[:240]}"
+        now = time.monotonic()
+        if key == self._disconnect_popup_key and (now - self._last_disconnect_popup_at) < 12.0:
+            return
+        self._disconnect_popup_key = key
+        self._last_disconnect_popup_at = now
+        parent = self.window()
+        par = parent if isinstance(parent, QWidget) else self
+        box = QMessageBox(par)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Remote disconnected")
+        box.setText("The remote connection was interrupted or lost.")
+        box.setInformativeText((msg or "").strip()[:900])
+        btn_reconnect = box.addButton("Reconnect", QMessageBox.AcceptRole)
+        btn_new = box.addButton("New session…", QMessageBox.ActionRole)
+        box.addButton("Dismiss", QMessageBox.RejectRole)
+        box.exec_()
+        clicked = box.clickedButton()
+        if clicked == btn_reconnect:
+            self.reconnect_remote_session()
+        elif clicked == btn_new:
+            self._open_new_session_from_explorer_parent()
+
     def on_local_activated(self, item) -> None:
         """Double-click or Enter: enter folders; open files with the default app (single click only selects)."""
         it = self.local_table.item(item.row(), 0)
@@ -4202,6 +4271,7 @@ class ExplorerSessionPage(QWidget):
             self._ftp_last_error = msg
         if msg:
             self._report_remote_error(msg)
+            self._maybe_offer_disconnect_popup(msg)
             self._schedule_remote_auto_reconnect()
         else:
             self._last_error_popup_key = ""
@@ -5771,6 +5841,15 @@ class FileExplorerTab(QWidget):
         self.status_conn_label.setObjectName("WinScpStatusConn")
         sl.addWidget(self.status_conn_label)
         root.addWidget(self.status_bar)
+
+        self._sc_reconnect_explorer = QShortcut(QKeySequence("Ctrl+R"), self)
+        self._sc_reconnect_explorer.setContext(Qt.WidgetWithChildrenShortcut)
+        self._sc_reconnect_explorer.activated.connect(self._shortcut_reconnect_current_explorer_page)
+
+    def _shortcut_reconnect_current_explorer_page(self) -> None:
+        page = self._current_page()
+        if page is not None:
+            page.reconnect_remote_session()
 
     @staticmethod
     def _is_descendant_of(widget: Optional[QWidget], parent: Optional[QWidget]) -> bool:
