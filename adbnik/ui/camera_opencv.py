@@ -112,32 +112,35 @@ class FrameGrabThread(QThread):
         except Exception:
             pass
         self._running = True
-        frame_period = 1.0 / self._fps
-        next_deadline = time.perf_counter()
-        preview_max_w = 520
+        # Pace capture to UI/recording rate — avoids flooding the GUI thread with signals.
+        preview_hz = 14.0
+        record_hz = min(24.0, float(self._fps))
+        preview_max_w = 480
+        next_deadline = 0.0
         while self._running:
+            period = (1.0 / record_hz) if self._emit_bgr_for_record else (1.0 / preview_hz)
+            now = time.perf_counter()
+            if now < next_deadline:
+                time.sleep(min(next_deadline - now, 0.05))
+                continue
+            next_deadline = time.perf_counter() + period
             ok, frame = cap.read()
-            if ok and frame is not None and np is not None:
-                hh, ww = frame.shape[:2]
-                work_bgr = frame
-                if ww > preview_max_w:
-                    scale = preview_max_w / float(ww)
-                    nw = max(1, int(ww * scale))
-                    nh = max(1, int(hh * scale))
-                    work_bgr = cv2.resize(work_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
-                rgb = cv2.cvtColor(work_bgr, cv2.COLOR_BGR2RGB)
-                h2, w2, _ch = rgb.shape
-                bpl = 3 * w2
-                img = QImage(rgb.data, w2, h2, bpl, QImage.Format_RGB888).copy()
-                self.frame_ready.emit(img)
-                if self._emit_bgr_for_record:
-                    self.bgr_ready.emit(work_bgr.copy())
-            next_deadline += frame_period
-            sleep_s = next_deadline - time.perf_counter()
-            if sleep_s > 0:
-                time.sleep(sleep_s)
-            else:
-                next_deadline = time.perf_counter()
+            if not ok or frame is None or np is None:
+                continue
+            hh, ww = frame.shape[:2]
+            work_bgr = frame
+            if ww > preview_max_w:
+                scale = preview_max_w / float(ww)
+                nw = max(1, int(ww * scale))
+                nh = max(1, int(hh * scale))
+                work_bgr = cv2.resize(work_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+            rgb = cv2.cvtColor(work_bgr, cv2.COLOR_BGR2RGB)
+            h2, w2, _ch = rgb.shape
+            bpl = 3 * w2
+            img = QImage(rgb.data, w2, h2, bpl, QImage.Format_RGB888).copy()
+            self.frame_ready.emit(img)
+            if self._emit_bgr_for_record:
+                self.bgr_ready.emit(work_bgr.copy())
         cap.release()
 
 

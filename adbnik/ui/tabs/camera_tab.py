@@ -81,8 +81,6 @@ class CameraTab(QWidget):
         self._paused = False
         self._last_record_path: Optional[str] = None
         self._cam_probe: Optional[CameraIndexProbeThread] = None
-        self._last_preview_paint = 0.0
-        self._preview_interval_s = 1.0 / 22.0
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -120,6 +118,8 @@ class CameraTab(QWidget):
             b.setIconSize(QSize(18, 18))
             b.setToolTip(tip)
             b.setCursor(Qt.PointingHandCursor)
+            b.setAutoDefault(False)
+            b.setDefault(False)
             b.clicked.connect(slot)
             b.setMinimumHeight(40)
             b.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
@@ -189,6 +189,10 @@ class CameraTab(QWidget):
             self._view.setAlignment(Qt.AlignCenter)
             self._view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self._view.setStyleSheet("background-color:#0f172a;border-radius:10px;")
+            try:
+                self._view.setAttribute(Qt.WA_OpaquePaintEvent, True)
+            except Exception:
+                pass
             vb.addWidget(self._view, 1)
         elif _QT_MULTIMEDIA:
             self._view = QVideoWidget()
@@ -517,10 +521,6 @@ class CameraTab(QWidget):
         self._last_cv_frame = img
         if not self._opencv_mode or not isinstance(self._view, QLabel):
             return
-        now = time.monotonic()
-        if now - self._last_preview_paint < self._preview_interval_s:
-            return
-        self._last_preview_paint = now
         self._paint_preview_label()
 
     def _on_cv_failed(self, msg: str) -> None:

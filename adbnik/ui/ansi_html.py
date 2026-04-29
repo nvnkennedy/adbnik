@@ -603,10 +603,11 @@ def style_prompt_line_html(
         return None
     s = (bare if bare is not None else strip_sgr_sequences_for_prompt(line)).rstrip("\r")
 
-    def _tail_span(rest: str) -> str:
-        if not rest:
-            return ""
-        return f'<span style="color:{pal.typed_input}">{html.escape(rest)}</span>'
+    def _after_marker(rest: str) -> str:
+        """Tail typed after the marker, or one visible space so the caret is not glued to ``$``/``#``/``>``."""
+        if rest:
+            return f'<span style="color:{pal.typed_input}">{html.escape(rest)}</span>'
+        return f'<span style="color:{pal.prompt_input}"> </span>'
 
     # PowerShell: PS C:\path>  optional tail
     m = re.match(r"^(PS\s+)(.+)(>+)(.*)$", s)
@@ -616,7 +617,7 @@ def style_prompt_line_html(
             f'<span style="color:{pal.ps_prefix}">{html.escape(prefix)}</span>'
             f'<span style="color:{pal.path}">{html.escape(mid)}</span>'
             f'<span style="color:{pal.sig}">{html.escape(gt)}</span>'
-            f"{_tail_span(tail)}"
+            f"{_after_marker(tail)}"
         )
 
     # CMD: C:\...> optional tail
@@ -626,7 +627,7 @@ def style_prompt_line_html(
         return (
             f'<span style="color:{pal.path}">{html.escape(path)}</span>'
             f'<span style="color:{pal.sig}">{html.escape(gt)}</span>'
-            f"{_tail_span(tail)}"
+            f"{_after_marker(tail)}"
         )
 
     t = s.strip()
@@ -636,7 +637,7 @@ def style_prompt_line_html(
         if m0:
             sp, rest = m0.group(1), m0.group(2)
             col = _prompt_marker_css(pal, "#")
-            return f'<span style="color:{col}">#</span>{_tail_span(sp + rest)}'
+            return f'<span style="color:{col}">#</span>{_after_marker(sp + rest)}'
     # ``device # cmd`` / ``host $ cmd`` without ``user@`` or ``host:/path`` (e.g. ``bmw_new_device #``)
     m1 = re.match(r"^(\S+)\s+([$#])(.*)$", t)
     if m1 and "@" not in m1.group(1) and ":" not in m1.group(1):
@@ -646,7 +647,7 @@ def style_prompt_line_html(
             f'<span style="color:{pal.user}">{html.escape(dev)}</span>'
             f'<span style="color:{pal.sep}"> </span>'
             f'<span style="color:{mc}">{html.escape(sigc)}</span>'
-            f"{_tail_span(tail)}"
+            f"{_after_marker(tail)}"
         )
 
     # Unix-style / ADB: user@host:path … # or $ … optional tail (pick rightmost # or $ that yields user@host:path)
@@ -670,7 +671,7 @@ def style_prompt_line_html(
                         f'<span style="color:{pal.sep}">:</span>'
                         f'<span style="color:{pal.path}">{html.escape(rest_path)}</span>'
                         f'<span style="color:{mc}">{html.escape(sig_ch)}</span>'
-                        f"{_tail_span(tail)}"
+                        f"{_after_marker(tail)}"
                     )
         at = head.find("@")
         if at <= 0:
@@ -689,7 +690,7 @@ def style_prompt_line_html(
             f'<span style="color:{pal.sep}">:</span>'
             f'<span style="color:{pal.path}">{html.escape(path)}</span>'
             f'<span style="color:{mc}">{html.escape(sig_ch)}</span>'
-            f"{_tail_span(tail)}"
+            f"{_after_marker(tail)}"
         )
 
     # Fish / Git bash style: ``user@host ~/dir>`` tail (prompt ends with ``>``, not a Windows drive path)
@@ -702,7 +703,7 @@ def style_prompt_line_html(
                 return (
                     f'<span style="color:{pal.path}">{html.escape(head)}</span>'
                     f'<span style="color:{pal.sig}">{html.escape(">")}</span>'
-                    f"{_tail_span(tail_gt)}"
+                    f"{_after_marker(tail_gt)}"
                 )
 
     return None
