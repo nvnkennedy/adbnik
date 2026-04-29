@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.5.1] - 2026-04-29
+
+### Fixed
+
+- **Startup crash:** View → **Camera** menu used an undefined `st` variable (`NameError`). The Camera menu icon now uses `self.style()` like other View actions.
+
 ## [2.5.0] - 2026-04-29
 
 ### Added
