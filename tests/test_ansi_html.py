@@ -8,6 +8,7 @@ from adbnik.ui.ansi_html import (
     preprocess_pty_stream,
     preprocess_serial_stream,
     strip_ansi_for_display,
+    strip_sgr_sequences_for_prompt,
     style_prompt_line_html,
 )
 
@@ -68,6 +69,18 @@ def test_prompt_highlight_feed_unix():
     html, plain = c.feed("root@box:/tmp# ")
     assert plain.strip()
     assert "#ff7b72" in html
+
+
+def test_prompt_line_with_leading_sgr():
+    """Reset / SGR must not block prompt coloring."""
+    line = "\x1b[0muser@host:~$ ls"
+    h = style_prompt_line_html(line, strip_sgr_sequences_for_prompt(line))
+    assert h and "ls" in h and "#79c0ff" in h
+
+
+def test_prompt_unix_same_line_command():
+    h = style_prompt_line_html("user@host:/data $ chmod +x a.sh")
+    assert h and "chmod" in h and "$" in h
 
 
 def test_embedded_terminal_ignores_background_colors():

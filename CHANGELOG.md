@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.4.1] - 2026-04-30
+
+### Fixed
+
+- **Serial:** Strip UART/miniterm **ESC** bytes that sit on row boundaries (often shown as a visible “ESC” every line).
+- **Terminal prompts:** **#** / **$** / **>** and `user@host:path` now colorize even when the shell sends **SGR/reset** on the same line; **PowerShell / CMD / Unix** also colorize text **after** the prompt on the same line.
+- **Welcome banner:** A **56-character `=`** rule, bottom border, and a **double line break** after the block so the first **real** session output always starts on a **new** line, aligned across session types.
+
 ## [2.4.0] - 2026-04-29
 
 ### Added

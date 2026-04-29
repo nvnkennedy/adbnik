@@ -48,6 +48,7 @@ from ..ansi_html import (
     ensure_remote_pty_visual_line_breaks,
     normalize_remote_pty_plain_text,
     preprocess_escape_noise,
+    preprocess_serial_esc_boundaries,
 )
 from ..combo_utils import ExpandAllComboBox
 from ..icon_utils import (
@@ -1290,13 +1291,13 @@ class SessionWidget(QWidget):
             extra = self._banner.strip().replace("\n", " ")
             if len(extra) > 220:
                 extra = extra[:217] + "…"
+        sep_plain = "=" * 56
         lines_plain = ["Welcome to adbnik", f"{kind} · {tag}", dt]
         if extra:
             lines_plain.append(extra)
-        plain = "\n".join(lines_plain) + "\n" + ("─" * 48) + "\n"
+        plain = "\n".join(lines_plain) + "\n" + sep_plain + "\n\n"
         h = (
-            '<div style="color:#8b949e;font-size:11px;line-height:1.4;margin:0 0 8px 0;padding:0 0 8px 0;'
-            'border-bottom:1px solid #3d444d">'
+            '<div style="color:#8b949e;font-size:11px;line-height:1.45;margin:0;padding:0 0 6px 0">'
             '<span style="color:#58a6ff;font-weight:600">Welcome to adbnik</span><br/>'
             f'<span style="color:#7ee787">{html_escape(kind)}</span>'
             f'<span style="color:#6e7681"> · </span>'
@@ -1305,7 +1306,12 @@ class SessionWidget(QWidget):
         )
         if extra:
             h += f'<br/><span style="color:#8b949e">{html_escape(extra)}</span>'
-        h += "</div>"
+        h += (
+            '</div>'
+            f'<div style="font-family:Consolas,\'Courier New\',monospace;font-size:10px;color:#6e7681;'
+            f'letter-spacing:0.5px;margin:0 0 2px 0;padding:2px 0 8px 0;border-bottom:1px solid #3d444d">'
+            f'{html_escape(sep_plain)}</div><br/>'
+        )
         return h, plain
 
     def _emit_session_welcome(self) -> None:
@@ -2198,6 +2204,7 @@ class SessionWidget(QWidget):
             self._serial_maybe_retry_on_text(data)
         if self._is_serial_session:
             data = preprocess_escape_noise(data)
+            data = preprocess_serial_esc_boundaries(data)
             data = _filter_serial_miniterm_banner(data)
             data = _scrub_serial_display_glitches(data)
             data = re.sub(r"\n{2,}", "\n", data)

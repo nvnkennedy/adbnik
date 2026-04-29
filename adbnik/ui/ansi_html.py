@@ -259,6 +259,17 @@ def preprocess_escape_noise(data: str) -> str:
     return data
 
 
+def preprocess_serial_esc_boundaries(data: str) -> str:
+    """Remove UART/miniterm ESC bytes that sit on their own row/column (Qt may paint them as visible ESC)."""
+    if not data:
+        return data
+    data = re.sub(r"\r\n\x1b(?!\[)", "\r\n", data)
+    data = re.sub(r"\n\x1b(?=\r?\n)", "\n", data)
+    data = re.sub(r"\n\x1b\n", "\n", data)
+    data = re.sub(r"(?m)^\x1b+(?=\r?\n)", "", data)
+    return data
+
+
 def preprocess_serial_stream(data: str) -> str:
     """UART / miniterm: strip reset spam and CSI fragments when ESC is dropped or echoed oddly."""
     data = preprocess_escape_noise(data)
@@ -376,53 +387,79 @@ _CLR_PROMPT_HOST = "#a5d6ff"
 _CLR_PROMPT_PATH = "#7ee787"
 _CLR_PROMPT_SIG = "#ff7b72"
 _CLR_PS_PREFIX = "#d2a8ff"
+_CLR_PROMPT_TAIL = "#c9d1d9"
 
 
-def style_prompt_line_html(line: str) -> Optional[str]:
-    """Return colored HTML for one logical prompt line (Unix/CMD/PowerShell), or None to use default span."""
+def strip_sgr_sequences_for_prompt(line: str) -> str:
+    """Strip SGR CSI codes so prompt regexes match even when the shell wrapped output in \\x1b[…m."""
+    if not line:
+        return line
+    s = re.sub(r"\x1b\[[0-?]*[ -/]*m", "", line)
+    return s
+
+
+def style_prompt_line_html(line: str, bare: Optional[str] = None) -> Optional[str]:
+    """Return colored HTML for one logical prompt line (Unix/CMD/PowerShell), or None to use default span.
+
+    ``bare`` should be the same line with SGR stripped; if omitted it is derived from ``line``.
+    Includes optional text **after** ``#`` / ``$`` / ``>`` (typed command on the same line).
+    """
     if not (line or "").strip():
         return None
-    s = line.rstrip("\r")
+    s = (bare if bare is not None else strip_sgr_sequences_for_prompt(line)).rstrip("\r")
 
-    # PowerShell: PS C:\path>  (allow >> )
-    m = re.match(r"^(PS\s+)(.+)(>+)\s*$", s)
+    def _tail_span(rest: str) -> str:
+        if not rest:
+            return ""
+        return f'<span style="color:{_CLR_PROMPT_TAIL}">{html.escape(rest)}</span>'
+
+    # PowerShell: PS C:\path>  optional tail
+    m = re.match(r"^(PS\s+)(.+)(>+)(.*)$", s)
     if m:
-        prefix, mid, gt = m.group(1), m.group(2), m.group(3)
+        prefix, mid, gt, tail = m.group(1), m.group(2), m.group(3), m.group(4)
         return (
             f'<span style="color:{_CLR_PS_PREFIX}">{html.escape(prefix)}</span>'
             f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(mid)}</span>'
             f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(gt)}</span>'
+            f"{_tail_span(tail)}"
         )
 
-    # CMD: C:\...>
-    m = re.match(r"^([A-Za-z]:[^>\r\n]*)>(\s*)$", s)
+    # CMD: C:\...> optional tail
+    m = re.match(r"^([A-Za-z]:[^>\r\n]*)(>)(.*)$", s)
     if m:
-        path, tail = m.group(1), m.group(2)
+        path, gt, tail = m.group(1), m.group(2), m.group(3)
         return (
             f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(path)}</span>'
-            f'<span style="color:{_CLR_PROMPT_SIG}">&gt;</span>{html.escape(tail)}'
+            f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(gt)}</span>'
+            f"{_tail_span(tail)}"
         )
 
-    # Unix-style / ADB: ...@host:path ... # or $ (path may contain spaces)
+    # Unix-style / ADB: user@host:path … # or $ … optional tail (pick rightmost # or $ that yields user@host:path)
     t2 = s.rstrip()
-    if len(t2) >= 4 and t2[-1] in "#$":
-        sig = t2[-1]
-        rest = t2[:-1].rstrip()
-        at = rest.find("@")
-        if at > 0:
-            colon = rest.find(":", at + 1)
-            if colon > at:
-                user = rest[:at]
-                host = rest[at + 1 : colon]
-                path = rest[colon + 1 :]
-                return (
-                    f'<span style="color:{_CLR_PROMPT_USER}">{html.escape(user)}</span>'
-                    f'<span style="color:{_CLR_PROMPT_SEP}">@</span>'
-                    f'<span style="color:{_CLR_PROMPT_HOST}">{html.escape(host)}</span>'
-                    f'<span style="color:{_CLR_PROMPT_SEP}">:</span>'
-                    f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(path)}</span>'
-                    f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(sig)}</span>'
-                )
+    cand = [(t2.rfind("#"), "#"), (t2.rfind("$"), "$")]
+    cand = [(j, ch) for j, ch in cand if j >= 0]
+    cand.sort(key=lambda x: x[0], reverse=True)
+    for j, sig_ch in cand:
+        head = t2[:j].rstrip()
+        tail = t2[j + 1 :]
+        at = head.find("@")
+        if at <= 0:
+            continue
+        colon = head.find(":", at + 1)
+        if colon <= at:
+            continue
+        user = head[:at]
+        host = head[at + 1 : colon]
+        path = head[colon + 1 :]
+        return (
+            f'<span style="color:{_CLR_PROMPT_USER}">{html.escape(user)}</span>'
+            f'<span style="color:{_CLR_PROMPT_SEP}">@</span>'
+            f'<span style="color:{_CLR_PROMPT_HOST}">{html.escape(host)}</span>'
+            f'<span style="color:{_CLR_PROMPT_SEP}">:</span>'
+            f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(path)}</span>'
+            f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(sig_ch)}</span>'
+            f"{_tail_span(tail)}"
+        )
 
     return None
 
@@ -526,8 +563,9 @@ class AnsiToHtmlConverter:
             esc = html.escape(line)
             if not esc:
                 continue
-            if self._prompt_highlight and use_semantic:
-                ph = style_prompt_line_html(line)
+            if self._prompt_highlight:
+                bare = strip_sgr_sequences_for_prompt(line)
+                ph = style_prompt_line_html(line, bare)
                 if ph:
                     html_parts.append(ph)
                     continue
