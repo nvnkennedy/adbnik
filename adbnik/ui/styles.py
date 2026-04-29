@@ -1,6 +1,6 @@
 _LIGHT_STYLESHEET = """
     QWidget {
-        background: #f3f5f9;
+        background: #eef1f6;
         color: #0f172a;
         font-family: "Segoe UI", Arial;
         font-size: 14px;
@@ -22,7 +22,7 @@ _LIGHT_STYLESHEET = """
         font-size: 14px;
     }
     QMainWindow {
-        background: #f3f5f9;
+        background: #eef1f6;
     }
     QMenuBar#AppMenuBar {
         background: #f8fafc;
@@ -64,16 +64,16 @@ _LIGHT_STYLESHEET = """
         padding: 8px 2px 4px 2px;
     }
     QTabWidget::pane {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
+        background: #f6f8fb;
+        border: 1px solid #dde3eb;
         border-radius: 14px;
         margin-top: 10px;
     }
     QTabWidget#MainTabs::pane {
         margin-top: 2px;
         border-radius: 8px;
-        border: 1px solid #cbd5e1;
-        background: #ffffff;
+        border: 1px solid #c9d4e3;
+        background: #f6f8fb;
     }
     QTabWidget#MainTabs QTabBar::tab {
         background-color: #e2e8f0;
@@ -526,9 +526,9 @@ _LIGHT_STYLESHEET = """
     }
     QPlainTextEdit#MobaTerminalOutput,
     QTextEdit#MobaTerminalOutput {
-        background-color: #0d1117;
-        color: #f0f3f6;
-        border: 1px solid #30363d;
+        background-color: #1e222a;
+        color: #e8ecf1;
+        border: 1px solid #3d4450;
         border-radius: 4px;
         padding: 10px 12px;
         font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
@@ -539,7 +539,7 @@ _LIGHT_STYLESHEET = """
     }
     QPlainTextEdit#MobaTerminalOutput:focus,
     QTextEdit#MobaTerminalOutput:focus {
-        border: 1px solid #58a6ff;
+        border: 1px solid #6e8cff;
     }
     QLabel#TerminalSessionFooter {
         background-color: #161b22;
@@ -735,17 +735,17 @@ _LIGHT_STYLESHEET = """
 
 # Appended after light stylesheet when dark=True. No global QWidget rule (breaks layout & terminal panes).
 _DARK_APPEND = """
-    QWidget { background: #0b1220; color: #e6edf3; }
+    QWidget { background: #12151c; color: #e6edf3; }
     QLabel { color: #e6edf3; background: transparent; }
     QLabel#LogPanelLabel { color: #e6edf3; }
-    QMainWindow { background: #0b1220; }
+    QMainWindow { background: #12151c; }
     QMenuBar#AppMenuBar { background: #161b22; border-bottom: 1px solid #30363d; color: #e6edf3; }
     QMenuBar#AppMenuBar::item { color: #e6edf3; }
     QMenuBar#AppMenuBar::item:selected { background: #21262d; }
     QMenu { background: #161b22; border: 1px solid #30363d; color: #e6edf3; }
     QMenu::item:selected { background: #21262d; color: #f0f6fc; }
-    QTabWidget::pane { background: #0d1117; border: 1px solid #30363d; }
-    QTabWidget#MainTabs::pane { background: #0d1117; border: 1px solid #30363d; }
+    QTabWidget::pane { background: #161922; border: 1px solid #2d333b; }
+    QTabWidget#MainTabs::pane { background: #161922; border: 1px solid #2d333b; }
     QTabWidget#MainTabs QTabBar::tab {
         background-color: #21262d;
         color: #f0f6fc;
@@ -755,10 +755,10 @@ _DARK_APPEND = """
         font-size: 13px;
     }
     QTabWidget#MainTabs QTabBar::tab:selected {
-        background-color: #0d1117;
+        background-color: #161922;
         color: #f0f6fc;
-        border-color: #58a6ff;
-        border-bottom: 2px solid #58a6ff;
+        border-color: #6e8cff;
+        border-bottom: 2px solid #6e8cff;
     }
     QTabWidget#MainTabs QTabBar::tab:hover { background-color: #30363d; color: #f0f6fc; }
     QTabWidget#ExplorerSessionTabs QTabBar::tab {
@@ -942,7 +942,7 @@ _DARK_APPEND = """
         font-size: 12px;
     }
     QPushButton#HeaderMiniBtn { background: #334155; border: 1px solid #475569; color: #e2e8f0; }
-    QWidget#MainBody { background: #0b1220; }
+    QWidget#MainBody { background: #12151c; }
     QWidget#ExplorerChrome { background: #111827; border: 1px solid #334155; }
     QLabel#ExplorerSessionHint { color: #8b949e; }
     QLabel#MobaTabCtrlLabel { color: #8b949e; }

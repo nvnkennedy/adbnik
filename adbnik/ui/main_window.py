@@ -11,6 +11,7 @@ from PyQt5.QtCore import QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt5.QtGui import QDesktopServices, QFont, QKeySequence, QTextCursor
 from PyQt5.QtWidgets import (
     QAction,
+    QActionGroup,
     QApplication,
     QComboBox,
     QDialog,
@@ -120,12 +121,11 @@ class MainWindow(QMainWindow):
         self._stats_prev_cpu: Dict[str, Tuple[int, int]] = {}
         self._apply_theme()
         self._setup_version_status()
-        if hasattr(self, "_action_dark"):
-            self._action_dark.setChecked(bool(getattr(self.config, "dark_theme", False)))
+        self._sync_theme_menu_checks()
         self.append_log("Application started.")
         self.append_log(f"ADB path: {self.get_adb_path()}  ·  scrcpy: {self.get_scrcpy_path()}")
         if getattr(self.config, "dark_theme", False):
-            self.append_log("Dark theme is enabled (View → Dark theme).")
+            self.append_log("Dark theme is enabled (View → Theme → Dark).")
         self.refresh_devices()
         if self._first_launch:
             QTimer.singleShot(0, self.prompt_first_run_if_needed)
@@ -255,8 +255,23 @@ class MainWindow(QMainWindow):
                 "color: #64748b; font-size: 11px; padding: 2px 12px; font-weight: 500;"
             )
 
-    def _toggle_dark_theme(self) -> None:
-        self.config.dark_theme = self._action_dark.isChecked()
+    def _sync_theme_menu_checks(self) -> None:
+        d = bool(getattr(self.config, "dark_theme", False))
+        if not hasattr(self, "_action_theme_dark"):
+            return
+        self._theme_action_group.blockSignals(True)
+        try:
+            self._action_theme_dark.setChecked(d)
+            self._action_theme_light.setChecked(not d)
+        finally:
+            self._theme_action_group.blockSignals(False)
+
+    def _on_theme_menu(self, action: QAction) -> None:
+        dark = action is self._action_theme_dark
+        self._apply_theme_config(dark)
+
+    def _apply_theme_config(self, dark: bool) -> None:
+        self.config.dark_theme = bool(dark)
         try:
             self.config.save()
         except OSError as exc:
@@ -496,8 +511,7 @@ class MainWindow(QMainWindow):
         dlg = FirstRunDialog(self.config, self, is_upgrade=self._is_upgrade_welcome)
         if dlg.exec_():
             self._apply_theme()
-            if hasattr(self, "_action_dark"):
-                self._action_dark.setChecked(bool(getattr(self.config, "dark_theme", False)))
+            self._sync_theme_menu_checks()
             self.append_log("Welcome — preferences saved. Use File → Preferences anytime.")
         else:
             self.append_log("Using defaults. Open File → Preferences to set paths and theme.")
@@ -868,12 +882,19 @@ class MainWindow(QMainWindow):
         a_stop_scr.triggered.connect(self._menu_stop_screen_mirror)
         view.addAction(a_stop_scr)
         view.addSeparator()
-        self._action_dark = QAction("&Dark theme", self)
-        self._action_dark.setIcon(self.style().standardIcon(QStyle.SP_DialogYesButton))
-        self._action_dark.setCheckable(True)
-        self._action_dark.setChecked(bool(getattr(self.config, "dark_theme", False)))
-        self._action_dark.triggered.connect(self._toggle_dark_theme)
-        view.addAction(self._action_dark)
+        theme_menu = view.addMenu("&Theme")
+        theme_menu.setIcon(self.style().standardIcon(QStyle.SP_DesktopIcon))
+        self._theme_action_group = QActionGroup(self)
+        self._theme_action_group.setExclusive(True)
+        self._action_theme_light = QAction("&Light", self)
+        self._action_theme_light.setCheckable(True)
+        self._action_theme_dark = QAction("&Dark", self)
+        self._action_theme_dark.setCheckable(True)
+        self._theme_action_group.addAction(self._action_theme_light)
+        self._theme_action_group.addAction(self._action_theme_dark)
+        self._theme_action_group.triggered.connect(self._on_theme_menu)
+        theme_menu.addAction(self._action_theme_light)
+        theme_menu.addAction(self._action_theme_dark)
 
         help_menu = bar.addMenu("&Help")
         a_site = QAction("Adbnik &website", self)
@@ -896,6 +917,8 @@ class MainWindow(QMainWindow):
         a_about.setIcon(self.style().standardIcon(QStyle.SP_MessageBoxInformation))
         a_about.triggered.connect(self._menu_help_about)
         help_menu.addAction(a_about)
+
+        self._sync_theme_menu_checks()
 
     def _open_help_url(self, url: str) -> None:
         """Open a documentation or project URL in the default browser."""
@@ -977,8 +1000,6 @@ class MainWindow(QMainWindow):
                 self.terminal.sync_serial_from_config()
             self.refresh_devices()
             self._build_menu_bar()
-            if hasattr(self, "_action_dark"):
-                self._action_dark.setChecked(bool(getattr(self.config, "dark_theme", False)))
 
     def _save_config_to_disk(self):
         try:

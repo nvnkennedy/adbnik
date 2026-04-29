@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.4.0] - 2026-04-29
+
+### Added
+
+- **Welcome banner:** Each terminal session shows a **Welcome to adbnik** header with session type (SSH, ADB shell, Serial, CMD, PowerShell, etc.) and **local date/time**; the same banner appears after **manual reconnect**, auto serial COM restart, and **Reconnect** from the tab menu. Session-specific hints (e.g. ADB device line, serial port line) still appear inside the banner when configured.
+- **Prompt readability:** When ANSI uses the default foreground, common **Unix / PowerShell / CMD** prompt lines are split into readable colors (user, host, path, and **`$` / `#` / `>`**).
+
+### Changed
+
+- **Terminal scrolling:** Process output uses **scroll-to-bottom only when the chunk introduces a new line** (`<br/>`), reducing jumpy auto-scroll when long lines **wrap** (SSH, CMD, PowerShell, ADB, serial).
+- **View menu:** **Theme** submenu with **Light** and **Dark** (replaces the single **Dark theme** checkbox).
+- **Themes:** Softer **light** chrome (less stark white) and **dark** chrome (warmer charcoal, less saturated blue accents); terminal pane uses a slightly softer dark surface.
+
+### Fixed
+
+- **Serial:** Removed stripping of **ESC** bytes from the raw stream (colors/logic depended on ANSI); added scrubbing of leaked **`[0;39m` / `0;39m`**-style text and tighter collapse of **blank lines**.
+
 ## [2.3.1] - 2026-04-29
 
 ### Fixed

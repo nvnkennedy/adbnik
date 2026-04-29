@@ -369,6 +369,64 @@ def _carry_incomplete_esc(s: str) -> Tuple[str, str]:
     return s[:last], tail
 
 
+# Prompt readability (host/path vs #/$) when SGR is default — works on dark terminal chrome.
+_CLR_PROMPT_USER = "#79c0ff"
+_CLR_PROMPT_SEP = "#8b949e"
+_CLR_PROMPT_HOST = "#a5d6ff"
+_CLR_PROMPT_PATH = "#7ee787"
+_CLR_PROMPT_SIG = "#ff7b72"
+_CLR_PS_PREFIX = "#d2a8ff"
+
+
+def style_prompt_line_html(line: str) -> Optional[str]:
+    """Return colored HTML for one logical prompt line (Unix/CMD/PowerShell), or None to use default span."""
+    if not (line or "").strip():
+        return None
+    s = line.rstrip("\r")
+
+    # PowerShell: PS C:\path>  (allow >> )
+    m = re.match(r"^(PS\s+)(.+)(>+)\s*$", s)
+    if m:
+        prefix, mid, gt = m.group(1), m.group(2), m.group(3)
+        return (
+            f'<span style="color:{_CLR_PS_PREFIX}">{html.escape(prefix)}</span>'
+            f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(mid)}</span>'
+            f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(gt)}</span>'
+        )
+
+    # CMD: C:\...>
+    m = re.match(r"^([A-Za-z]:[^>\r\n]*)>(\s*)$", s)
+    if m:
+        path, tail = m.group(1), m.group(2)
+        return (
+            f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(path)}</span>'
+            f'<span style="color:{_CLR_PROMPT_SIG}">&gt;</span>{html.escape(tail)}'
+        )
+
+    # Unix-style / ADB: ...@host:path ... # or $ (path may contain spaces)
+    t2 = s.rstrip()
+    if len(t2) >= 4 and t2[-1] in "#$":
+        sig = t2[-1]
+        rest = t2[:-1].rstrip()
+        at = rest.find("@")
+        if at > 0:
+            colon = rest.find(":", at + 1)
+            if colon > at:
+                user = rest[:at]
+                host = rest[at + 1 : colon]
+                path = rest[colon + 1 :]
+                return (
+                    f'<span style="color:{_CLR_PROMPT_USER}">{html.escape(user)}</span>'
+                    f'<span style="color:{_CLR_PROMPT_SEP}">@</span>'
+                    f'<span style="color:{_CLR_PROMPT_HOST}">{html.escape(host)}</span>'
+                    f'<span style="color:{_CLR_PROMPT_SEP}">:</span>'
+                    f'<span style="color:{_CLR_PROMPT_PATH}">{html.escape(path)}</span>'
+                    f'<span style="color:{_CLR_PROMPT_SIG}">{html.escape(sig)}</span>'
+                )
+
+    return None
+
+
 class AnsiToHtmlConverter:
     """Incremental ANSI → HTML (for QTextEdit) + parallel plain text (for prompts / logs)."""
 
@@ -377,6 +435,7 @@ class AnsiToHtmlConverter:
         *,
         ignore_background: bool = True,
         lift_black_foreground: bool = True,
+        prompt_highlight: bool = True,
     ) -> None:
         """Embedded terminal: ignore ANSI background (avoids full-pane blue/green from slog2info).
         ``lift_black_foreground`` maps SGR black (30) to a readable gray on dark UIs."""
@@ -384,6 +443,7 @@ class AnsiToHtmlConverter:
         self._state = _SgrState()
         self._ignore_background = bool(ignore_background)
         self._lift_black_foreground = bool(lift_black_foreground)
+        self._prompt_highlight = bool(prompt_highlight)
 
     def reset(self) -> None:
         self._pending = ""
@@ -466,6 +526,11 @@ class AnsiToHtmlConverter:
             esc = html.escape(line)
             if not esc:
                 continue
+            if self._prompt_highlight and use_semantic:
+                ph = style_prompt_line_html(line)
+                if ph:
+                    html_parts.append(ph)
+                    continue
             sem = _semantic_fg_for_plain_line(line) if use_semantic else None
             html_parts.append(f'<span style="{self._span_css(sem)}">{esc}</span>')
 

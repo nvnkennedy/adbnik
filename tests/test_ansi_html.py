@@ -8,6 +8,7 @@ from adbnik.ui.ansi_html import (
     preprocess_pty_stream,
     preprocess_serial_stream,
     strip_ansi_for_display,
+    style_prompt_line_html,
 )
 
 
@@ -50,6 +51,23 @@ def test_ensure_remote_pty_no_double_lead_when_chunk_starts_with_newline():
     tail = "out"  # no trailing newline; would normally consider glue
     chunk = "\nroot@h:~# "
     assert not ensure_remote_pty_visual_line_breaks(tail, chunk).startswith("\n\n")
+
+
+def test_style_prompt_line_unix_ssh():
+    h = style_prompt_line_html("user@host:~$ ")
+    assert h and "#79c0ff" in h and "$" in h and "user" in h
+
+
+def test_style_prompt_line_powershell():
+    h = style_prompt_line_html(r"PS C:\Windows\System32>")
+    assert h and "PS" in h and "System32" in h
+
+
+def test_prompt_highlight_feed_unix():
+    c = AnsiToHtmlConverter(prompt_highlight=True)
+    html, plain = c.feed("root@box:/tmp# ")
+    assert plain.strip()
+    assert "#ff7b72" in html
 
 
 def test_embedded_terminal_ignores_background_colors():

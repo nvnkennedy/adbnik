@@ -1,6 +1,7 @@
 import os
 import re
 import shlex
+from html import escape as html_escape
 import shutil
 import subprocess
 import sys
@@ -74,6 +75,16 @@ def _filter_serial_miniterm_banner(text: str) -> str:
     if not text:
         return text
     return _SERIAL_MINITERM_BANNER_RE.sub("", text)
+
+
+def _scrub_serial_display_glitches(text: str) -> str:
+    """Drop UART artifacts like ``[0;39m`` / ``0:39m`` that leak as plain text after ESC loss."""
+    if not text:
+        return text
+    text = re.sub(r"(?i)(?<!\x1b)\[0?[;:]39m\]?", "", text)
+    text = re.sub(r"(?i)(?<![\d\x1b\[])\b0[;:]39m\b", "", text)
+    text = re.sub(r"(?m)^\s*\[?0[;:.]39m\]?\s*$", "", text)
+    return text
 
 
 class _SerialPortReleaseThread(QThread):
@@ -1197,7 +1208,9 @@ class SessionWidget(QWidget):
         self._path_command_cache_key: str = ""
         self._python_repl_mode = False
         self._log_path = self._build_log_path()
-        self._ansi = AnsiToHtmlConverter(ignore_background=True, lift_black_foreground=True)
+        self._ansi = AnsiToHtmlConverter(ignore_background=True, lift_black_foreground=True, prompt_highlight=True)
+        self._welcome_is_reconnect = False
+        self._scroll_output_on_newline_only = True
         self._stream_chunk = 65536
         # Serial: auto-retry when the COM port is still held by a dead miniterm (max 2 restarts).
         self._serial_auto_retries_used = 0
@@ -1254,6 +1267,52 @@ class SessionWidget(QWidget):
         if self._shell_profile == "powershell":
             return "local_pwsh"
         return ""
+
+    def _session_kind_label(self) -> str:
+        if self._is_serial_session:
+            return "Serial console"
+        if self._is_ssh_session:
+            return "SSH"
+        if self._is_adb_shell:
+            return "ADB shell"
+        if self._shell_profile == "powershell":
+            return "PowerShell"
+        if self._shell_profile == "cmd":
+            return "Windows Command Prompt"
+        return "Local terminal"
+
+    def _welcome_banner_parts(self) -> Tuple[str, str]:
+        dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        kind = self._session_kind_label()
+        tag = "Reconnected" if self._welcome_is_reconnect else "Session started"
+        extra = ""
+        if (self._banner or "").strip():
+            extra = self._banner.strip().replace("\n", " ")
+            if len(extra) > 220:
+                extra = extra[:217] + "…"
+        lines_plain = ["Welcome to adbnik", f"{kind} · {tag}", dt]
+        if extra:
+            lines_plain.append(extra)
+        plain = "\n".join(lines_plain) + "\n" + ("─" * 48) + "\n"
+        h = (
+            '<div style="color:#8b949e;font-size:11px;line-height:1.4;margin:0 0 8px 0;padding:0 0 8px 0;'
+            'border-bottom:1px solid #3d444d">'
+            '<span style="color:#58a6ff;font-weight:600">Welcome to adbnik</span><br/>'
+            f'<span style="color:#7ee787">{html_escape(kind)}</span>'
+            f'<span style="color:#6e7681"> · </span>'
+            f'<span style="color:#a371f7">{html_escape(tag)}</span><br/>'
+            f'<span style="color:#6e7681">{html_escape(dt)}</span>'
+        )
+        if extra:
+            h += f'<br/><span style="color:#8b949e">{html_escape(extra)}</span>'
+        h += "</div>"
+        return h, plain
+
+    def _emit_session_welcome(self) -> None:
+        html, plain = self._welcome_banner_parts()
+        self._append_output_html(html, force_scroll=True)
+        self._write_log(plain)
+        self._tail_cache = (self._tail_cache + plain)[-32768:]
 
     def _pending_flush_backlog(self) -> int:
         return sum(len(x) for x in self._pending_chunks)
@@ -1446,6 +1505,7 @@ class SessionWidget(QWidget):
     def _restart_serial_session_after_release(self) -> None:
         self._ansi.reset()
         self._trim_first_pty_chunk = bool(self._banner)
+        self._welcome_is_reconnect = True
         self._connect_proc_signals()
         self._serial_start_monotonic = time.monotonic()
         self.proc.start(self.command[0], self.command[1:])
@@ -1910,7 +1970,8 @@ class SessionWidget(QWidget):
         self._stdout_drain_scheduled = False
         self._stderr_drain_scheduled = False
         self._ansi.reset()
-        self._trim_first_pty_chunk = bool(self._banner)
+        self._trim_first_pty_chunk = True
+        self._welcome_is_reconnect = True
         if self.proc.state() == QProcess.Running:
             self.proc.kill()
             self.proc.waitForFinished(1200)
@@ -1919,8 +1980,6 @@ class SessionWidget(QWidget):
             self._serial_force_kill_and_release()
             self._serial_start_monotonic = time.monotonic()
         self._connect_proc_signals()
-        self._append_plain_ui("\n[reconnecting session...]\n")
-        self._write_log("\n[reconnecting session...]\n")
         self.proc.start(self.command[0], self.command[1:])
         self._update_session_footer()
 
@@ -1940,6 +1999,7 @@ class SessionWidget(QWidget):
     def _on_proc_started(self) -> None:
         self._manual_shutdown = False
         self._auto_reconnect_attempts = 0
+        self._emit_session_welcome()
 
     def _flush_pending_streams(self) -> None:
         """Drain chunked stdout/stderr when the process ends (no further readyRead)."""
@@ -2139,6 +2199,8 @@ class SessionWidget(QWidget):
         if self._is_serial_session:
             data = preprocess_escape_noise(data)
             data = _filter_serial_miniterm_banner(data)
+            data = _scrub_serial_display_glitches(data)
+            data = re.sub(r"\n{2,}", "\n", data)
         else:
             # ADB/local shells need the same orphan-CSI / lone-ESC cleanup as SSH (not only preprocess_pty_stream).
             data = preprocess_escape_noise(data)
@@ -2158,8 +2220,6 @@ class SessionWidget(QWidget):
             data = re.sub(r"\n{2,}", "\n", data)
         # Serial + SSH + ADB: same ANSI → HTML path as local shells (Moba-style colors). Flush caps keep UI responsive.
         if self._is_serial_session:
-            # ANSI splits can leave bare \\n runs per chunk; _emit_text turns those into stacked <br/> (looks like ~3 blank lines per line).
-            data = re.sub(r"\n{3,}", "\n", data)
             html_frag, plain_frag = self._ansi.feed(data)
             if html_frag:
                 html_frag = re.sub(r"(?:<br/>){3,}", "<br/>", html_frag)
@@ -2231,15 +2291,7 @@ class SessionWidget(QWidget):
         text = "".join(parts)
         self.output.setUpdatesEnabled(False)
         try:
-            if self._is_serial_session:
-                self._append_output_html(text, ensure_visible=True)
-            elif self._is_remote_pty_shell:
-                self._remote_ui_tick += 1
-                backlog = self._pending_flush_backlog()
-                every = 24 if backlog > 500_000 else 14
-                self._append_output_html(text, ensure_visible=(self._remote_ui_tick % every == 0))
-            else:
-                self._append_output_html(text)
+            self._append_output_html(text)
         finally:
             self.output.setUpdatesEnabled(True)
         self._maybe_reset_ansi_after_prompt()
@@ -2248,10 +2300,15 @@ class SessionWidget(QWidget):
         if self._pending_chunks:
             self._arm_flush_timer()
 
-    def _append_output_html(self, text: str, ensure_visible: bool = True) -> None:
+    def _append_output_html(self, text: str, ensure_visible: bool = True, *, force_scroll: bool = False) -> None:
         if not text:
             return
-        self.output.append_from_process_html(text, ensure_visible=ensure_visible)
+        ev = ensure_visible
+        if force_scroll:
+            ev = True
+        elif ev and getattr(self, "_scroll_output_on_newline_only", False):
+            ev = "<br" in (text or "").lower()
+        self.output.append_from_process_html(text, ensure_visible=ev)
         self._sync_python_repl_mode()
 
     def _sync_python_repl_mode(self) -> None:
@@ -2278,17 +2335,12 @@ class SessionWidget(QWidget):
                 com = parts[-2] if len(parts) >= 2 else "COM?"
                 baud = parts[-1] if len(parts) >= 2 else "?"
                 self._banner = (
-                    f"Serial console · {com} @ {baud} baud — Close this tab to disconnect. "
-                    f"Ctrl+] sends a telnet-style break to the device (pySerial console), not paste.\n"
+                    f"Serial console · {com} @ {baud} baud — close tab to disconnect; Ctrl+] = break (miniterm)."
                 )
             self._trim_first_pty_chunk = bool(self._banner)
-        # Banner line only; first PTY bytes may include leading newlines — trimmed in _append.
-        initial = (self._banner + "\n") if self._banner else ""
-        self.output.set_initial_content(initial)
-        self._tail_cache = initial[-32768:]
+        self.output.set_initial_content("")
+        self._tail_cache = ""
         self._open_log()
-        if self._banner:
-            self._write_log(self._banner + "\n")
         env = QProcessEnvironment.systemEnvironment()
         if self._path_extra_dirs:
             path = env.value("PATH", "") or env.value("Path", "")
@@ -2406,8 +2458,6 @@ class SessionWidget(QWidget):
             sz = int(getattr(self, "_stream_chunk", 65536) or 65536)
             chunk = self._stdout_pending[:sz]
             del self._stdout_pending[:sz]
-            if self._is_serial_session:
-                chunk = bytes(b for b in chunk if b not in (0x1B, 0x9B))
             self._append(chunk.decode(errors="ignore"))
         if self._stdout_pending:
             self._schedule_stdout_drain()
@@ -2433,8 +2483,6 @@ class SessionWidget(QWidget):
             sz = int(getattr(self, "_stream_chunk", 65536) or 65536)
             chunk = self._stderr_pending[:sz]
             del self._stderr_pending[:sz]
-            if self._is_serial_session:
-                chunk = bytes(b for b in chunk if b not in (0x1B, 0x9B))
             self._append(chunk.decode(errors="ignore"))
         if self._stderr_pending:
             self._schedule_stderr_drain()
