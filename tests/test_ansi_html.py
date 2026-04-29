@@ -80,10 +80,11 @@ def test_style_prompt_line_powershell():
 
 
 def test_prompt_highlight_feed_unix():
-    c = AnsiToHtmlConverter(prompt_highlight=True)
+    pal = get_prompt_palette("ssh")
+    c = AnsiToHtmlConverter(prompt_highlight=True, prompt_palette=pal)
     html, plain = c.feed("root@box:/tmp# ")
     assert plain.strip()
-    assert "#ff7b72" in html
+    assert pal.sig in html
 
 
 def test_prompt_line_with_leading_sgr():
@@ -109,7 +110,7 @@ def test_plain_output_line_uses_output_tint():
 def test_preprocess_prompt_lines_strips_sgr_on_detected_prompt():
     """Colored SSH prompts become plain so HTML prompt styling applies."""
     line = "\x1b[32muser@host:~$\x1b[0m ls"
-    out = preprocess_prompt_lines_for_highlight(line + "\n")
+    out = preprocess_prompt_lines_for_highlight(line + "\n", palette_kind="ssh")
     assert "\x1b" not in out
     assert "user@host" in out
 

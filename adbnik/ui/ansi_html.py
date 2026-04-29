@@ -103,27 +103,27 @@ def get_prompt_palette(kind: str) -> PromptPalette:
 
 
 _PROMPT_PALETTES: Dict[str, PromptPalette] = {
-    # SSH: cool cyan/teal prompt, amber typed tail, slate output
+    # SSH: prompt segments vs typed tail vs command output (high contrast)
     "ssh": PromptPalette(
-        user="#67e8f9",
-        sep="#94a3b8",
-        host="#38bdf8",
-        path="#86efac",
-        sig="#fb7185",
+        user="#38bdf8",
+        sep="#64748b",
+        host="#22d3ee",
+        path="#4ade80",
+        sig="#fb923c",
         ps_prefix="#c4b5fd",
-        prompt_input="#fde68a",
+        prompt_input="#fef08a",
         line_output="#94a3b8",
     ),
-    # ADB: green device tone, gold input, neutral output
+    # ADB: device vs path vs marker vs input vs listing output
     "adb": PromptPalette(
-        user="#4ade80",
-        sep="#94a3a6",
-        host="#bbf7d0",
-        path="#a7f3d0",
-        sig="#fbbf24",
+        user="#2dd4bf",
+        sep="#64748b",
+        host="#5eead4",
+        path="#e2e8f0",
+        sig="#fb923c",
         ps_prefix="#ddd6fe",
-        prompt_input="#fcd34d",
-        line_output="#9ca3af",
+        prompt_input="#fde047",
+        line_output="#a1a1aa",
     ),
     "powershell": PromptPalette(
         user="#a78bfa",
@@ -358,6 +358,10 @@ def preprocess_serial_esc_boundaries(data: str) -> str:
 
 def preprocess_serial_stream(data: str) -> str:
     """UART / miniterm: strip reset spam and CSI fragments when ESC is dropped or echoed oddly."""
+    if not data:
+        return data
+    data = data.replace("\r\n", "\n").replace("\r", "\n")
+    data = data.replace("\x07", "")
     data = preprocess_escape_noise(data)
     if not data:
         return data
@@ -559,12 +563,12 @@ def style_prompt_line_html(
     return None
 
 
-def preprocess_prompt_lines_for_highlight(data: str) -> str:
+def preprocess_prompt_lines_for_highlight(data: str, *, palette_kind: str = "local") -> str:
     """SSH/ADB: strip in-band SGR on lines that match a shell prompt so prompt HTML styling applies."""
     if not data:
         return data
     lines = data.split("\n")
-    pal = get_prompt_palette("local")
+    pal = get_prompt_palette(palette_kind)
     out: List[str] = []
     for line in lines:
         bare = strip_sgr_sequences_for_prompt(line)
@@ -585,15 +589,19 @@ class AnsiToHtmlConverter:
         lift_black_foreground: bool = True,
         prompt_highlight: bool = True,
         prompt_palette: Optional[PromptPalette] = None,
+        reset_fg_each_physical_line: bool = False,
     ) -> None:
         """Embedded terminal: ignore ANSI background (avoids full-pane blue/green from slog2info).
-        ``lift_black_foreground`` maps SGR black (30) to a readable gray on dark UIs."""
+        ``lift_black_foreground`` maps SGR black (30) to a readable gray on dark UIs.
+        ``reset_fg_each_physical_line``: before each new \\n-delimited row, reset SGR so SSH/ADB listings
+        do not inherit the prompt line's ANSI color."""
         self._pending = ""
         self._state = _SgrState()
         self._ignore_background = bool(ignore_background)
         self._lift_black_foreground = bool(lift_black_foreground)
         self._prompt_highlight = bool(prompt_highlight)
         self._prompt_palette = prompt_palette or get_prompt_palette("local")
+        self._reset_fg_each_physical_line = bool(reset_fg_each_physical_line)
 
     def reset(self) -> None:
         self._pending = ""
@@ -673,6 +681,8 @@ class AnsiToHtmlConverter:
         for i, line in enumerate(lines):
             if i > 0:
                 html_parts.append("<br/>")
+                if self._reset_fg_each_physical_line:
+                    self._state.reset()
             esc = html.escape(line)
             if not esc:
                 continue

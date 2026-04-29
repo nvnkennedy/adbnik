@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.5.2] - 2026-04-29
+
+### Changed
+
+- **Camera tab:** Loaded **only when you first open** the Camera tab so startup and other tabs stay responsive; preview **fills** the preview area, requests the **highest supported viewfinder resolution**, and uses **ignore aspect ratio** for scaling (sharper than small letterboxed scaling).
+- **Open/save/folder dialogs:** `QFileDialog.getOpenFileName` / `getSaveFileName` / `getExistingDirectory` for **native Windows** styling where the platform supports it.
+- **SSH / ADB terminals:** Prompt-line preprocessing uses the session palette (**ssh** / **adb**) so colored prompts strip correctly; **serial** chunks reset the ANSI parser state so incomplete escapes do not leak into the next chunk.
+
+### Fixed
+
+- **ADB / SSH:** Prompt palette applies per physical output line so **`ls`** listings are not stuck in the prompt color.
+- **ADB / SSH:** One visible space after **`$`** / **`#`** when the shell omits it (caret alignment).
+- **Serial UART:** Stronger scrub (**CR/BEL**, bracket CSI fragments) plus parser reset between chunks.
+- **Light theme:** **`QMessageBox`** detail labels (`qt_msgbox_label`) and **Camera** lazy-load hint text use explicit contrast.
+- **Regression:** Non-native Fusion file dialogs from 2.5.0 removed again in favor of native/static dialogs.
+
 ## [2.5.1] - 2026-04-29
 
 ### Fixed

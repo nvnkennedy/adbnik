@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import QSize, Qt, QUrl
+from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QComboBox,
     QFrame,
@@ -162,8 +162,10 @@ class CameraTab(QWidget):
 
         if _QT_MULTIMEDIA:
             self._view = QVideoWidget()
-            self._view.setMinimumSize(480, 270)
-            self._view.setAspectRatioMode(Qt.KeepAspectRatio)
+            self._view.setMinimumSize(320, 180)
+            self._view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            # Fill the preview area (letterboxing was shrinking + softening the scaled image).
+            self._view.setAspectRatioMode(Qt.IgnoreAspectRatio)
             vb.addWidget(self._view, 1)
         else:
             self._view = QLabel(
@@ -176,8 +178,7 @@ class CameraTab(QWidget):
         root.addWidget(video_box, 1)
 
         self._footer = QLabel(
-            "Rendering runs in the Qt Multimedia pipeline; captures are written from the camera session "
-            "(disk I/O is short chunks). Keep this tab open while recording."
+            "Captures are written from the camera session; keep this tab open while recording."
         )
         self._footer.setWordWrap(True)
         self._footer.setObjectName("CameraFooterLabel")
@@ -281,6 +282,22 @@ class CameraTab(QWidget):
         try:
             cam = QCamera(info)
             cam.setViewfinder(self._view)
+            try:
+                from PyQt5.QtMultimedia import QCameraViewfinderSettings
+
+                opts = cam.supportedViewfinderSettings()
+                if opts:
+                    best = max(
+                        opts,
+                        key=lambda s: s.resolution().width() * s.resolution().height(),
+                    )
+                    cam.setViewfinderSettings(best)
+                else:
+                    vs = QCameraViewfinderSettings()
+                    vs.setResolution(QSize(1280, 720))
+                    cam.setViewfinderSettings(vs)
+            except Exception:
+                pass
             cap = QCameraImageCapture(cam)
             self._camera = cam
             self._image_capture = cap

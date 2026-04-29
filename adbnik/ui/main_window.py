@@ -48,7 +48,6 @@ from .styles import get_stylesheet
 from .icon_utils import icon_adb_android
 from .tabs.file_explorer_tab import FileExplorerTab
 from .file_dialogs import get_open_filename, get_save_filename
-from .tabs.camera_tab import CameraTab
 from .tabs.scrcpy_tab import ScrcpyTab
 from .tabs.terminal_tab import TerminalTab
 from .win_scrcpy_hotkey import (
@@ -353,8 +352,9 @@ class MainWindow(QMainWindow):
             self.file_explorer.disconnect_remote_services()
         if hasattr(self, "scrcpy"):
             self.scrcpy.shutdown(fast=True)
-        if hasattr(self, "camera"):
-            self.camera.shutdown(fast=True)
+        cam = getattr(self, "camera", None)
+        if cam is not None:
+            cam.shutdown(fast=True)
         for _name in ("_device_refresh_thread", "_stats_refresh_thread"):
             th = getattr(self, _name, None)
             if th is not None:
@@ -448,21 +448,29 @@ class MainWindow(QMainWindow):
             get_serial=lambda: self.terminal.current_adb_serial(),
             config=self.config,
         )
-        self.camera = CameraTab(
-            self.append_log,
-            get_output_dir=self.get_camera_output_dir,
-            set_output_dir=self.set_camera_output_dir,
+        self.camera = None  # lazily created CameraTab when the Camera tab is first opened (keeps startup fast)
+        self._camera_tab_built = False
+        self._camera_placeholder = QWidget()
+        _cph = QVBoxLayout(self._camera_placeholder)
+        _cph.setContentsMargins(16, 24, 16, 24)
+        _cam_lazy_lbl = QLabel(
+            "Camera loads when you open this tab so the rest of the window stays responsive."
         )
+        _cam_lazy_lbl.setWordWrap(True)
+        _cam_lazy_lbl.setObjectName("CameraLazyHintLabel")
+        _cph.addWidget(_cam_lazy_lbl)
+        _cph.addStretch()
         st = self.style()
         self.tabs.addTab(self.terminal, st.standardIcon(QStyle.SP_FileDialogDetailedView), "Terminal")
         self.tabs.addTab(self.file_explorer, st.standardIcon(QStyle.SP_DirLinkIcon), "File Explorer")
         self.tabs.addTab(self.scrcpy, st.standardIcon(QStyle.SP_ComputerIcon), "Screen Control")
         self.tabs.addTab(
-            self.camera,
+            self._camera_placeholder,
             st.standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)),
             "Camera",
         )
         self.tabs.tabBar().setIconSize(QSize(18, 18))
+        self._prev_main_tab_index = 0
         self.tabs.currentChanged.connect(self._on_main_tab_changed)
         self.terminal.device_combo.currentTextChanged.connect(self._on_device_combo_changed)
         body_split.addWidget(self.tabs)
@@ -539,7 +547,41 @@ class MainWindow(QMainWindow):
             return ""
         return t.split()[0]
 
+    def _lazy_init_camera_tab(self) -> None:
+        """Instantiate Qt Multimedia camera UI only on first visit — avoids slowing cold start."""
+        if self._camera_tab_built:
+            return
+        from .tabs.camera_tab import CameraTab
+
+        self._camera_tab_built = True
+        idx = self.tabs.indexOf(self._camera_placeholder)
+        if idx < 0:
+            return
+        self.tabs.removeTab(idx)
+        self.camera = CameraTab(
+            self.append_log,
+            get_output_dir=self.get_camera_output_dir,
+            set_output_dir=self.set_camera_output_dir,
+        )
+        self.tabs.insertTab(
+            idx,
+            self.camera,
+            self.style().standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)),
+            "Camera",
+        )
+
     def _on_main_tab_changed(self, index: int) -> None:
+        if index == 3:
+            self._lazy_init_camera_tab()
+        prev = getattr(self, "_prev_main_tab_index", 0)
+        if prev == 3 and index != 3:
+            cam = getattr(self, "camera", None)
+            if cam is not None:
+                try:
+                    cam.shutdown(fast=True)
+                except Exception:
+                    pass
+        self._prev_main_tab_index = index
         if index == 0 and hasattr(self, "terminal"):
             self.terminal._reload_bookmark_sidebar()
         if index == 1:

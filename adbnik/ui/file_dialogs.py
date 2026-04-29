@@ -1,14 +1,22 @@
-"""Non-native QFileDialog wrappers so Fusion stylesheets apply (fixes invisible text in light theme on Windows)."""
+"""QFileDialog helpers using Qt static APIs so Windows/macOS get native open/save/folder dialogs."""
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Optional, Tuple
 
 from PyQt5.QtWidgets import QFileDialog, QWidget
 
 
-def _force_styled_dialog(dlg: QFileDialog) -> None:
-    dlg.setOption(QFileDialog.DontUseNativeDialog, True)
+def _normalize_initial_path(directory: str) -> str:
+    """Turn optional filename or relative path into an absolute path Qt shows correctly."""
+    d = (directory or "").strip()
+    if not d:
+        return ""
+    if os.path.isabs(d):
+        return d
+    return str((Path.home() / d).resolve())
 
 
 def get_open_filename(
@@ -17,13 +25,10 @@ def get_open_filename(
     directory: str = "",
     filter_str: str = "",
 ) -> Tuple[str, str]:
-    dlg = QFileDialog(parent, caption, directory or "", filter_str)
-    _force_styled_dialog(dlg)
-    dlg.setFileMode(QFileDialog.ExistingFile)
-    if dlg.exec_() == QFileDialog.Accepted:
-        files = dlg.selectedFiles()
-        return (files[0] if files else ""), dlg.selectedNameFilter()
-    return "", ""
+    path, selected_filter = QFileDialog.getOpenFileName(
+        parent, caption, _normalize_initial_path(directory), filter_str
+    )
+    return path or "", selected_filter or ""
 
 
 def get_save_filename(
@@ -32,21 +37,12 @@ def get_save_filename(
     directory: str = "",
     filter_str: str = "",
 ) -> Tuple[str, str]:
-    dlg = QFileDialog(parent, caption, directory or "", filter_str)
-    _force_styled_dialog(dlg)
-    dlg.setAcceptMode(QFileDialog.AcceptSave)
-    if dlg.exec_() == QFileDialog.Accepted:
-        files = dlg.selectedFiles()
-        return (files[0] if files else ""), dlg.selectedNameFilter()
-    return "", ""
+    path, selected_filter = QFileDialog.getSaveFileName(
+        parent, caption, _normalize_initial_path(directory), filter_str
+    )
+    return path or "", selected_filter or ""
 
 
 def get_existing_directory(parent: Optional[QWidget], caption: str, directory: str = "") -> str:
-    dlg = QFileDialog(parent, caption, directory or "")
-    _force_styled_dialog(dlg)
-    dlg.setFileMode(QFileDialog.Directory)
-    dlg.setOption(QFileDialog.ShowDirsOnly, True)
-    if dlg.exec_() == QFileDialog.Accepted:
-        files = dlg.selectedFiles()
-        return files[0] if files else ""
-    return ""
+    d = QFileDialog.getExistingDirectory(parent, caption, _normalize_initial_path(directory))
+    return d or ""

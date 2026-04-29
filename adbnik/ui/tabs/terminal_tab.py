@@ -50,6 +50,8 @@ from ..ansi_html import (
     preprocess_escape_noise,
     preprocess_prompt_lines_for_highlight,
     preprocess_serial_esc_boundaries,
+    preprocess_serial_stream,
+    strip_sgr_sequences_for_prompt,
 )
 from ..combo_utils import ExpandAllComboBox
 from ..file_dialogs import get_save_filename
@@ -1221,6 +1223,7 @@ class SessionWidget(QWidget):
             lift_black_foreground=True,
             prompt_highlight=True,
             prompt_palette=get_prompt_palette(self._session_prompt_palette_name()),
+            reset_fg_each_physical_line=self._is_ssh_session or self._is_adb_shell,
         )
         self._welcome_is_reconnect = False
         self._scroll_output_on_newline_only = True
@@ -2085,16 +2088,25 @@ class SessionWidget(QWidget):
             self._session_footer.setText(f"Session · {self.session_label}")
 
     def _ensure_prompt_trailing_space(self) -> None:
-        """CMD only: pipe-backed cmd may end with `>` without a space. PowerShell prints its own prompt; adding a space here caused extra gaps and missing prompt lines."""
-        if self._shell_profile != "cmd":
+        """Ensure one visible space after the prompt token so the caret sits past ``$``/``#``/``>``."""
+        if self._shell_profile == "cmd":
+            doc = self._tail_cache
+            if not doc or doc.endswith("> ") or not doc.rstrip().endswith(">"):
+                return
+            last = self._last_nonempty_line().rstrip()
+            if not re.search(r"[A-Za-z]:\\[^>\n]*>$", last):
+                return
+            self._append_plain_ui(" ")
             return
-        doc = self._tail_cache
-        if not doc or doc.endswith("> ") or not doc.rstrip().endswith(">"):
-            return
-        last = self._last_nonempty_line().rstrip()
-        if not re.search(r"[A-Za-z]:\\[^>\n]*>$", last):
-            return
-        self._append_plain_ui(" ")
+        if self._is_adb_shell or self._is_ssh_session:
+            raw = self._last_nonempty_line()
+            if not raw.strip():
+                return
+            bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r"))
+            if bare.endswith("$ ") or bare.endswith("# "):
+                return
+            if bare.endswith("$") or bare.endswith("#"):
+                self._append_plain_ui(" ")
 
     def _write_raw_to_shell(self, data: bytes) -> None:
         if self.proc.state() != QProcess.Running or not data:
@@ -2232,7 +2244,7 @@ class SessionWidget(QWidget):
         if self._is_serial_session:
             self._serial_maybe_retry_on_text(data)
         if self._is_serial_session:
-            data = preprocess_escape_noise(data)
+            data = preprocess_serial_stream(data)
             data = preprocess_serial_esc_boundaries(data)
             data = _filter_serial_miniterm_banner(data)
             data = _scrub_serial_display_glitches(data)
@@ -2258,6 +2270,7 @@ class SessionWidget(QWidget):
             data = re.sub(r"\n{2,}", "\n", data)
         # Serial + SSH + ADB: same ANSI → HTML path as local shells (Moba-style colors). Flush caps keep UI responsive.
         if self._is_serial_session:
+            self._ansi.reset()
             html_frag, plain_frag = self._ansi.feed(data)
             if html_frag:
                 html_frag = re.sub(r"(?:<br/>){3,}", "<br/>", html_frag)
@@ -2273,7 +2286,9 @@ class SessionWidget(QWidget):
         if self._is_remote_pty_shell:
             data = normalize_remote_pty_plain_text(data)
             data = ensure_remote_pty_visual_line_breaks(self._tail_cache, data)
-            data = preprocess_prompt_lines_for_highlight(data)
+            data = preprocess_prompt_lines_for_highlight(
+                data, palette_kind=self._session_prompt_palette_name()
+            )
             data = re.sub(r"\n{6,}", "\n\n\n\n\n", data)
             data = re.sub(r"\n{3,}", "\n", data)
             html_frag, plain_frag = self._ansi.feed(data)

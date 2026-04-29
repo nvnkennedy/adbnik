@@ -21,6 +21,11 @@ _LIGHT_STYLESHEET = """
         font-weight: 600;
         font-size: 14px;
     }
+    QLabel#CameraLazyHintLabel {
+        color: #0f172a;
+        font-size: 14px;
+        background: transparent;
+    }
     QMainWindow {
         background: #eef1f6;
     }
@@ -52,7 +57,7 @@ _LIGHT_STYLESHEET = """
     QMenu::item:selected {
         background: #e0edff;
     }
-    /* Native QFileDialog ignores theme on Windows; DontUseNativeDialog + these rules fix invisible labels */
+    /* Styled QFileDialog fallback (native dialogs use OS chrome and may ignore these rules) */
     QFileDialog {
         background: #ffffff;
         color: #0f172a;
@@ -96,6 +101,33 @@ _LIGHT_STYLESHEET = """
     }
     QFileDialog QDialogButtonBox QPushButton {
         min-width: 88px;
+    }
+    QMessageBox {
+        background: #ffffff;
+        color: #0f172a;
+    }
+    QMessageBox QLabel {
+        color: #0f172a;
+        background: transparent;
+        min-width: 280px;
+        font-size: 14px;
+    }
+    QMessageBox QPushButton {
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        color: #1e3a8a;
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-weight: 600;
+        min-width: 72px;
+    }
+    QMessageBox QPushButton:hover {
+        background: #e0e7ff;
+    }
+    QMessageBox QLabel#qt_msgbox_label,
+    QMessageBox QLabel#qt_msgboxex_label {
+        color: #0f172a;
+        background: transparent;
     }
     QFrame#TopCard {
         background: #fcfdff;
@@ -1066,6 +1098,33 @@ _DARK_APPEND = """
         padding: 8px 14px;
         border-radius: 8px;
         font-weight: 600;
+    }
+    QMessageBox {
+        background: #111827;
+        color: #f1f5f9;
+    }
+    QMessageBox QLabel {
+        color: #e6edf3;
+        background: transparent;
+        min-width: 280px;
+        font-size: 14px;
+    }
+    QMessageBox QPushButton {
+        background: #334155;
+        border: 1px solid #475569;
+        color: #f8fafc;
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-weight: 600;
+        min-width: 72px;
+    }
+    QMessageBox QPushButton:hover {
+        background: #475569;
+    }
+    QMessageBox QLabel#qt_msgbox_label,
+    QMessageBox QLabel#qt_msgboxex_label {
+        color: #e6edf3;
+        background: transparent;
     }
     QDialog { background: #111827; color: #f1f5f9; }
     QDialog QWidget { background: #111827; color: #f1f5f9; }
