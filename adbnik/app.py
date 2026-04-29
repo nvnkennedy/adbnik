@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import QApplication, QStyleFactory
 from . import APP_TITLE, __version__
 from .config import AppConfig, has_existing_config_file
 from .ui.app_icon import create_app_icon
+from .ui.styles import get_stylesheet
 
 
 def _set_windows_app_user_model_id() -> None:
@@ -47,6 +48,7 @@ def main():
         pass
 
     config = AppConfig.load()
+    app.setStyleSheet(get_stylesheet(dark=bool(getattr(config, "dark_theme", False))))
     fresh_config = not has_existing_config_file()
     upgraded = (
         not fresh_config

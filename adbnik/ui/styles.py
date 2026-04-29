@@ -19,12 +19,25 @@ _LIGHT_STYLESHEET = """
     QLabel#LogPanelLabel {
         color: #0f172a;
         font-weight: 600;
-        font-size: 14px;
+        font-size: 15px;
     }
     QLabel#CameraLazyHintLabel {
         color: #0f172a;
         font-size: 14px;
         background: transparent;
+    }
+    QWidget#CameraTabRoot QPushButton#CameraChromeBtn {
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 8px 16px;
+        font-weight: 600;
+        color: #0f172a;
+        font-size: 13px;
+    }
+    QWidget#CameraTabRoot QPushButton#CameraChromeBtn:hover {
+        background: #e2e8f0;
+        border-color: #94a3b8;
     }
     QMainWindow {
         background: #eef1f6;
@@ -128,6 +141,11 @@ _LIGHT_STYLESHEET = """
     QMessageBox QLabel#qt_msgboxex_label {
         color: #0f172a;
         background: transparent;
+    }
+    QMessageBox QLabel#qt_msgbox_informativelabel {
+        color: #334155;
+        background: transparent;
+        font-size: 13px;
     }
     QFrame#TopCard {
         background: #fcfdff;
@@ -709,8 +727,8 @@ _LIGHT_STYLESHEET = """
         color: #0f172a;
         border: 1px solid #cbd5e1;
         border-radius: 6px;
-        padding: 6px 8px;
-        font-size: 12px;
+        padding: 8px 10px;
+        font-size: 14px;
     }
     QPushButton#HeaderMiniBtn {
         background: #f1f5f9;
@@ -814,7 +832,11 @@ _LIGHT_STYLESHEET = """
 _DARK_APPEND = """
     QWidget { background: #12151c; color: #e6edf3; }
     QLabel { color: #e6edf3; background: transparent; }
-    QLabel#LogPanelLabel { color: #e6edf3; }
+    QLabel#LogPanelLabel {
+        color: #e6edf3;
+        font-weight: 600;
+        font-size: 15px;
+    }
     QMainWindow { background: #12151c; }
     QMenuBar#AppMenuBar { background: #161b22; border-bottom: 1px solid #30363d; color: #e6edf3; }
     QMenuBar#AppMenuBar::item { color: #e6edf3; }
@@ -1015,8 +1037,8 @@ _DARK_APPEND = """
         color: #e6edf3;
         border: 1px solid #30363d;
         border-radius: 6px;
-        padding: 6px 8px;
-        font-size: 12px;
+        padding: 8px 10px;
+        font-size: 14px;
     }
     QPushButton#HeaderMiniBtn { background: #334155; border: 1px solid #475569; color: #e2e8f0; }
     QWidget#MainBody { background: #12151c; }
@@ -1125,6 +1147,24 @@ _DARK_APPEND = """
     QMessageBox QLabel#qt_msgboxex_label {
         color: #e6edf3;
         background: transparent;
+    }
+    QMessageBox QLabel#qt_msgbox_informativelabel {
+        color: #cbd5e1;
+        background: transparent;
+        font-size: 13px;
+    }
+    QWidget#CameraTabRoot QPushButton#CameraChromeBtn {
+        background: #1e293b;
+        border: 1px solid #475569;
+        border-radius: 10px;
+        padding: 8px 16px;
+        font-weight: 600;
+        color: #f1f5f9;
+        font-size: 13px;
+    }
+    QWidget#CameraTabRoot QPushButton#CameraChromeBtn:hover {
+        background: #334155;
+        border-color: #64748b;
     }
     QDialog { background: #111827; color: #f1f5f9; }
     QDialog QWidget { background: #111827; color: #f1f5f9; }

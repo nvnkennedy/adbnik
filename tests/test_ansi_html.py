@@ -74,6 +74,18 @@ def test_style_prompt_line_adb_same_line_command():
     assert h and "vivo" in h and "ls" in h and adb.prompt_input in h
 
 
+def test_style_prompt_ssh_minimal_hash_green():
+    ssh = get_prompt_palette("ssh")
+    h = style_prompt_line_html("# reboot", palette=ssh)
+    assert h and ssh.sig_hash and ssh.sig_hash in h
+
+
+def test_style_prompt_ssh_host_then_hash():
+    ssh = get_prompt_palette("ssh")
+    h = style_prompt_line_html("bmw_unit # ls", palette=ssh)
+    assert h and "bmw_unit" in h and ssh.sig_hash in h
+
+
 def test_style_prompt_line_powershell():
     h = style_prompt_line_html(r"PS C:\Windows\System32>")
     assert h and "PS" in h and "System32" in h
@@ -82,7 +94,7 @@ def test_style_prompt_line_powershell():
 def test_prompt_highlight_feed_unix():
     pal = get_prompt_palette("ssh")
     c = AnsiToHtmlConverter(prompt_highlight=True, prompt_palette=pal)
-    html, plain = c.feed("root@box:/tmp# ")
+    html, plain = c.feed("root@box:/tmp$ ")
     assert plain.strip()
     assert pal.sig in html
 
@@ -183,6 +195,12 @@ def test_serial_preprocess_strips_bare_0_39m_line():
     s = preprocess_serial_stream("a\n0;39m\nb\n")
     assert "0;39m" not in s
     assert "a" in s and "b" in s
+
+
+def test_serial_preprocess_strips_lonely_bracket_039():
+    s = preprocess_serial_stream("ok\n[0;39m\nmore")
+    assert "[0;39m" not in s
+    assert "ok" in s and "more" in s
 
 
 def test_strip_ansi_for_display_removes_sequences_and_orphan_0_39m():

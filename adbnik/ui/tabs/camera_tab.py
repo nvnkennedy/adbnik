@@ -20,7 +20,6 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QStyle,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -53,6 +52,7 @@ class CameraTab(QWidget):
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
+        self.setObjectName("CameraTabRoot")
         self._append_log = append_log
         self._get_output_dir = get_output_dir
         self._set_output_dir = set_output_dir
@@ -64,8 +64,8 @@ class CameraTab(QWidget):
         self._paused = False
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(10)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(12)
 
         title_row = QHBoxLayout()
         title = QLabel("Camera")
@@ -90,16 +90,18 @@ class CameraTab(QWidget):
 
         st = self.style()
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(10)
 
-        def mk_btn(text: str, icon: QIcon, tip: str, slot) -> QToolButton:
-            b = QToolButton()
-            b.setText(text)
-            b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        def mk_btn(text: str, icon: QIcon, tip: str, slot) -> QPushButton:
+            b = QPushButton(text)
+            b.setObjectName("CameraChromeBtn")
             b.setIcon(icon)
+            b.setIconSize(QSize(18, 18))
             b.setToolTip(tip)
+            b.setCursor(Qt.PointingHandCursor)
             b.clicked.connect(slot)
-            b.setMinimumHeight(36)
+            b.setMinimumHeight(40)
+            b.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             return b
 
         self._btn_start = mk_btn(
@@ -162,10 +164,11 @@ class CameraTab(QWidget):
 
         if _QT_MULTIMEDIA:
             self._view = QVideoWidget()
-            self._view.setMinimumSize(320, 180)
+            self._view.setMinimumSize(400, 225)
             self._view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            # Fill the preview area (letterboxing was shrinking + softening the scaled image).
-            self._view.setAspectRatioMode(Qt.IgnoreAspectRatio)
+            # Keep native aspect + max viewfinder resolution (set on Start) — less stretch blur than IgnoreAspectRatio.
+            self._view.setAspectRatioMode(Qt.KeepAspectRatio)
+            self._view.setStyleSheet("background-color:#0f172a;border-radius:8px;")
             vb.addWidget(self._view, 1)
         else:
             self._view = QLabel(

@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [2.5.3] - 2026-04-29
+
+### Changed
+
+- **SSH prompts:** Root-style **`#`** uses a **green** marker (`sig_hash`); **`$`** stays distinct; **`device #`** lines (no `user@`, no `:/path`) match **ADB-style** segmentation.
+- **Terminal:** Streaming HTML appends **preserve cursor and selection** when you are not at the document end (serial scrollback / copy while output runs).
+- **Camera:** **KeepAspectRatio** + max viewfinder resolution for **sharper** frames; **rounded** `CameraChromeBtn` push buttons and dark preview chrome.
+- **Log panel:** **Larger** type (app log **15px** content, **14px** in stylesheet; **Consolas 12** widget font).
+- **Startup:** **`QApplication.setStyleSheet`** from config before **`MainWindow`**; theme apply is **synchronous** until the window is shown.
+
+### Fixed
+
+- **ADB / SSH:** Trailing space after **`$`/`#`** after **`rstrip`** (devices like **`vivo_25:/$`**).
+- **Serial UART:** Remove lone **`[0;39m`** noise when ESC was dropped.
+- **Light theme:** **`qt_msgbox_informativelabel`** contrast for paths on **Saved** dialogs.
+
 ## [2.5.2] - 2026-04-29
 
 ### Changed

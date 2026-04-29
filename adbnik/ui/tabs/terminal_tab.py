@@ -789,17 +789,32 @@ class ShellPlainTextEdit(QTextEdit):
     def append_from_process_html(self, html: str, ensure_visible: bool = True) -> None:
         if not html:
             return
-        self.moveCursor(QTextCursor.End)
         fs = self._font_pt
         wrapped = (
             f'<span style="white-space:pre-wrap;font-family:Consolas,\'Courier New\',monospace;'
             f'font-size:{fs}pt">{html}</span>'
         )
-        self.insertHtml(wrapped)
-        self._anchor = self.textCursor().position()
+        user_cur = QTextCursor(self.textCursor())
+        ins = QTextCursor(self.document())
+        ins.movePosition(QTextCursor.End)
+        insert_at = ins.position()
+        ins.insertHtml(wrapped)
+        self._anchor = ins.position()
         self._reset_history_browse()
+
+        if user_cur.hasSelection():
+            self.setTextCursor(user_cur)
+        elif user_cur.position() == insert_at:
+            follow = QTextCursor(self.document())
+            follow.movePosition(QTextCursor.End)
+            self.setTextCursor(follow)
+        else:
+            self.setTextCursor(user_cur)
+
         if ensure_visible:
-            self.ensureCursorVisible()
+            tb = self.textCursor()
+            if not tb.hasSelection() and tb.position() >= self._document_end_position() - 1:
+                self.ensureCursorVisible()
 
     def append_plain_fragment(self, text: str) -> None:
         """Insert plain text (escaped) with default terminal foreground — for completion rows, prompts, etc."""
@@ -808,27 +823,56 @@ class ShellPlainTextEdit(QTextEdit):
         from html import escape as _html_escape
 
         h = _html_escape(text).replace("\n", "<br/>")
-        self.moveCursor(QTextCursor.End)
-        self.insertHtml(f'<span style="color:#f0f3f6">{h}</span>')
-        self._anchor = self.textCursor().position()
+        frag = f'<span style="color:#f0f3f6">{h}</span>'
+        user_cur = QTextCursor(self.textCursor())
+        ins = QTextCursor(self.document())
+        ins.movePosition(QTextCursor.End)
+        insert_at = ins.position()
+        ins.insertHtml(frag)
+        self._anchor = ins.position()
         self._reset_history_browse()
-        self.ensureCursorVisible()
+
+        if user_cur.hasSelection():
+            self.setTextCursor(user_cur)
+        elif user_cur.position() == insert_at:
+            follow = QTextCursor(self.document())
+            follow.movePosition(QTextCursor.End)
+            self.setTextCursor(follow)
+        else:
+            self.setTextCursor(user_cur)
+
+        tb = self.textCursor()
+        if not tb.hasSelection() and tb.position() >= self._document_end_position() - 1:
+            self.ensureCursorVisible()
 
     def append_stream_plain(self, text: str, *, ensure_visible: bool = True) -> None:
         """Fast path for high-volume PTY output — insertText, not insertHtml (Moba-style responsiveness)."""
         if not text:
             return
-        cur = self.textCursor()
-        cur.movePosition(QTextCursor.End)
+        user_cur = QTextCursor(self.textCursor())
+        ins = QTextCursor(self.document())
+        ins.movePosition(QTextCursor.End)
+        insert_at = ins.position()
         fmt = QTextCharFormat()
         fmt.setForeground(QBrush(QColor("#f0f3f6")))
-        cur.setCharFormat(fmt)
-        cur.insertText(text)
-        self.setTextCursor(cur)
-        self._anchor = cur.position()
+        ins.setCharFormat(fmt)
+        ins.insertText(text)
+        self._anchor = ins.position()
         self._reset_history_browse()
+
+        if user_cur.hasSelection():
+            self.setTextCursor(user_cur)
+        elif user_cur.position() == insert_at:
+            follow = QTextCursor(self.document())
+            follow.movePosition(QTextCursor.End)
+            self.setTextCursor(follow)
+        else:
+            self.setTextCursor(user_cur)
+
         if ensure_visible:
-            self.ensureCursorVisible()
+            tb = self.textCursor()
+            if not tb.hasSelection() and tb.position() >= self._document_end_position() - 1:
+                self.ensureCursorVisible()
 
     def sync_input_anchor_to_end(self) -> None:
         """Place the input cursor and anchor at the document end (e.g. after menu-injected SSH commands)."""
@@ -2102,9 +2146,10 @@ class SessionWidget(QWidget):
             raw = self._last_nonempty_line()
             if not raw.strip():
                 return
-            bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r"))
+            bare = strip_sgr_sequences_for_prompt(raw.rstrip("\r")).rstrip()
             if bare.endswith("$ ") or bare.endswith("# "):
                 return
+            # One visible gap after $/# so typing aligns past the shell marker (e.g. ``vivo_25:/$`` → ``$ ``).
             if bare.endswith("$") or bare.endswith("#"):
                 self._append_plain_ui(" ")
 
@@ -2325,7 +2370,12 @@ class SessionWidget(QWidget):
         s = last.strip()
         if self._is_adb_shell and re.search(r":(/[^ ]*)\s*[$#]\s*$", s):
             self._ansi.reset()
-        elif self._is_ssh_session and re.search(r"@[^:]+:.+\s+[$#>]+\s*$", s):
+        elif self._is_ssh_session and (
+            re.search(r"@[^:]+:.+\s+[$#>]+\s*$", s)
+            or re.match(r"^\s*#\s*$", s)
+            or re.match(r"^\s*#\s+\S", s)
+            or re.match(r"^\S+\s+#\s*$", s)
+        ):
             self._ansi.reset()
 
     def _flush_pending_output(self) -> None:

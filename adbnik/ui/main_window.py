@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
         badge_bg = "#334155" if dark else "#e2e8f0"
         badge_fg = "#f8fafc" if dark else "#0f172a"
         ts_color = "#94a3b8" if dark else "#64748b"
-        fs = "12px"
+        fs = "15px"
         if any(k in msg_l for k in ("error", "failed", "warning", "denied", "not found", "timed out")):
             color = "#fca5a5" if dark else "#b91c1c"
             level = "ERR"
@@ -217,6 +217,10 @@ class MainWindow(QMainWindow):
     def _apply_theme(self) -> None:
         """Defer stylesheet work via qt-thread-updater so the UI stays responsive after heavy terminal I/O."""
         os.environ.setdefault("QT_API", "pyqt5")
+        # Before first show, apply synchronously so the window does not flash the wrong palette.
+        if not self.isVisible():
+            self._apply_theme_impl()
+            return
         try:
             from qt_thread_updater import call_latest
         except Exception:
@@ -503,7 +507,7 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setOpenExternalLinks(True)
         self.log_view.document().setMaximumBlockCount(4000)
-        self.log_view.setFont(QFont("Consolas", 10))
+        self.log_view.setFont(QFont("Consolas", 12))
         self.log_view.setPlaceholderText(
             "Application log — newest lines at the bottom. Tags: OK (green), ERR (red), INFO (blue)."
         )

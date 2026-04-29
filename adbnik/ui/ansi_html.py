@@ -95,6 +95,8 @@ class PromptPalette:
     ps_prefix: str
     prompt_input: str
     line_output: str
+    # Optional color for ``#`` when it should differ from ``$`` (e.g. SSH root hash prompt).
+    sig_hash: Optional[str] = None
 
 
 def get_prompt_palette(kind: str) -> PromptPalette:
@@ -113,6 +115,7 @@ _PROMPT_PALETTES: Dict[str, PromptPalette] = {
         ps_prefix="#c4b5fd",
         prompt_input="#fef08a",
         line_output="#94a3b8",
+        sig_hash="#22c55e",
     ),
     # ADB: device vs path vs marker vs input vs listing output
     "adb": PromptPalette(
@@ -402,6 +405,9 @@ def preprocess_serial_stream(data: str) -> str:
     # Lines that are only corrupted reset tokens (optional brackets / semicolon variants)
     data = re.sub(r"(?m)^\s*\[?0[;.]39m\]?\s*$", "", data, flags=re.I)
     data = re.sub(r"(?m)^\s*0[;.]39m\s*$", "", data, flags=re.I)
+    # Occasional UART fragments: full bracket reset appearing alone after ESC was stripped.
+    data = re.sub(r"(?m)^\s*\[0;39m\s*$", "", data)
+    data = re.sub(r"\[0;39m", "", data)
     return data
 
 
@@ -470,6 +476,13 @@ def _carry_incomplete_esc(s: str) -> Tuple[str, str]:
     return s[:last], tail
 
 
+def _prompt_marker_css(pal: PromptPalette, ch: str) -> str:
+    """Color for ``$`` vs ``#`` prompt markers (SSH may use a distinct green for ``#``)."""
+    if ch == "#" and pal.sig_hash is not None:
+        return pal.sig_hash
+    return pal.sig
+
+
 def strip_sgr_sequences_for_prompt(line: str) -> str:
     """Strip CSI sequences so prompt regexes match (SGR, cursor moves, EL/ED, etc.)."""
     if not line:
@@ -519,6 +532,26 @@ def style_prompt_line_html(
             f"{_tail_span(tail)}"
         )
 
+    t = s.strip()
+    # Bare ``#`` / ``# ls`` (busybox / embedded), no user@host on the line
+    if t.startswith("#") and "@" not in t:
+        m0 = re.match(r"^#(\s*)(.*)$", t)
+        if m0:
+            sp, rest = m0.group(1), m0.group(2)
+            col = _prompt_marker_css(pal, "#")
+            return f'<span style="color:{col}">#</span>{_tail_span(sp + rest)}'
+    # ``device # cmd`` / ``host $ cmd`` without ``user@`` or ``host:/path`` (e.g. ``bmw_new_device #``)
+    m1 = re.match(r"^(\S+)\s+([$#])(.*)$", t)
+    if m1 and "@" not in m1.group(1) and ":" not in m1.group(1):
+        dev, sigc, tail = m1.group(1), m1.group(2), m1.group(3)
+        mc = _prompt_marker_css(pal, sigc)
+        return (
+            f'<span style="color:{pal.user}">{html.escape(dev)}</span>'
+            f'<span style="color:{pal.sep}"> </span>'
+            f'<span style="color:{mc}">{html.escape(sigc)}</span>'
+            f"{_tail_span(tail)}"
+        )
+
     # Unix-style / ADB: user@host:path … # or $ … optional tail (pick rightmost # or $ that yields user@host:path)
     t2 = s.rstrip()
     cand = [(t2.rfind("#"), "#"), (t2.rfind("$"), "$")]
@@ -534,11 +567,12 @@ def style_prompt_line_html(
                 dev = head[:colon]
                 rest_path = head[colon + 1 :]
                 if dev.strip():
+                    mc = _prompt_marker_css(pal, sig_ch)
                     return (
                         f'<span style="color:{pal.user}">{html.escape(dev)}</span>'
                         f'<span style="color:{pal.sep}">:</span>'
                         f'<span style="color:{pal.path}">{html.escape(rest_path)}</span>'
-                        f'<span style="color:{pal.sig}">{html.escape(sig_ch)}</span>'
+                        f'<span style="color:{mc}">{html.escape(sig_ch)}</span>'
                         f"{_tail_span(tail)}"
                     )
         at = head.find("@")
@@ -550,13 +584,14 @@ def style_prompt_line_html(
         user = head[:at]
         host = head[at + 1 : colon]
         path = head[colon + 1 :]
+        mc = _prompt_marker_css(pal, sig_ch)
         return (
             f'<span style="color:{pal.user}">{html.escape(user)}</span>'
             f'<span style="color:{pal.sep}">@</span>'
             f'<span style="color:{pal.host}">{html.escape(host)}</span>'
             f'<span style="color:{pal.sep}">:</span>'
             f'<span style="color:{pal.path}">{html.escape(path)}</span>'
-            f'<span style="color:{pal.sig}">{html.escape(sig_ch)}</span>'
+            f'<span style="color:{mc}">{html.escape(sig_ch)}</span>'
             f"{_tail_span(tail)}"
         )
 
