@@ -881,7 +881,7 @@ class MainWindow(QMainWindow):
         a_scr.triggered.connect(lambda: self.tabs.setCurrentIndex(2))
         view.addAction(a_scr)
         a_cam = QAction("&Camera", self)
-        a_cam.setIcon(st.standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)))
+        a_cam.setIcon(self.style().standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)))
         a_cam.setShortcut(QKeySequence("Ctrl+4"))
         a_cam.triggered.connect(lambda: self.tabs.setCurrentIndex(3))
         view.addAction(a_cam)
