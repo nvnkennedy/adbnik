@@ -1205,7 +1205,7 @@ PyQt5 and Python {py_ver} on {plat}.</p>
 <li><b>File Explorer</b> — WinSCP-style <b>Local | Remote</b> panes per session: ADB device storage, SFTP, or FTP.
 Pull, push, drag-and-drop, find files, and external editors with sync where supported.</li>
 <li><b>Screen Control</b> — Launch and manage <b>scrcpy</b> mirroring (paths and options in Preferences).</li>
-<li><b>Camera</b> — USB or built-in webcam preview, snapshots, optional MP4 recording; choose the save folder from the tab.</li>
+<li><b>Camera</b> — Webcam preview with overlay controls (photo/video modes, rotate camera), JPEG + MP4; save folder and power-user actions under ⚙.</li>
 </ul>
 
 <h3 style="margin-bottom:6px;">Menus worth knowing</h3>

@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Adbnik — desktop workspace for Android ADB, SSH and serial terminals, SFTP/FTP file transfer, and screen mirroring. Python · PyQt5 · MIT." />
+  <meta name="description" content="Adbnik — desktop workspace for Android ADB, SSH/serial terminals, SFTP/FTP file transfer, screen mirroring, and integrated camera capture. Python · PyQt5 · MIT." />
   <meta name="theme-color" content="#070b12" />
   <meta property="og:title" content="Adbnik" />
-  <meta property="og:description" content="One window for ADB shells, SSH, serial, files, and screen control." />
+  <meta property="og:description" content="One window for ADB shells, SSH, serial, files, screen control, and camera capture." />
   <meta property="og:type" content="website" />
   <title>Adbnik — Android &amp; device workspace</title>
   <link rel="stylesheet" href="css/site.css" />
@@ -41,7 +41,7 @@
         <p class="hero-lead">
           <strong>Adbnik</strong> is a PyQt5 application: <strong>ADB</strong> sessions and device tools,
           <strong>SSH</strong> and <strong>serial</strong> terminals, <strong>local ↔ remote files</strong>
-          (device, SFTP, FTP), and <strong>screen mirroring</strong> integration—organized in one place.
+          (device, SFTP, FTP), <strong>screen mirroring</strong>, and a <strong>Camera</strong> tab for webcam preview and capture—organized in one place.
           External tools (<code style="font-size:0.95em">adb</code>, <code style="font-size:0.95em">ssh</code>, <code style="font-size:0.95em">scrcpy</code>) come from your system; configure paths in preferences if needed.
         </p>
         <div class="hero-cta">
@@ -79,6 +79,10 @@
           <article class="card">
             <h3>Screen</h3>
             <p>Start and manage mirroring with your chosen executable (e.g. scrcpy).</p>
+          </article>
+          <article class="card">
+            <h3>Camera</h3>
+            <p>OpenCV-driven preview, photo/video modes, switch camera, JPEG and MP4 to a folder you choose.</p>
           </article>
           <article class="card">
             <h3>Windows shortcut</h3>
@@ -164,7 +168,7 @@ py -m adbnik</pre>
         <div>
           <h3>Documentation</h3>
           <ul>
-            <li><a href="guide/index.html">User guide</a> (Terminal, Explorer, Screen)</li>
+            <li><a href="guide/index.html">User guide</a> (Terminal, Explorer, Screen, Camera)</li>
             <li><a href="https://github.com/nvnkennedy/adbnik/blob/main/README.md">README</a></li>
             <li><a href="https://github.com/nvnkennedy/adbnik/blob/main/CHANGELOG.md">Changelog</a></li>
           </ul>

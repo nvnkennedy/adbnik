@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Adbnik Camera tab — webcam preview, photos, video recording, switch camera." />
+  <title>Camera tab — Adbnik user guide</title>
+  <link rel="stylesheet" href="../css/site.css" />
+  <link rel="icon" href="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" type="image/png" />
+</head>
+<body class="doc-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../index.html">
+        <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="40" height="40" alt="" />
+        <span>Adbnik</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../index.html">Home</a>
+        <a href="index.html">User guide</a>
+        <a href="terminal.html">Terminal</a>
+        <a href="explorer.html">File Explorer</a>
+        <a href="screen.html">Screen Control</a>
+        <a href="camera.html"><strong>Camera</strong></a>
+        <a class="btn btn-ghost" href="https://github.com/nvnkennedy/adbnik">GitHub</a>
+        <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">PyPI</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <div class="wrap">
+      <article class="doc">
+        <h1>Camera tab</h1>
+        <p class="doc-lead">
+          The <strong>Camera</strong> tab provides a full-area live preview (typically via OpenCV when <code>opencv-python-headless</code> is installed), with Windows Camera–style translucent side rails for controls.
+          Photos (JPEG) and videos (MP4) save to a folder you choose—same as other tabs, nothing runs on a server.
+        </p>
+
+        <h2 id="layout">Layout</h2>
+        <ul>
+          <li><strong>Top strip</strong> — Short status line only (aligned with the rest of the tab area so you do not get stray light bands under the tab bar).</li>
+          <li><strong>Preview</strong> — Fills the tab; preview scaling stays on the GPU-friendly path for responsiveness.</li>
+          <li><strong>Left rail</strong> — ⚙ menu (start/stop preview, pause, save folder, restart), pause button, and read-only hints (WB / Focus / ISO · auto) reflecting typical consumer camera UI.</li>
+          <li><strong>Right rail</strong> — <strong>Switch camera</strong> (cycles detected devices), <strong>Photo</strong> / <strong>Video</strong> mode, large primary button (shutter or record/stop), and a thumbnail of the last saved photo.</li>
+        </ul>
+
+        <h2 id="actions">Actions</h2>
+        <ul>
+          <li><strong>Primary button</strong> — If preview is off, starts preview when a device is available. In photo mode, captures a JPEG. In video mode, starts or stops MP4 recording.</li>
+          <li><strong>Switch camera</strong> — Moves to the next detected camera (multiple USB webcams or built-in + external).</li>
+          <li><strong>⚙ menu</strong> — Explicit start/stop, pause, choose save folder (native folder picker on Windows), restart pipeline.</li>
+          <li><strong>Thumbnail</strong> — Opens the last saved photo in your default viewer.</li>
+        </ul>
+
+        <h2 id="perf">Performance</h2>
+        <p>
+          Preview uses a background capture thread (small buffer, drained frames on open, capped preview resolution) so the rest of Adbnik stays responsive.
+          When you leave the Camera tab, preview pauses automatically.
+        </p>
+
+        <h2 id="requirements">Requirements</h2>
+        <p>
+          Best results: install <code>opencv-python-headless</code> (already a dependency of the <code>adbnik</code> package).
+          If OpenCV is unavailable, Qt Multimedia may be used where your PyQt5 build supports it.
+        </p>
+
+        <p><a href="index.html">← Back to user guide index</a></p>
+      </article>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap footer-bottom">
+      <a href="../index.html">Home</a> · <a href="index.html">User guide</a> · MIT License
+    </div>
+  </footer>
+</body>
+</html>

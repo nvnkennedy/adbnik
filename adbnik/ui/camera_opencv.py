@@ -111,12 +111,18 @@ class FrameGrabThread(QThread):
                 pass
         except Exception:
             pass
+        # Drop stale buffered frames so preview catches up quickly after open.
+        try:
+            for _ in range(4):
+                cap.read()
+        except Exception:
+            pass
         self._running = True
         # Pace capture to UI/recording rate — avoids flooding the GUI thread with signals.
-        preview_hz = 30.0
+        preview_hz = 24.0
         record_hz = min(30.0, float(self._fps))
         # Downscale before RGB convert — keeps UI thread light on large tabs.
-        preview_max_w = 1280
+        preview_max_w = 960
         next_deadline = 0.0
         while self._running:
             period = (1.0 / record_hz) if self._emit_bgr_for_record else (1.0 / preview_hz)

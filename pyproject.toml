@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adbnik"
-version = "2.6.1"
-description = "PyQt5 desktop workspace for Android ADB, SSH/serial terminals, SFTP/FTP file transfer, screen mirroring (scrcpy), and webcam capture."
+version = "2.7.0"
+description = "PyQt5 desktop workspace for Android ADB, SSH/serial terminals, SFTP/FTP file transfer, screen mirroring (scrcpy), and an integrated Camera tab (OpenCV preview, photos, MP4, rotate device)."
 readme = "README.md"
 # Use the LICENSE file so PyPI can show full text ("View license"); `text = "MIT"` alone is too minimal and often breaks that page.
 license = { file = "LICENSE" }

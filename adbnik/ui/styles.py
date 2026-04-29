@@ -32,13 +32,88 @@ _LIGHT_STYLESHEET = """
         background: transparent;
     }
     QWidget#CameraTabRoot {
-        background-color: #eef1f6;
+        background-color: #f6f8fb;
+    }
+    QWidget#CameraChromeStrip {
+        background-color: #f6f8fb;
+        border: none;
+    }
+    QLabel#CameraStatusLabel {
+        color: #334155;
+        font-size: 11px;
+        background: transparent;
     }
     QWidget#CameraPreviewPanel {
         background-color: #0f172a;
     }
+    QWidget#CameraOverlayHost {
+        background: transparent;
+    }
+    QWidget#CameraOverlayRailLeft,
+    QWidget#CameraOverlayRailRight {
+        background-color: rgba(15, 23, 42, 185);
+        border: none;
+        min-width: 52px;
+        max-width: 80px;
+    }
+    QLabel#CameraOverlayHint {
+        color: rgba(248, 250, 252, 210);
+        font-size: 10px;
+        background: transparent;
+    }
+    QToolButton#CameraOverlayToolBtn {
+        background: rgba(255, 255, 255, 35);
+        border: 1px solid rgba(255, 255, 255, 70);
+        border-radius: 8px;
+        color: #f8fafc;
+        padding: 6px;
+        font-size: 19px;
+        font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
+    }
+    QToolButton#CameraOverlayToolBtn:hover {
+        background: rgba(255, 255, 255, 60);
+    }
+    QToolButton#CameraModeBtn {
+        background: rgba(255, 255, 255, 40);
+        border: 1px solid rgba(255, 255, 255, 75);
+        border-radius: 8px;
+        padding: 6px;
+    }
+    QToolButton#CameraModeBtn:checked {
+        background: rgba(37, 99, 235, 220);
+        border-color: #93c5fd;
+    }
+    QPushButton#CameraShutterBtn {
+        background: #f8fafc;
+        border: 3px solid rgba(255, 255, 255, 220);
+        border-radius: 40px;
+        color: #0f172a;
+        padding: 4px;
+    }
+    QPushButton#CameraShutterBtn[state="photo"] {
+        background: #ffffff;
+    }
+    QPushButton#CameraShutterBtn[state="video"] {
+        background: #fecaca;
+        border-color: #f87171;
+    }
+    QPushButton#CameraShutterBtn[state="record_stop"] {
+        background: #dc2626;
+        border-color: #fecaca;
+    }
+    QPushButton#CameraShutterBtn:hover {
+        background: #e2e8f0;
+    }
+    QPushButton#CameraShutterBtn[state="record_stop"]:hover {
+        background: #b91c1c;
+    }
+    QToolButton#CameraGalleryThumb {
+        background: rgba(0, 0, 0, 45);
+        border: 1px solid rgba(255, 255, 255, 120);
+        border-radius: 8px;
+    }
     QFrame#CameraControlBar {
-        background-color: #eef1f6;
+        background-color: #f6f8fb;
         border-top: 1px solid #dde3eb;
     }
     QWidget#CameraTabRoot QPushButton#CameraChromeBtn {
@@ -1185,10 +1260,77 @@ _DARK_APPEND = """
         border-color: #64748b;
     }
     QWidget#CameraTabRoot {
-        background-color: #0f172a;
+        background-color: #161922;
+    }
+    QWidget#CameraChromeStrip {
+        background-color: #161922;
+        border: none;
+    }
+    QLabel#CameraStatusLabel {
+        color: #cbd5e1;
+        font-size: 11px;
+        background: transparent;
     }
     QWidget#CameraPreviewPanel {
         background-color: #020617;
+    }
+    QWidget#CameraOverlayRailLeft,
+    QWidget#CameraOverlayRailRight {
+        background-color: rgba(2, 6, 23, 210);
+        border: none;
+        min-width: 52px;
+        max-width: 80px;
+    }
+    QLabel#CameraOverlayHint {
+        color: rgba(226, 232, 240, 200);
+        font-size: 10px;
+        background: transparent;
+    }
+    QToolButton#CameraOverlayToolBtn {
+        background: rgba(255, 255, 255, 28);
+        border: 1px solid rgba(148, 163, 184, 90);
+        border-radius: 8px;
+        color: #f8fafc;
+        padding: 6px;
+        font-size: 19px;
+    }
+    QToolButton#CameraOverlayToolBtn:hover {
+        background: rgba(255, 255, 255, 48);
+    }
+    QToolButton#CameraModeBtn {
+        background: rgba(255, 255, 255, 22);
+        border: 1px solid rgba(148, 163, 184, 80);
+        border-radius: 8px;
+        padding: 6px;
+    }
+    QToolButton#CameraModeBtn:checked {
+        background: rgba(37, 99, 235, 200);
+        border-color: #60a5fa;
+    }
+    QPushButton#CameraShutterBtn {
+        background: #f8fafc;
+        border: 3px solid rgba(255, 255, 255, 180);
+        border-radius: 40px;
+        padding: 4px;
+    }
+    QPushButton#CameraShutterBtn[state="video"] {
+        background: #7f1d1d;
+        border-color: #f87171;
+    }
+    QPushButton#CameraShutterBtn[state="record_stop"] {
+        background: #dc2626;
+        border-color: #fecaca;
+    }
+    QPushButton#CameraShutterBtn:hover {
+        background: #e2e8f0;
+    }
+    QPushButton#CameraShutterBtn[state="record_stop"]:hover {
+        background: #b91c1c;
+    }
+    QToolButton#CameraGalleryThumb {
+        background: rgba(0, 0, 0, 50);
+        border: 1px solid rgba(148, 163, 184, 100);
+        border-radius: 8px;
     }
     QFrame#CameraControlBar {
         background-color: #0f172a;
