@@ -1,10 +1,10 @@
+# Publishes to PyPI when you publish a GitHub Release, or when you run this workflow manually.
+# Avoids duplicate uploads from automatic pushes (same version cannot be uploaded twice).
 name: Publish to PyPI
 
 on:
   release:
     types: [published]
-  push:
-    branches: [pypi]
   workflow_dispatch:
 
 permissions:

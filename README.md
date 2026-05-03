@@ -1,7 +1,7 @@
 # Adbnik
 
 <p align="center">
-  <img src="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" width="128" height="128" alt="Adbnik" />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/naveen/branding/adbnik-256.png" width="128" height="128" alt="Adbnik" />
 </p>
 
 <p align="center">
@@ -12,7 +12,7 @@
 
 **Platforms:** The same **PyPI** package installs on **Windows**, **Linux**, and **macOS** where PyQt5 runs. **Windows** is the primary, tested target: optional **Inno** installer from GitHub Releases, **`adbnik-setup`** for a desktop shortcut, optional **embedded scrcpy** in a tab, and local **CMD/PowerShell** terminal tabs. On **Linux** and **macOS**, use your system shells in the terminal area and run mirroring in a **separate** window—those Windows-only conveniences are not available there.
 
-Development and releases use this **public** repository **[github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik)** with three branches: **`naveen`** (full application tree), **`pypi`** (PyPI packaging CI), and **`main`** (optional trimmed snapshot for installers, site, and changelog—see [`BRANCHING.md`](BRANCHING.md)). Published wheels are on **PyPI**; installers and Pages deploy from this repo.
+Development and releases use this **public** repository **[github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik)**. Work happens on **`naveen`** (full application tree). Branch **`main`** holds a trimmed snapshot for **GitHub Pages**, **installers**, and top-level **changelog** files (see [`BRANCHING.md`](https://github.com/nvnkennedy/adbnik/blob/naveen/BRANCHING.md)). **PyPI** uploads run from **`naveen`** via the **Publish to PyPI** workflow (manual dispatch or when you publish a **GitHub Release**).
 
 ### About the name
 
@@ -73,9 +73,9 @@ Pinned interpreter example:
 
 **Package index:** [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) · **Files:** [pypi.org/project/adbnik/#files](https://pypi.org/project/adbnik/#files)
 
-The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.1.2`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier releases are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md)).
+The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.1.3`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier releases are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md)).
 
-[`pyproject.toml`](pyproject.toml) defines package metadata and PyPI project links. Windows installers are built here (CI on version tags or local `packaging/windows/build.ps1`), published to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), and copied into **`installers/`** on branch **`main`** when you ship that snapshot.
+[`pyproject.toml`](https://github.com/nvnkennedy/adbnik/blob/naveen/pyproject.toml) on **`naveen`** defines package metadata and PyPI project links. Windows installers are built from **`naveen`** (CI on version tags or local `packaging/windows/build.ps1`), published to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), and the same **`Adbnik-*`** files are copied into **`installers/`** on branch **`main`** when you ship that snapshot.
 
 ### Windows installer (optional, unsigned)
 
@@ -118,10 +118,10 @@ Preferences are stored in **`.adbnik.json`** under your user profile. Legacy **`
 ## Screenshots
 
 <p align="center">
-  <img src="https://nvnkennedy.github.io/adbnik/screenshots/01-main-window.png" width="720" alt="Main window" /><br /><br />
-  <img src="https://nvnkennedy.github.io/adbnik/screenshots/02-terminal.png" width="720" alt="Terminal" /><br /><br />
-  <img src="https://nvnkennedy.github.io/adbnik/screenshots/03-file-explorer.png" width="720" alt="File explorer" /><br /><br />
-  <img src="https://nvnkennedy.github.io/adbnik/screenshots/04-screen-control.png" width="720" alt="Screen control" />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/naveen/docs/screenshots/01-main-window.png" width="720" alt="Main window" /><br /><br />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/naveen/docs/screenshots/02-terminal.png" width="720" alt="Terminal" /><br /><br />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/naveen/docs/screenshots/03-file-explorer.png" width="720" alt="File explorer" /><br /><br />
+  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/naveen/docs/screenshots/04-screen-control.png" width="720" alt="Screen control" />
 </p>
 
 ---

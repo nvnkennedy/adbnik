@@ -1,6 +1,6 @@
 # Adbnik 1.0.0
 
-> **Current release:** see **[release-notes-v6.1.2.md](release-notes-v6.1.2.md)** (**v6.1.2**).
+> **Current release:** see **[release-notes-v6.1.3.md](release-notes-v6.1.3.md)** (**v6.1.3**).
 
 **Release date:** 2026-05-03
 

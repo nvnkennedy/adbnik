@@ -10,6 +10,7 @@ on:
       - "docs/guide/**"
       - "docs/css/**"
       - "docs/screenshots/**"
+      - "branding/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -34,10 +35,11 @@ jobs:
           set -e
           mkdir -p publish
           cp -a site/. publish/
-          mkdir -p publish/guide publish/css publish/screenshots
+          mkdir -p publish/guide publish/css publish/screenshots publish/branding
           cp docs/guide/*.html publish/guide/
           cp docs/css/site.css publish/css/
           cp docs/screenshots/*.png publish/screenshots/
+          find branding -maxdepth 1 -type f \( -name '*.png' -o -name '*.ico' \) -exec cp {} publish/branding/ \;
       - uses: actions/upload-pages-artifact@v3
         with:
           path: publish

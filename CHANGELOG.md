@@ -6,6 +6,19 @@ All notable changes are documented here.
 
 The format follows Keep a Changelog and Semantic Versioning.
 
+## [6.1.3] - 2026-05-04
+
+### Summary
+
+**6.1.3** fixes **GitHub Pages** packaging (marketing **`branding/`** assets are copied into the published site so favicons and header logos load), stabilizes **PyPI** publishing (workflow runs on **release publish** or **manual dispatch** only—no duplicate uploads on branch push), and aligns **README** images with **`raw.githubusercontent.com`** on the **`naveen`** branch so the PyPI project page renders screenshots reliably.
+
+### Distribution
+
+- **PyPI:** **`adbnik==6.1.3`**. See [`docs/release-notes-v6.1.3.md`](docs/release-notes-v6.1.3.md).
+- **Windows:** **`Adbnik-6.1.3-Setup-unsigned.exe`** and **`Adbnik-6.1.3-Windows-portable-unsigned.zip`** when tag **`v6.1.3`** is built from **`naveen`**.
+
+---
+
 ## [6.1.2] - 2026-05-03
 
 ### Summary

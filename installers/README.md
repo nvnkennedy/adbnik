@@ -21,7 +21,7 @@ Requires Python, PyInstaller, and Inno Setup 6 (`ISCC.exe`). See [`packaging/win
 
 ## CI and releases
 
-Pushing a **`v*`** version tag (for example **`v6.1.2`**) runs [`.github/workflows/windows-installer.yml`](../.github/workflows/windows-installer.yml): artifacts are attached to the matching [GitHub Release](https://github.com/nvnkennedy/adbnik/releases). Copy the same **`Adbnik-6.1.2-*`** files into **`installers/`** on branch **`main`** when you publish that snapshot, then commit.
+Pushing a **`v*`** version tag (for example **`v6.1.3`**) runs [`.github/workflows/windows-installer.yml`](../.github/workflows/windows-installer.yml): artifacts are attached to the matching [GitHub Release](https://github.com/nvnkennedy/adbnik/releases). Copy the same **`Adbnik-6.1.3-*`** files into **`installers/`** on branch **`main`** when you publish that snapshot, then commit.
 
 ## Unsigned installer — SmartScreen
 
