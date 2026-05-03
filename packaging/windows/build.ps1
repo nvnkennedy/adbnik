@@ -20,8 +20,8 @@ if (-not (Test-Path (Join-Path $Root "dist\Adbnik\Adbnik.exe"))) {
 # Portable zip (unsigned) for users who do not want an installer
 $ver = (py -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")
 $zipName = "Adbnik-$ver-Windows-portable-unsigned.zip"
-$zipPath = Join-Path $Root "dist_installer\$zipName"
-New-Item -ItemType Directory -Force -Path (Split-Path $zipPath) | Out-Null
+$zipPath = Join-Path $Root "installers\$zipName"
+New-Item -ItemType Directory -Force -Path (Join-Path $Root "installers") | Out-Null
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path (Join-Path $Root "dist\Adbnik\*") -DestinationPath $zipPath
 Write-Host "Wrote portable: $zipPath"
@@ -37,4 +37,4 @@ if (-not $iscc) {
 }
 
 & $iscc "/DMyAppVersion=$ver" (Join-Path $Root "packaging\windows\adbnik.iss")
-Write-Host "Done. See dist_installer\ for Adbnik-$ver-Setup-unsigned.exe"
+Write-Host "Done. See installers\ at repo root: Adbnik-$ver-Setup-unsigned.exe and $zipName"

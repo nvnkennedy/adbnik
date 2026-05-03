@@ -37,9 +37,9 @@ jobs:
         run: |
           $root = Get-Location
           $ver = (python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")
-          New-Item -ItemType Directory -Force -Path dist_installer | Out-Null
+          New-Item -ItemType Directory -Force -Path installers | Out-Null
           $zipName = "Adbnik-$ver-Windows-portable-unsigned.zip"
-          $zipPath = Join-Path $root "dist_installer\$zipName"
+          $zipPath = Join-Path $root "installers\$zipName"
           if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
           Compress-Archive -Path (Join-Path $root "dist\Adbnik\*") -DestinationPath $zipPath
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" "packaging\windows\adbnik.iss"
@@ -48,14 +48,14 @@ jobs:
         with:
           name: windows-unsigned-packages
           path: |
-            dist_installer/*.exe
-            dist_installer/*.zip
+            installers/*.exe
+            installers/*.zip
 
       - name: Attach installer and zip to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist_installer/*.exe
-            dist_installer/*.zip
+            installers/*.exe
+            installers/*.zip
           generate_release_notes: true

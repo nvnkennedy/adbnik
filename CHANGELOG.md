@@ -19,7 +19,7 @@ First **public** release under **`1.0.0`** numbering.
 ### Distribution
 
 - **PyPI:** `pip install adbnik` installs the **wheel / sdist** (Python package). PyPI does not host the Windows `.exe` inside the wheel (cross-platform packages stay small); the PyPI project page lists a **Windows installer** link under **Project links** ([`pyproject.toml`](pyproject.toml) `[project.urls]`).
-- **GitHub Releases:** CI attaches **`Adbnik-1.0.0-Setup-unsigned.exe`** (Inno Setup) and **`Adbnik-1.0.0-Windows-portable-unsigned.zip`** when you push tag **`v1.0.0`** ([`windows-installer`](.github/workflows/windows-installer.yml) workflow).
+- **GitHub Releases:** CI builds into **`installers/`** at the repo root, then attaches **`Adbnik-1.0.0-Setup-unsigned.exe`** (Inno Setup) and **`Adbnik-1.0.0-Windows-portable-unsigned.zip`** when you push tag **`v1.0.0`** ([`windows-installer`](.github/workflows/windows-installer.yml) workflow). See [`installers/README.md`](installers/README.md).
 
 ### Windows installer (unsigned)
 

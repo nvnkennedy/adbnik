@@ -77,6 +77,8 @@ On the PyPI project page, **Project links** (from `[project.urls]` in [`pyprojec
 
 When we attach a **`Adbnik-*-Setup-unsigned.exe`** build to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), it is a convenience installer produced with **PyInstaller** + **Inno Setup**. It is **not** digitally signed with an Authenticode certificate yet.
 
+**Where files land when you build locally:** the repo-root **`installers/`** folder (`Adbnik-<version>-Setup-unsigned.exe` and portable `.zip`). That folder is **empty in git** until you run the build — see [`installers/README.md`](installers/README.md).
+
 **Why Windows warns (“SmartScreen”, “Unknown publisher”, “Windows protected your PC”):** Microsoft flags **unknown / unsigned** executables by policy. That does **not** mean the installer was flagged as malware—it means there is **no publisher certificate** on the file.
 
 **Run anyway:** On the SmartScreen dialog, choose **More info** (or **More details**), then **Run anyway**. If the browser blocked the download: open **Downloads**, right‑click the file → **Properties** → check **Unblock** if shown → **OK**, then run again.

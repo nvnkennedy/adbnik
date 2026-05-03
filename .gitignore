@@ -7,8 +7,10 @@ __pycache__/
 *.egg-info/
 .eggs/
 dist/
-dist_installer/
 build/
+# Windows installer outputs at repo root (see installers/README.md)
+installers/*.exe
+installers/*.zip
 *.egg
 pip-wheel-metadata/
 
