@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adbnik"
-version = "6.0.0"
+version = "6.1.1"
 description = "PyQt5 desktop workspace for Android ADB, SSH/serial terminals, SFTP/FTP file transfer, and screen mirroring (scrcpy)."
 readme = "README.md"
 # Apache-2.0. Full text in LICENSE; NOTICE for attribution boilerplate.
@@ -49,7 +49,7 @@ Homepage = "https://nvnkennedy.github.io/adbnik/"
 Repository = "https://github.com/nvnkennedy/adbnik"
 Documentation = "https://nvnkennedy.github.io/adbnik/guide/index.html"
 Changelog = "https://github.com/nvnkennedy/adbnik/blob/main/CHANGELOG.md"
-"Release notes (v6.0.0)" = "https://github.com/nvnkennedy/adbnik/blob/main/docs/release-notes-v6.0.0.md"
+"Release notes (v6.1.1)" = "https://github.com/nvnkennedy/adbnik/blob/main/docs/release-notes-v6.1.1.md"
 "Windows installer (unsigned)" = "https://github.com/nvnkennedy/adbnik/releases/latest"
 "PyPI files" = "https://pypi.org/project/adbnik/#files"
 

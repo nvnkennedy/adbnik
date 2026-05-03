@@ -8,6 +8,7 @@ include installers/README.md
 include docs/index.html
 include docs/release-notes-v1.0.0.md
 include docs/release-notes-v6.0.0.md
+include docs/release-notes-v6.1.1.md
 include docs/.nojekyll
 recursive-include docs/css *.css
 recursive-include docs/guide *.html

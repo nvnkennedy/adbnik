@@ -6,6 +6,19 @@ All notable changes are documented here.
 
 The format follows Keep a Changelog and Semantic Versioning.
 
+## [6.1.1] - 2026-05-03
+
+### Summary
+
+**6.1.1** bumps the public version line across **PyPI**, **Windows installers** (`build.ps1` / GitHub Releases), marketing **`site/`** and **`docs/`** copy, **`README.md`**, and **`adbnik.__version__`** (status bar and **Help → About**).
+
+### Distribution
+
+- **PyPI:** **`adbnik==6.1.1`** (wheel + sdist). See [`docs/release-notes-v6.1.1.md`](docs/release-notes-v6.1.1.md).
+- **Windows:** **`Adbnik-6.1.1-Setup-unsigned.exe`** and **`Adbnik-6.1.1-Windows-portable-unsigned.zip`** under **`installers/`** and on **GitHub Releases** for tag **`v6.1.1`**.
+
+---
+
 ## [6.0.0] - 2026-05-03
 
 ### Summary
