@@ -1,0 +1,7 @@
+# GitHub Linguist — static documentation & Pages sources (not primary app code)
+docs/** linguist-documentation
+site/** linguist-documentation
+
+# Windows installer artifacts are not scored as source languages
+installers/*.exe linguist-detectable=false
+installers/*.zip linguist-detectable=false

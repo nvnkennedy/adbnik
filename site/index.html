@@ -1,0 +1,171 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="keywords" content="Adbnik, adbnik, Python, Python 3, PyQt5, PyQt, ADB, Android, Android Debug Bridge, SSH, serial, scrcpy, SFTP, FTP, desktop, pip, PyPI" />
+  <title>Adbnik — Python PyQt5 ADB workspace (shell, APK, SSH, serial, files, screen)</title>
+  <meta name="description" content="Adbnik (adbnik): Python PyQt5 desktop app — ADB explorer–style workflow: tabbed ADB shell, APK install, SSH, serial, device files, USB screen. pip install adbnik." />
+  <link rel="canonical" href="https://nvnkennedy.github.io/adbnik/" />
+  <link rel="icon" href="https://nvnkennedy.github.io/adbnik/branding/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="256x256" href="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <link rel="apple-touch-icon" href="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Adbnik" />
+  <meta property="og:title" content="Adbnik — v6.0.0 · ADB device workspace" />
+  <meta property="og:description" content="Python PyQt5 desktop app: ADB shell, APK install, SSH, serial, dual-pane files, USB screen. v6.0.0 on PyPI." />
+  <meta property="og:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <meta property="og:url" content="https://nvnkennedy.github.io/adbnik/" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Adbnik — ADB device workspace" />
+  <meta name="twitter:description" content="Python PyQt5 app — ADB, SSH, serial, files, USB screen. pip install adbnik" />
+  <meta name="twitter:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
+  <link rel="stylesheet" href="assets/style.css" />
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Adbnik","alternateName":"adbnik","applicationCategory":"DeveloperApplication","operatingSystem":"Windows, Linux, macOS","programmingLanguage":"Python","runtimePlatform":"PyQt5","description":"Python PyQt5 desktop workspace for Android ADB, SSH, serial, files, and USB screen mirroring.","downloadUrl":"https://pypi.org/project/adbnik/"}
+  </script>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="logo logo-mark" href="index.html"><img src="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" width="32" height="32" alt="" /> <span>Adbnik</span></a>
+      <span class="tagline">ADB workspace · SSH · serial · files · screen</span>
+    </div>
+  </div>
+  <nav class="mainnav" aria-label="Primary">
+    <div class="mainnav-inner">
+      <a class="active" href="index.html">Home</a>
+      <a href="index.html#why">Why Adbnik</a>
+      <a href="index.html#features">Features</a>
+      <a href="index.html#screenshots">Screenshots</a>
+      <a href="install.html">Install</a>
+      <a href="https://github.com/nvnkennedy/adbnik/releases/latest">What’s new</a>
+      <a href="guide/index.html">User guide</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero">
+      <p class="version-pill hero-version" title="Current stable on PyPI"><span class="pill-dot" aria-hidden="true"></span> Latest stable · v6.0.0</p>
+      <p class="hero-platform-label">Desktop · Windows (primary) · Linux &amp; macOS via pip</p>
+      <h1>One workspace for ADB, SSH, serial, files, and screen</h1>
+      <p class="lead">
+        Adbnik is a single desktop app that keeps <strong>Android debugging</strong>,
+        <strong>SSH</strong>, <strong>serial/COM</strong>, and <strong>local shells</strong> in one tabbed terminal,
+        next to on-device file browsing and USB screen forwarding — so you spend less time switching windows
+        and retyping connection details.
+      </p>
+      <p class="hero-platform-note small">
+        The same <a href="https://pypi.org/project/adbnik/">PyPI</a> package runs on Windows, Linux, and macOS where PyQt5 is available.
+        The native installer, <code>adbnik-setup</code>, optional embedded scrcpy tab, and local CMD/PowerShell tabs are <strong>Windows-only</strong>; elsewhere use your system shell and a separate mirror window.
+      </p>
+      <div class="actions">
+        <a class="btn btn-lg" href="install.html">Install with pip</a>
+        <a class="btn btn-lg secondary" href="https://pypi.org/project/adbnik/">View on PyPI</a>
+      </div>
+    </section>
+
+    <section id="why" class="block">
+      <h2>Why Adbnik</h2>
+      <p style="color: var(--muted); margin: 0 0 14px; max-width: 58ch;">
+        Many setups give you a terminal here, a file window there, and another place to start mirroring.
+        Adbnik is an <strong>ADB device workspace</strong>: an <strong>ADB explorer–style workflow</strong> for people who mix
+        <strong>phone or tablet work</strong> with <strong>SSH</strong> or <strong>serial</strong> — one consistent layout,
+        shared device selection, bookmarks, and session list. The name keeps <strong>ADB</strong> in view; the suffix is only a short handle.
+        The product name is <strong>Adbnik</strong> (PyPI: <code>adbnik</code>).
+      </p>
+      <ul class="why-list">
+        <li>
+          <strong>Unified workspace:</strong> ADB shell tabs, SSH tabs, and serial tabs live side by side; on <strong>Windows</strong>, local CMD/PowerShell sessions join them in the same layout. File access and screen forwarding stay in the same app instead of scattered tools.
+        </li>
+        <li>
+          <strong>Flows that match real work:</strong> Open SSH using the same host details you already entered for remote file access; keep bookmarks for devices and sessions you use every day.
+        </li>
+        <li>
+          <strong>Focused scope:</strong> Adbnik does not try to be a full remote-desktop suite — it focuses on terminal, device files, and display forwarding for developers and integrators who already use standard command-line components on their machine.
+        </li>
+        <li>
+          <strong>PyPI install:</strong> <code>pip install adbnik</code> — run <code>adbnik</code>.
+        </li>
+      </ul>
+    </section>
+
+    <section id="screenshots" class="block">
+      <h2>Screenshots</h2>
+      <p style="color: var(--muted); margin: 0 0 16px; max-width: 62ch;">
+        Representative views of the workspace — the same imagery used on the
+        <a href="https://github.com/nvnkennedy/adbnik/blob/main/README.md">project README</a> and the
+        <a href="https://pypi.org/project/adbnik/">PyPI</a> listing.
+      </p>
+      <div class="screenshot-grid">
+        <figure class="shot">
+          <figcaption>Main window</figcaption>
+          <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/01-main-window.png" width="800" alt="Adbnik main window" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <figcaption>Terminal</figcaption>
+          <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/02-terminal.png" width="800" alt="Adbnik terminal" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <figcaption>File Explorer</figcaption>
+          <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/03-file-explorer.png" width="800" alt="Adbnik file explorer" loading="lazy" />
+        </figure>
+        <figure class="shot">
+          <figcaption>Screen Control</figcaption>
+          <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/04-screen-control.png" width="800" alt="Adbnik screen control" loading="lazy" />
+        </figure>
+      </div>
+    </section>
+
+    <section id="features" class="block">
+      <h2>Features</h2>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <h3>ADB &amp; Android shell</h3>
+          <p>Pick a device, open an interactive ADB shell tab, install APKs via <strong>Session → ADB → Install APK</strong> (<code>adb install -r</code>), and use bookmarks and shortcuts (root, remount, reboot, and more).</p>
+        </article>
+        <article class="feature-card">
+          <h3>SSH terminal</h3>
+          <p>Open SSH sessions from scratch or reuse remote file-access fields from the explorer. Uses the <strong>SSH client on your PATH</strong> (<code>ssh</code>).</p>
+        </article>
+        <article class="feature-card">
+          <h3>Serial / COM console</h3>
+          <p>Attach to COM ports at your chosen baud rate for boards and firmware logs — serial tabs alongside ADB and SSH in the same workspace.</p>
+        </article>
+        <article class="feature-card">
+          <h3>File explorer</h3>
+          <p>Browse Android device storage and transfer files; remote host fields align with SSH when you work across device and server.</p>
+        </article>
+        <article class="feature-card">
+          <h3>Screen mirroring</h3>
+          <p>Start a live USB display session from the app so you can see and control the device on your PC. You install the display-forwarding utility yourself and configure its path in the app.</p>
+        </article>
+      </div>
+      <p class="small" style="margin-top: 16px;">
+        <strong>Android device features</strong> need Google’s <strong>platform-tools</strong> (ADB) and a separate <strong>USB display-forwarding</strong> install, both on your PATH.
+        <strong>SSH</strong> needs an <code>ssh</code> client on your PATH.
+        <strong>Serial</strong> uses COM hardware; set port and baud in the app or preferences.
+      </p>
+    </section>
+
+    <section class="block">
+      <h2>Get Adbnik</h2>
+      <p style="color: var(--muted); margin: 0 0 16px;">
+        Install from PyPI as <strong>adbnik</strong>, then run <code>adbnik</code>.
+      </p>
+      <div class="actions">
+        <a class="btn" href="install.html">Install instructions</a>
+        <a class="btn secondary" href="https://pypi.org/project/adbnik/">PyPI</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p><strong>Adbnik</strong> — unofficial convenience tool; not affiliated with Google or Android.</p>
+    <p class="small">© <span id="y"></span> · <a href="install.html">Install</a> · <a href="https://pypi.org/project/adbnik/">PyPI</a> · <a href="guide/index.html">User guide</a></p>
+  </footer>
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

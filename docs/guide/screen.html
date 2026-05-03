@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="keywords" content="Adbnik, Python, PyQt5, scrcpy, screen mirroring, ADB, Android, user guide" />
+  <meta name="description" content="Adbnik Screen Control (Python PyQt5) — scrcpy mirror, options, ADB helpers, embed mode." />
+  <title>Screen Control — Adbnik user guide</title>
+  <link rel="stylesheet" href="../css/site.css" />
+  <link rel="icon" href="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" type="image/png" />
+</head>
+<body class="doc-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../index.html">
+        <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="40" height="40" alt="" />
+        <span>Adbnik</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../index.html">Home</a>
+        <a href="index.html">User guide</a>
+        <a href="terminal.html">Terminal</a>
+        <a href="explorer.html">File Explorer</a>
+        <a href="screen.html"><strong>Screen Control</strong></a>
+        <a class="btn btn-ghost" href="https://github.com/nvnkennedy/adbnik">GitHub</a>
+        <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">PyPI</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <div class="wrap">
+      <article class="doc">
+        <h1>Screen Control tab</h1>
+        <p class="doc-lead">
+          This tab launches <strong>scrcpy</strong> (or your configured mirror executable from <strong>Preferences</strong>) to show and control the Android screen from your PC.
+          You need a working <strong>ADB</strong> connection to the device: select the device in the <strong>main window top bar</strong> first when the UI asks for it.
+        </p>
+
+        <h2>End-to-end: start mirroring</h2>
+        <ol class="steps">
+          <li>
+            <strong>Select a device.</strong> Use the <strong>Device</strong> dropdown in the Screen Control panel (refresh with the ⟳ button if you plugged in a phone).
+            If the list says “No device,” fix USB debugging / authorization, then refresh.
+          </li>
+          <li>
+            <strong>Set quality.</strong>
+            <ul>
+              <li><strong>Bit rate</strong> — video encoder bitrate (e.g. 8M–60M). Lower values if the mirror stutters on slow Wi‑Fi/USB or weak PCs.</li>
+              <li><strong>Max size</strong> — longer edge in pixels (<code>scrcpy --max-size</code>). 1920 is sharp; try 1280 or 1024 if performance is poor.</li>
+              <li><strong>Max FPS</strong> — cap frame rate (e.g. 60 or 30). Use 30 on low-end hardware.</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Optional behavior.</strong>
+            <ul>
+              <li><strong>Window title</strong> — title of the scrcpy window. Must match if you use <strong>Embed in this tab</strong> on Windows (the app finds the window by title).</li>
+              <li><strong>Forward audio</strong> — device audio on the PC; turn off for <code>--no-audio</code> if you want less load.</li>
+              <li><strong>Stay awake (USB)</strong> — keeps the device awake while plugged in.</li>
+              <li><strong>Turn device screen off</strong> — physical phone screen off while mirroring (saves OLED; mirror still shows in the window).</li>
+              <li><strong>Fullscreen (separate)</strong> — full monitor; embedding is skipped. Exit with scrcpy shortcuts or stop from Adbnik.</li>
+              <li><strong>Embed in this tab (Windows)</strong> — docks the mirror inside the right panel. <strong>Default off</strong>: a separate scrcpy window usually has <strong>better touch and gestures</strong>. Embedding uses Win32 <code>SetParent</code> and can break input on some setups.</li>
+              <li><strong>Extra CLI</strong> — pass additional scrcpy flags (advanced).</li>
+              <li><strong>Record to</strong> — optional path to <code>.mp4</code>/<code>.mkv</code>; browse with the folder button.</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Start.</strong> Click <strong>Start</strong>. scrcpy runs as a child process; status text at the bottom shows progress and errors.
+          </li>
+          <li>
+            <strong>Stop.</strong> Click <strong>Stop</strong> in this tab, or use <strong>View → Stop screen mirror</strong> (Ctrl+Alt+F12 / Ctrl+Alt+End on Windows) so you can stop even when the mirror window has focus.
+          </li>
+        </ol>
+
+        <h2>Right panel preview</h2>
+        <p>
+          When <strong>Embed</strong> is on and embedding succeeds, the mirror appears inside the large area on the right.
+          If embedding fails, scrcpy still runs in its <strong>own window</strong>—use <strong>Stop</strong> here when finished.
+          With <strong>Fullscreen</strong> or <strong>embed off</strong>, the right side may show hints until a preview is available.
+        </p>
+
+        <h2>ADB tools (left panel)</h2>
+        <p>
+          The <strong>ADB</strong> group uses the <strong>device selected in the main window top bar</strong> (not only the Screen Control dropdown—if a message says to pick a device “in the bar,” do that first).
+        </p>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Button</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Restart server</strong></td><td><code>adb kill-server</code> then <code>adb start-server</code> — recovers flaky ADB on the PC.</td></tr>
+            <tr><td><strong>Reconnect</strong></td><td><code>adb reconnect</code> — retries connection (e.g. TCP devices).</td></tr>
+            <tr><td><strong>Remount</strong></td><td><code>adb remount</code> — often needs <code>adb root</code> first on many images.</td></tr>
+            <tr><td><strong>Root</strong> / <strong>Unroot</strong></td><td><code>adb root</code> / <code>adb unroot</code> where the device supports it.</td></tr>
+            <tr><td><strong>Reboot</strong></td><td><code>adb reboot</code> after confirmation.</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Requirements</h2>
+        <ul>
+          <li><code>scrcpy</code> on <code>PATH</code> or a full path in <strong>File → Preferences</strong> (same for a portable copy in your own folder).</li>
+          <li><code>adb</code> the same way. Screen Control starts the server if needed and checks device state before launching scrcpy.</li>
+          <li>Step-by-step notes for PATH vs full paths vs a bundled tools folder: <a href="index.html#adb-scrcpy">User guide → ADB and scrcpy on your PC</a>.</li>
+        </ul>
+
+        <nav class="doc-nav">
+          <a href="explorer.html">← File Explorer</a>
+          ·
+          <a href="index.html">User guide home</a>
+        </nav>
+      </article>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap footer-bottom">
+      <a href="index.html">← User guide</a>
+    </div>
+  </footer>
+</body>
+</html>

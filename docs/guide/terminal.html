@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="keywords" content="Adbnik, Python, PyQt5, terminal, ADB, SSH, serial, CMD, PowerShell, user guide" />
+  <meta name="description" content="Adbnik Terminal tab (Python PyQt5) — device bar, sessions, bookmarks, keyboard shortcuts." />
+  <title>Terminal — Adbnik user guide</title>
+  <link rel="stylesheet" href="../css/site.css" />
+  <link rel="icon" href="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" type="image/png" />
+</head>
+<body class="doc-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../index.html">
+        <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="40" height="40" alt="" />
+        <span>Adbnik</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="../index.html">Home</a>
+        <a href="index.html">User guide</a>
+        <a href="terminal.html"><strong>Terminal</strong></a>
+        <a href="explorer.html">File Explorer</a>
+        <a href="screen.html">Screen Control</a>
+        <a class="btn btn-ghost" href="https://github.com/nvnkennedy/adbnik">GitHub</a>
+        <a class="btn btn-primary" href="https://pypi.org/project/adbnik/">PyPI</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <div class="wrap">
+      <article class="doc">
+        <h1>Terminal tab</h1>
+        <p class="doc-lead">
+          The Terminal workspace is modeled after a classic “session manager”: a <strong>left sidebar</strong> for quick actions and saved bookmarks,
+          plus <strong>tabbed terminals</strong> on the right. The <strong>main window menu bar</strong> adds global actions (devices, APK install, SSH, view tabs).
+        </p>
+
+        <h2>Main window menu bar</h2>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Menu</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>File → New session…</strong> (Ctrl+N)</td><td>Opens the same <strong>Login</strong> dialog as <strong>Login…</strong> in the sidebar—create ADB shell, SSH, Android (USB), SFTP/FTP-related flows depending on mode.</td></tr>
+            <tr><td><strong>File → Preferences…</strong> (Ctrl+,)</td><td>Paths to <code>adb</code>, <code>scrcpy</code>, Python, serial defaults, SSH quick commands, theme, etc.</td></tr>
+            <tr><td><strong>File → Save settings</strong> (Ctrl+S)</td><td>Writes configuration to disk (e.g. <code>.adbnik.json</code>).</td></tr>
+            <tr><td><strong>Edit → Copy / Clear / Save log</strong></td><td>Acts on the <strong>application log</strong> panel at the bottom of the main window—not the terminal buffer.</td></tr>
+            <tr><td><strong>Session → ADB</strong></td><td><strong>Refresh</strong> (F5): refresh device list. <strong>Reconnect ADB</strong>, <strong>Restart ADB server</strong>. <strong>Open ADB shell</strong>: switches to Terminal and starts an ADB shell for the device selected in the <strong>top device bar</strong>. <strong>Install APK…</strong>: runs <code>adb install -r</code> for that device.</td></tr>
+            <tr><td><strong>Session → SSH</strong></td><td>Open SSH from Explorer context or start a <strong>new SSH session</strong> via the login dialog.</td></tr>
+            <tr><td><strong>Commands → ADB</strong></td><td><strong>root</strong>, <strong>unroot</strong>, <strong>remount</strong>, <strong>reboot</strong> for the device selected in the top bar (confirmations where needed).</td></tr>
+            <tr><td><strong>Commands → SSH</strong></td><td>User-defined <strong>quick commands</strong> from Preferences—sends a line to the active SSH session when applicable.</td></tr>
+            <tr><td><strong>View</strong></td><td>Jump to <strong>Terminal</strong> (Ctrl+1), <strong>File Explorer</strong> (Ctrl+2), <strong>Screen Control</strong> (Ctrl+3). <strong>Stop screen mirror</strong> (Ctrl+Alt+F12 / Ctrl+Alt+End): stops scrcpy even when the mirror has focus. <strong>Dark theme</strong> toggle.</td></tr>
+            <tr><td><strong>Help</strong></td><td><strong>Website</strong>, <strong>User guide</strong> (F1), <strong>GitHub</strong>, <strong>PyPI</strong>, and <strong>About</strong> (version, feature summary, same links).</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Top device bar (main window)</h2>
+        <p>
+          The <strong>ADB device</strong> dropdown at the top applies to <strong>Session → ADB</strong> actions, APK install, and coordinates with Explorer/Screen when a device serial is needed.
+          Use <strong>Refresh</strong> if you plug/unplug devices. A small <strong>stats</strong> line (when available) reflects the selected device.
+        </p>
+
+        <h2>Left sidebar (Terminal)</h2>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Control</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>CMD</strong></td><td><strong>Double-click</strong> to open a local <strong>Command Prompt</strong> session (Windows). Single click does nothing—this avoids accidental new tabs.</td></tr>
+            <tr><td><strong>PowerShell</strong></td><td><strong>Double-click</strong> to open a local <strong>Windows PowerShell</strong> session (same as CMD).</td></tr>
+            <tr><td><strong>Pin CMD</strong> / <strong>Pin PS</strong></td><td>Saves the current local shell type as a <strong>bookmark</strong> in the list below (stored in your config).</td></tr>
+            <tr><td><strong>Login…</strong></td><td>Opens the <strong>session login</strong> dialog: connect <strong>ADB shell</strong> (pick a device), <strong>SSH</strong>, <strong>Serial</strong> (COM + baud), <strong>FTP</strong> (interactive <code>ftp</code> client), or start an Android/USB session as offered. Saved <strong>bookmarks</strong> appear in the list; double-click to open.</td></tr>
+            <tr><td><strong>Bookmark list</strong></td><td><strong>Double-click</strong> a bookmark to open that session. <strong>Right-click</strong>: start new session, open bookmark, or delete selected bookmarks.</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Session tabs (right side)</h2>
+        <p>
+          Each tab is a terminal session (local shell, <code>adb shell</code>, SSH, serial, etc.). <strong>Close</strong> a tab with the × on the tab or the tab’s context menu.
+        </p>
+        <h3>Right-click the tab strip (not the ×)</h3>
+        <ul>
+          <li><strong>Close</strong>, <strong>Close others</strong>, <strong>Close to the right/left</strong> — same as many IDEs.</li>
+          <li><strong>Increase / Decrease / Reset font size</strong> — changes the font for that session’s terminal (including existing scrollback).</li>
+        </ul>
+        <h3>Inside the terminal</h3>
+        <ul>
+          <li><strong>Copy</strong>: <strong>Ctrl+Shift+C</strong> (terminal selection).</li>
+          <li><strong>Zoom</strong>: <strong>Ctrl++</strong> / <strong>Ctrl+-</strong> / <strong>Ctrl+0</strong> (reset) where supported for the active shell view.</li>
+          <li><strong>Interrupt</strong>: <strong>Ctrl+C</strong> (and related shortcuts as implemented for remote PTY sessions) sends control characters to the shell—behavior matches a normal terminal for that environment.</li>
+        </ul>
+
+        <h2>Typical flows</h2>
+        <ol class="steps">
+          <li><strong>Local command</strong>: <strong>Double-click</strong> <strong>CMD</strong> or <strong>PowerShell</strong>. A new tab opens with that shell. Run what you need. If you use the same setup often, <strong>single-click</strong> <strong>Pin CMD</strong> or <strong>Pin PS</strong> so it appears in the bookmark list.</li>
+          <li><strong>ADB shell</strong>: Plug the phone in, enable USB debugging, accept the PC fingerprint if asked. Pick the device in the <strong>top bar</strong> (use <strong>Session → Refresh</strong> or F5 if the list is stale). Then <strong>Session → Open ADB shell</strong>, or <strong>Login…</strong> → ADB shell, or double-click an ADB bookmark.</li>
+          <li><strong>SSH</strong>: <strong>Login…</strong> → choose SSH, enter host, user, port, and key or password. After connecting, lines you add under <strong>File → Preferences → SSH quick commands</strong> show up under <strong>Commands → SSH</strong>; picking one sends that line to the active SSH tab.</li>
+          <li><strong>Serial</strong>: <strong>Login…</strong> → serial. Choose the COM port and baud. Defaults for port and speed can be set in Preferences if you always use the same hardware.</li>
+        </ol>
+
+        <nav class="doc-nav">
+          <a href="index.html">← User guide home</a>
+          ·
+          Next: <a href="explorer.html">File Explorer</a>
+        </nav>
+      </article>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap footer-bottom">
+      <a href="index.html">← User guide</a>
+    </div>
+  </footer>
+</body>
+</html>
