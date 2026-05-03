@@ -2,6 +2,8 @@
 
 **Release date:** 2026-05-03
 
+**Note:** **4.1.3** restores the user guide as part of the styled **GitHub Pages** site (`nvnkennedy.github.io/adbnik`); the blob-only navigation described below was reverted.
+
 ## Documentation (website behavior)
 
 Static HTML under **`docs/guide/`** no longer uses **relative** links for navigation (`index.html`, `../index.html`, etc.). Those URLs were resolving on **`https://nvnkennedy.github.io/adbnik/guide/...`** when GitHub Pages served the `/docs` folder, instead of staying on the GitHub source viewer.

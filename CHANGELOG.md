@@ -4,11 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [4.1.3] - 2026-05-03
+
+### Fixed
+
+- **Website (GitHub Pages):** The **user guide** is again part of the **styled site** at **`nvnkennedy.github.io/adbnik`** (same origin as the marketing home). Navigation under **`docs/guide/`** uses **relative** links so `/guide/terminal.html`, `/guide/explorer.html`, and `/guide/screen.html` load with the shared CSS from **`/css/site.css`** after the **`pages`** workflow merges **`site/`**, **`docs/guide/*.html`**, and **`docs/css/`**. The **`docs/`** landing page and **`site/index.html`**, **`site/install.html`** link to **`guide/index.html`** (relative) for the same behavior once published. **Help → User guide** (F1), **About**, and PyPI **Documentation** continue to use **`https://nvnkennedy.github.io/adbnik/guide/index.html`**.
+
 ## [4.1.2] - 2026-05-03
 
 ### Fixed
 
-- **Docs / user guide HTML:** All navigation links under **`docs/guide/`** (including **Home**, **User guide**, **Terminal**, **File Explorer**, **Screen Control**, footer, and in-page “next/prev”) now use **absolute GitHub `blob/main/docs/...` URLs**. Relative links previously resolved to **`nvnkennedy.github.io/adbnik/guide/...`** when the docs folder was served by GitHub Pages; they now stay on **`github.com/nvnkennedy/adbnik/blob/main/docs/...`** like **Help → User guide** (F1). The **`docs/`** landing brand link uses the same **`blob`** URL for consistency.
+- **Docs / user guide HTML:** *(Superseded by 4.1.3.)* All navigation links under **`docs/guide/`** briefly used **absolute GitHub `blob/main/docs/...` URLs** so browsing stayed on **`github.com`**; that broke the unified **GitHub Pages** experience and was reverted in **4.1.3**.
 
 ## [4.1.1] - 2026-05-03
 

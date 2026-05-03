@@ -1,5 +1,5 @@
-﻿# GitHub Pages: build job uploads `site/`; deploy job publishes (required artifact handoff).
-# See: https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site
+﻿# GitHub Pages: merge marketing site (`site/`) + user guide (`docs/guide/`) + styles (`docs/css/`).
+# See site/DEPLOY.md
 name: pages
 
 on:
@@ -7,6 +7,8 @@ on:
     branches: [main, naveen]
     paths:
       - "site/**"
+      - "docs/guide/**"
+      - "docs/css/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -25,9 +27,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Assemble published site (marketing + guide + CSS)
+        run: |
+          set -e
+          mkdir -p publish
+          cp -a site/. publish/
+          mkdir -p publish/guide publish/css
+          cp docs/guide/*.html publish/guide/
+          cp docs/css/site.css publish/css/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: publish
 
   deploy:
     runs-on: ubuntu-latest
