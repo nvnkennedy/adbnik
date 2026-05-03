@@ -1,14 +1,13 @@
 include README.md
 include LICENSE
+include NOTICE
 include pyproject.toml
+include CHANGELOG.md
+include CHANGELOG-legacy.md
 include docs/index.html
-include docs/release-notes-v4.0.0.md
-include docs/release-notes-v4.0.1.md
-include docs/release-notes-v4.1.1.md
-include docs/release-notes-v4.1.2.md
-include docs/release-notes-v4.1.3.md
-include docs/release-notes-v5.0.0.md
+include docs/release-notes-v1.0.0.md
 include docs/.nojekyll
 recursive-include docs/css *.css
 recursive-include docs/guide *.html
 recursive-include docs/screenshots *.png
+recursive-include docs/release-notes/archive *.md

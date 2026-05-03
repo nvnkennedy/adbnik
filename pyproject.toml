@@ -6,16 +6,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adbnik"
-version = "5.0.0"
+version = "1.0.0"
 description = "PyQt5 desktop workspace for Android ADB, SSH/serial terminals, SFTP/FTP file transfer, and screen mirroring (scrcpy)."
 readme = "README.md"
-# Use the LICENSE file so PyPI can show full text ("View license"); `text = "MIT"` alone is too minimal and often breaks that page.
+# Apache-2.0. Full text in LICENSE; NOTICE for attribution boilerplate.
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 authors = [{ name = "Adbnik contributors" }]
 keywords = ["android", "adb", "apk", "ssh", "serial", "scrcpy", "pyqt5", "sftp", "desktop", "screen-mirroring"]
 classifiers = [
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Development Status :: 5 - Production/Stable",
   "Environment :: X11 Applications :: Qt",
   "Environment :: Win32 (MS Windows)",
@@ -48,7 +48,9 @@ adbnik-setup = "adbnik.setup_shortcut:main"
 Homepage = "https://nvnkennedy.github.io/adbnik/"
 Repository = "https://github.com/nvnkennedy/adbnik"
 Documentation = "https://nvnkennedy.github.io/adbnik/guide/index.html"
-Changelog = "https://github.com/nvnkennedy/adbnik/releases"
+Changelog = "https://github.com/nvnkennedy/adbnik/blob/main/CHANGELOG.md"
+"Windows installer (unsigned)" = "https://github.com/nvnkennedy/adbnik/releases/latest"
+"PyPI files" = "https://pypi.org/project/adbnik/#files"
 
 [tool.setuptools.packages.find]
 where = ["."]

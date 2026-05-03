@@ -1,0 +1,9 @@
+Adbnik
+
+Copyright 2026 Adbnik contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in this repository for the full license text.
+
+Third-party libraries (e.g. PyQt5, Paramiko, pyserial) are subject to their
+respective licenses as shipped by those projects.

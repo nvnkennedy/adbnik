@@ -50,6 +50,8 @@ In the app: **Help → User guide** (F1) opens that URL; **Help** also lists the
 
 ## Installation
 
+### pip (recommended)
+
 Use the **same** Python interpreter for `pip` and for launching (avoids broken entry points on Windows):
 
 ```bat
@@ -65,7 +67,21 @@ Pinned interpreter example:
 "C:\Path\To\Python\python.exe" -m adbnik
 ```
 
-**Package index:** [pypi.org/project/adbnik](https://pypi.org/project/adbnik/)
+**Package index:** [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) · **Files:** [pypi.org/project/adbnik/#files](https://pypi.org/project/adbnik/#files)
+
+The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Public versioning starts at `1.0.0`.**
+
+On the PyPI project page, **Project links** (from `[project.urls]` in [`pyproject.toml`](pyproject.toml)) include **Windows installer (unsigned)** → GitHub Releases. PyPI’s file list is for **Python packages** only; the **Setup `.exe`** is large and Windows-specific, so it is **built in CI**, attached to **[GitHub Releases](https://github.com/nvnkennedy/adbnik/releases)**, and linked from PyPI—not bundled inside the universal wheel.
+
+### Windows installer from GitHub Releases (optional, unsigned)
+
+When we attach a **`Adbnik-*-Setup-unsigned.exe`** build to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), it is a convenience installer produced with **PyInstaller** + **Inno Setup**. It is **not** digitally signed with an Authenticode certificate yet.
+
+**Why Windows warns (“SmartScreen”, “Unknown publisher”, “Windows protected your PC”):** Microsoft flags **unknown / unsigned** executables by policy. That does **not** mean the installer was flagged as malware—it means there is **no publisher certificate** on the file.
+
+**Run anyway:** On the SmartScreen dialog, choose **More info** (or **More details**), then **Run anyway**. If the browser blocked the download: open **Downloads**, right‑click the file → **Properties** → check **Unblock** if shown → **OK**, then run again.
+
+If you prefer not to use an unsigned `.exe`, install with **`pip`** above (packages on PyPI are standard Python artifacts).
 
 ### Shortcut (Windows)
 
@@ -125,8 +141,10 @@ On Windows, list interpreters with `py -0p`.
 |--|--|
 | **Product site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) — overview and links |
 | **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/index.html) — Terminal, File Explorer, Screen Control |
+| **Changelog** | [CHANGELOG.md](CHANGELOG.md) — releases from **v1.0.0**; [CHANGELOG-legacy.md](CHANGELOG-legacy.md) — older dev-era entries |
 | **Source code** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
-| **Releases** | [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases) |
+| **Releases (installer `.exe`, portable zip)** | [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases) |
+| **Yanking old PyPI versions** | [docs/pypi-yank-legacy-versions.md](docs/pypi-yank-legacy-versions.md) |
 
 ---
 
@@ -146,4 +164,4 @@ py -m adbnik
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+**Apache License 2.0** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Large enterprises often prefer Apache 2.0 for its clarity, patent provisions, and predictable redistribution rules (SPDX: `Apache-2.0`).
