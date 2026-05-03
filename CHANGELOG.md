@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [4.0.0] - 2026-05-03
+
+### Changed
+
+- **Website (GitHub Pages):** Landing page styling refresh—card hover depth, layered mesh background, on-page **version** badge, clearer visual hierarchy.
+- **Docs:** Added `docs/release-notes-v4.0.0.md` as copy-ready text for the GitHub **Releases** page.
+
+### Fixed
+
+- **Terminal:** **Up / Down** for **in-app command history** now works even when the text caret is in **scrollback** (the caret moves to the active input line first, then cycles history). Previously, arrows sometimes navigated lines in the buffer instead of history.
+- **Bookmarks:** Terminal sidebar and **Session → Login…** bookmark lists disable **single-click row activation** via a Qt style override so behavior matches **double-click to open** on Windows and other platforms that enable single-click activation by default.
+- **Main window:** Removed a duplicate **`showEvent`** handler so first-show window clamping always runs.
+- **Imports:** Removed unused imports in `adbnik/session.py` and `adbnik/ui/main_window.py`.
+
+## [3.0.0] - 2026-04-30
+
+### Removed
+
+- **Camera tab** and all webcam / OpenCV integration. The main window now has three tabs: **Terminal**, **File Explorer**, and **Screen Control**. `opencv-python-headless` is no longer a dependency; related preferences and docs were removed.
+
 ## [2.5.6] - 2026-04-29
 
 ### Changed

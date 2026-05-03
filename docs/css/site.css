@@ -1,17 +1,19 @@
 /* Adbnik — project site (GitHub Pages) */
 
 :root {
-  --bg: #070b12;
-  --bg-elevated: #0f172a;
-  --surface: #111c33;
-  --border: rgba(148, 163, 184, 0.12);
-  --text: #f1f5f9;
+  --bg: #050810;
+  --bg-elevated: #0c1222;
+  --surface: #121c35;
+  --border: rgba(148, 163, 184, 0.14);
+  --text: #f8fafc;
   --muted: #94a3b8;
-  --accent: #2dd4bf;
+  --accent: #14d9be;
+  --accent-soft: rgba(20, 217, 190, 0.14);
   --accent-hover: #5eead4;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-  --radius: 12px;
-  --font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --shadow: 0 28px 90px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --radius: 14px;
+  --font: "Segoe UI Variable", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
 }
 
@@ -30,12 +32,14 @@ body {
   min-height: 100vh;
   font-family: var(--font);
   font-size: 1rem;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--text);
-  background: var(--bg);
+  background-color: var(--bg);
   background-image:
-    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(45, 212, 191, 0.12), transparent),
-    radial-gradient(ellipse 80% 50% at 100% 0%, rgba(59, 130, 246, 0.06), transparent);
+    radial-gradient(ellipse 100% 70% at 50% -30%, rgba(20, 217, 190, 0.18), transparent 55%),
+    radial-gradient(ellipse 60% 45% at 100% 10%, rgba(56, 189, 248, 0.08), transparent),
+    radial-gradient(ellipse 50% 40% at 0% 40%, rgba(167, 139, 250, 0.06), transparent),
+    linear-gradient(180deg, #060a14 0%, var(--bg) 38%, #03060c 100%);
 }
 
 a {
@@ -74,8 +78,9 @@ a:hover {
   top: 0;
   z-index: 100;
   border-bottom: 1px solid var(--border);
-  background: rgba(7, 11, 18, 0.85);
-  backdrop-filter: blur(12px);
+  background: rgba(5, 8, 16, 0.78);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
 .header-inner {
@@ -141,14 +146,16 @@ a:hover {
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, #5eead4 0%, var(--accent) 100%);
   color: #042f2e;
+  box-shadow: 0 2px 14px rgba(20, 217, 190, 0.35);
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
+  background: linear-gradient(135deg, #99f6e4 0%, #5eead4 100%);
   color: #022c22;
   text-decoration: none;
+  box-shadow: 0 4px 20px rgba(20, 217, 190, 0.45);
 }
 
 .btn-ghost {
@@ -164,8 +171,47 @@ a:hover {
 
 /* Hero */
 .hero {
-  padding: 4rem 0 3rem;
+  position: relative;
+  padding: 4.25rem 0 3rem;
   text-align: center;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: -2rem 10% auto;
+  height: 180px;
+  background: radial-gradient(ellipse at center, var(--accent-soft), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.version-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: var(--accent-soft);
+  border: 1px solid rgba(20, 217, 190, 0.35);
+  color: #99f6e4;
+  margin-bottom: 1rem;
+}
+
+.version-pill span.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
 }
 
 .hero h1 {
@@ -239,11 +285,24 @@ section h2 {
 }
 
 .card {
-  padding: 1.25rem 1.35rem;
+  padding: 1.35rem 1.45rem;
   border-radius: var(--radius);
-  background: var(--bg-elevated);
+  background: linear-gradient(165deg, rgba(17, 28, 51, 0.95) 0%, var(--bg-elevated) 100%);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(20, 217, 190, 0.22);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(20, 217, 190, 0.08);
 }
 
 .card h3 {
@@ -374,6 +433,10 @@ pre,
 
   .nav {
     width: 100%;
+  }
+
+  .card:hover {
+    transform: none;
   }
 }
 

@@ -21,114 +21,6 @@ _LIGHT_STYLESHEET = """
         font-weight: 600;
         font-size: 15px;
     }
-    QLabel#CameraLazyHintLabel {
-        color: #0f172a;
-        font-size: 14px;
-        background: transparent;
-    }
-    QLabel#CameraFooterLabel {
-        color: #475569;
-        font-size: 12px;
-        background: transparent;
-    }
-    QWidget#CameraTabRoot {
-        background-color: #f6f8fb;
-    }
-    QWidget#CameraChromeStrip {
-        background-color: #f6f8fb;
-        border: none;
-    }
-    QLabel#CameraStatusLabel {
-        color: #334155;
-        font-size: 11px;
-        background: transparent;
-    }
-    QWidget#CameraPreviewPanel {
-        background-color: #0f172a;
-    }
-    QWidget#CameraOverlayHost {
-        background: transparent;
-    }
-    QWidget#CameraOverlayRailLeft,
-    QWidget#CameraOverlayRailRight {
-        background-color: rgba(15, 23, 42, 185);
-        border: none;
-        min-width: 52px;
-        max-width: 80px;
-    }
-    QLabel#CameraOverlayHint {
-        color: rgba(248, 250, 252, 210);
-        font-size: 10px;
-        background: transparent;
-    }
-    QToolButton#CameraOverlayToolBtn {
-        background: rgba(255, 255, 255, 35);
-        border: 1px solid rgba(255, 255, 255, 70);
-        border-radius: 8px;
-        color: #f8fafc;
-        padding: 6px;
-        font-size: 19px;
-        font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-    }
-    QToolButton#CameraOverlayToolBtn:hover {
-        background: rgba(255, 255, 255, 60);
-    }
-    QToolButton#CameraModeBtn {
-        background: rgba(255, 255, 255, 40);
-        border: 1px solid rgba(255, 255, 255, 75);
-        border-radius: 8px;
-        padding: 6px;
-    }
-    QToolButton#CameraModeBtn:checked {
-        background: rgba(37, 99, 235, 220);
-        border-color: #93c5fd;
-    }
-    QPushButton#CameraShutterBtn {
-        background: #f8fafc;
-        border: 3px solid rgba(255, 255, 255, 220);
-        border-radius: 40px;
-        color: #0f172a;
-        padding: 4px;
-    }
-    QPushButton#CameraShutterBtn[state="photo"] {
-        background: #ffffff;
-    }
-    QPushButton#CameraShutterBtn[state="video"] {
-        background: #fecaca;
-        border-color: #f87171;
-    }
-    QPushButton#CameraShutterBtn[state="record_stop"] {
-        background: #dc2626;
-        border-color: #fecaca;
-    }
-    QPushButton#CameraShutterBtn:hover {
-        background: #e2e8f0;
-    }
-    QPushButton#CameraShutterBtn[state="record_stop"]:hover {
-        background: #b91c1c;
-    }
-    QToolButton#CameraGalleryThumb {
-        background: rgba(0, 0, 0, 45);
-        border: 1px solid rgba(255, 255, 255, 120);
-        border-radius: 8px;
-    }
-    QFrame#CameraControlBar {
-        background-color: #f6f8fb;
-        border-top: 1px solid #dde3eb;
-    }
-    QWidget#CameraTabRoot QPushButton#CameraChromeBtn {
-        background: #f8fafc;
-        border: 1px solid #cbd5e1;
-        border-radius: 10px;
-        padding: 8px 16px;
-        font-weight: 600;
-        color: #0f172a;
-        font-size: 13px;
-    }
-    QWidget#CameraTabRoot QPushButton#CameraChromeBtn:hover {
-        background: #e2e8f0;
-        border-color: #94a3b8;
-    }
     QMainWindow {
         background: #eef1f6;
     }
@@ -261,6 +153,12 @@ _LIGHT_STYLESHEET = """
         border-radius: 8px;
         border: 1px solid #c9d4e3;
         background: #f6f8fb;
+    }
+    QTabWidget#MainTabs > QStackedWidget {
+        background: #f6f8fb;
+    }
+    QTabWidget#MainTabs > QStackedWidget > QWidget {
+        background-color: #f6f8fb;
     }
     QTabWidget#MainTabs QTabBar::tab {
         background-color: #e2e8f0;
@@ -891,7 +789,7 @@ _LIGHT_STYLESHEET = """
         min-width: 180px;
     }
     QWidget#MainBody {
-        background: transparent;
+        background: #f6f8fb;
     }
     QLabel#ScrcpyHintLabel {
         color: #64748b;
@@ -970,8 +868,12 @@ _DARK_APPEND = """
     QTabWidget#ExplorerSessionTabs::pane { background: #0f172a; border: 1px solid #334155; }
     QTabWidget#ExplorerSessionTabs QStackedWidget { background: #0f172a; }
     QTabWidget#MobaTabs QStackedWidget { background: #0f172a; }
-    /* Tab page root only — avoid forcing every nested QWidget (fixes ghosting/stacking with native embeds). */
-    QTabWidget#MainTabs > QStackedWidget > QWidget { background: #0b1220; }
+    QTabWidget#MainTabs > QStackedWidget {
+        background: #161922;
+    }
+    QTabWidget#MainTabs > QStackedWidget > QWidget {
+        background-color: #161922;
+    }
     QTabWidget#ExplorerSessionTabs QWidget { background: #0f172a; }
     QTabWidget#MobaTabs QWidget { background: #0f172a; }
     QTabWidget#MainTabs QTabBar::close-button,
@@ -1134,7 +1036,7 @@ _DARK_APPEND = """
         font-size: 14px;
     }
     QPushButton#HeaderMiniBtn { background: #334155; border: 1px solid #475569; color: #e2e8f0; }
-    QWidget#MainBody { background: #12151c; }
+    QWidget#MainBody { background: #161922; }
     QWidget#ExplorerChrome { background: #111827; border: 1px solid #334155; }
     QLabel#ExplorerSessionHint { color: #8b949e; }
     QLabel#MobaTabCtrlLabel { color: #8b949e; }
@@ -1245,101 +1147,6 @@ _DARK_APPEND = """
         color: #cbd5e1;
         background: transparent;
         font-size: 13px;
-    }
-    QWidget#CameraTabRoot QPushButton#CameraChromeBtn {
-        background: #1e293b;
-        border: 1px solid #475569;
-        border-radius: 10px;
-        padding: 8px 16px;
-        font-weight: 600;
-        color: #f1f5f9;
-        font-size: 13px;
-    }
-    QWidget#CameraTabRoot QPushButton#CameraChromeBtn:hover {
-        background: #334155;
-        border-color: #64748b;
-    }
-    QWidget#CameraTabRoot {
-        background-color: #161922;
-    }
-    QWidget#CameraChromeStrip {
-        background-color: #161922;
-        border: none;
-    }
-    QLabel#CameraStatusLabel {
-        color: #cbd5e1;
-        font-size: 11px;
-        background: transparent;
-    }
-    QWidget#CameraPreviewPanel {
-        background-color: #020617;
-    }
-    QWidget#CameraOverlayRailLeft,
-    QWidget#CameraOverlayRailRight {
-        background-color: rgba(2, 6, 23, 210);
-        border: none;
-        min-width: 52px;
-        max-width: 80px;
-    }
-    QLabel#CameraOverlayHint {
-        color: rgba(226, 232, 240, 200);
-        font-size: 10px;
-        background: transparent;
-    }
-    QToolButton#CameraOverlayToolBtn {
-        background: rgba(255, 255, 255, 28);
-        border: 1px solid rgba(148, 163, 184, 90);
-        border-radius: 8px;
-        color: #f8fafc;
-        padding: 6px;
-        font-size: 19px;
-    }
-    QToolButton#CameraOverlayToolBtn:hover {
-        background: rgba(255, 255, 255, 48);
-    }
-    QToolButton#CameraModeBtn {
-        background: rgba(255, 255, 255, 22);
-        border: 1px solid rgba(148, 163, 184, 80);
-        border-radius: 8px;
-        padding: 6px;
-    }
-    QToolButton#CameraModeBtn:checked {
-        background: rgba(37, 99, 235, 200);
-        border-color: #60a5fa;
-    }
-    QPushButton#CameraShutterBtn {
-        background: #f8fafc;
-        border: 3px solid rgba(255, 255, 255, 180);
-        border-radius: 40px;
-        padding: 4px;
-    }
-    QPushButton#CameraShutterBtn[state="video"] {
-        background: #7f1d1d;
-        border-color: #f87171;
-    }
-    QPushButton#CameraShutterBtn[state="record_stop"] {
-        background: #dc2626;
-        border-color: #fecaca;
-    }
-    QPushButton#CameraShutterBtn:hover {
-        background: #e2e8f0;
-    }
-    QPushButton#CameraShutterBtn[state="record_stop"]:hover {
-        background: #b91c1c;
-    }
-    QToolButton#CameraGalleryThumb {
-        background: rgba(0, 0, 0, 50);
-        border: 1px solid rgba(148, 163, 184, 100);
-        border-radius: 8px;
-    }
-    QFrame#CameraControlBar {
-        background-color: #0f172a;
-        border-top: 1px solid #1e293b;
-    }
-    QLabel#CameraFooterLabel {
-        color: #94a3b8;
-        font-size: 12px;
-        background: transparent;
     }
     QDialog { background: #111827; color: #f1f5f9; }
     QDialog QWidget { background: #111827; color: #f1f5f9; }

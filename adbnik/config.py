@@ -59,8 +59,6 @@ class AppConfig:
     auto_reconnect_terminal: bool = True
     auto_reconnect_screen: bool = True
     auto_reconnect_explorer: bool = True
-    # Camera tab: default empty → ~/Pictures/adbnik_camera at runtime
-    camera_output_dir: str = ""
 
     @classmethod
     def load(cls) -> "AppConfig":

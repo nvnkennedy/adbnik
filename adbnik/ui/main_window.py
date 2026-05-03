@@ -13,16 +13,13 @@ from PyQt5.QtWidgets import (
     QAction,
     QActionGroup,
     QApplication,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QInputDialog,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QTextBrowser,
     QPushButton,
@@ -141,10 +138,6 @@ class MainWindow(QMainWindow):
         _app = QApplication.instance()
         if _app is not None:
             _app.applicationStateChanged.connect(self._on_application_state_changed)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Avoid duplicate startup refresh work; timer + initial call handle it.
 
     def _on_application_state_changed(self, state: Qt.ApplicationState) -> None:
         """Pause ADB timers in the background to cut idle CPU and reduce long-session UI stalls."""
@@ -342,9 +335,6 @@ class MainWindow(QMainWindow):
             self.file_explorer.disconnect_remote_services()
         if hasattr(self, "scrcpy"):
             self.scrcpy.shutdown(fast=True)
-        cam = getattr(self, "camera", None)
-        if cam is not None:
-            cam.shutdown(fast=True)
         for _name in ("_device_refresh_thread", "_stats_refresh_thread"):
             th = getattr(self, _name, None)
             if th is not None:
@@ -439,27 +429,10 @@ class MainWindow(QMainWindow):
             get_serial=lambda: self.terminal.current_adb_serial(),
             config=self.config,
         )
-        self.camera = None  # lazily created CameraTab when the Camera tab is first opened (keeps startup fast)
-        self._camera_tab_built = False
-        self._camera_placeholder = QWidget()
-        _cph = QVBoxLayout(self._camera_placeholder)
-        _cph.setContentsMargins(16, 24, 16, 24)
-        _cam_lazy_lbl = QLabel(
-            "Camera loads when you open this tab so the rest of the window stays responsive."
-        )
-        _cam_lazy_lbl.setWordWrap(True)
-        _cam_lazy_lbl.setObjectName("CameraLazyHintLabel")
-        _cph.addWidget(_cam_lazy_lbl)
-        _cph.addStretch()
         st = self.style()
         self.tabs.addTab(self.terminal, st.standardIcon(QStyle.SP_FileDialogDetailedView), "Terminal")
         self.tabs.addTab(self.file_explorer, st.standardIcon(QStyle.SP_DirLinkIcon), "File Explorer")
         self.tabs.addTab(self.scrcpy, st.standardIcon(QStyle.SP_ComputerIcon), "Screen Control")
-        self.tabs.addTab(
-            self._camera_placeholder,
-            st.standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)),
-            "Camera",
-        )
         self.tabs.tabBar().setIconSize(QSize(18, 18))
         self._prev_main_tab_index = 0
         self.tabs.currentChanged.connect(self._on_main_tab_changed)
@@ -538,49 +511,7 @@ class MainWindow(QMainWindow):
             return ""
         return t.split()[0]
 
-    def _lazy_init_camera_tab(self) -> None:
-        """Instantiate Qt Multimedia camera UI only on first visit — avoids slowing cold start."""
-        if self._camera_tab_built:
-            return
-        from .tabs.camera_tab import CameraTab
-
-        self._camera_tab_built = True
-        idx = self.tabs.indexOf(self._camera_placeholder)
-        if idx < 0:
-            return
-        # removeTab() can switch current tab to another index; restore Camera after insert.
-        self.tabs.blockSignals(True)
-        try:
-            self.tabs.removeTab(idx)
-            self.camera = CameraTab(
-                self.append_log,
-                get_output_dir=self.get_camera_output_dir,
-                set_output_dir=self.set_camera_output_dir,
-            )
-            self.tabs.insertTab(
-                idx,
-                self.camera,
-                self.style().standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)),
-                "Camera",
-            )
-            self.tabs.setCurrentIndex(idx)
-        finally:
-            self.tabs.blockSignals(False)
-
     def _on_main_tab_changed(self, index: int) -> None:
-        if index == 3:
-            self._lazy_init_camera_tab()
-        prev = getattr(self, "_prev_main_tab_index", 0)
-        if prev == 3 and index != 3:
-            cam = getattr(self, "camera", None)
-            if cam is not None:
-                try:
-                    cam.pause_for_background()
-                except Exception:
-                    try:
-                        cam.shutdown(fast=True)
-                    except Exception:
-                        pass
         self._prev_main_tab_index = index
         if index == 2 and hasattr(self, "scrcpy"):
             try:
@@ -927,11 +858,6 @@ class MainWindow(QMainWindow):
         a_scr.setShortcut(QKeySequence("Ctrl+3"))
         a_scr.triggered.connect(lambda: self.tabs.setCurrentIndex(2))
         view.addAction(a_scr)
-        a_cam = QAction("&Camera", self)
-        a_cam.setIcon(self.style().standardIcon(getattr(QStyle, "SP_CameraIcon", QStyle.SP_DesktopIcon)))
-        a_cam.setShortcut(QKeySequence("Ctrl+4"))
-        a_cam.triggered.connect(lambda: self.tabs.setCurrentIndex(3))
-        view.addAction(a_cam)
         a_cmd_palette = QAction("Command &palette…", self)
         a_cmd_palette.setShortcut(QKeySequence("Ctrl+Shift+P"))
         a_cmd_palette.setIcon(self.style().standardIcon(QStyle.SP_FileDialogContentsView))
@@ -1027,7 +953,6 @@ class MainWindow(QMainWindow):
             "Open Terminal",
             "Open File Explorer",
             "Open Screen Control",
-            "Open Camera",
             "Reconnect ADB",
             "Reconnect Screen Mirror",
             "Reconnect Explorer Remote",
@@ -1043,8 +968,6 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentIndex(1)
         elif choice == "Open Screen Control":
             self.tabs.setCurrentIndex(2)
-        elif choice == "Open Camera":
-            self.tabs.setCurrentIndex(3)
         elif choice == "Reconnect ADB":
             self._menu_session_adb_reconnect()
         elif choice == "Reconnect Screen Mirror":
@@ -1205,7 +1128,6 @@ PyQt5 and Python {py_ver} on {plat}.</p>
 <li><b>File Explorer</b> — WinSCP-style <b>Local | Remote</b> panes per session: ADB device storage, SFTP, or FTP.
 Pull, push, drag-and-drop, find files, and external editors with sync where supported.</li>
 <li><b>Screen Control</b> — Launch and manage <b>scrcpy</b> mirroring (paths and options in Preferences).</li>
-<li><b>Camera</b> — Webcam preview with overlay controls (photo/video modes, rotate camera), JPEG + MP4; save folder and power-user actions under ⚙.</li>
 </ul>
 
 <h3 style="margin-bottom:6px;">Menus worth knowing</h3>
@@ -1215,7 +1137,7 @@ Pull, push, drag-and-drop, find files, and external editors with sync where supp
 <li><b>Session</b> — Refresh devices (F5), ADB tools (including <b>Install APK</b> on the selected device),
 open SSH using Explorer’s SFTP host or a new session.</li>
 <li><b>Commands</b> — ADB shortcuts (root, remount, reboot) and your custom SSH lines from Preferences.</li>
-<li><b>View</b> — Jump tabs (<b>Ctrl+1</b> Terminal, <b>Ctrl+2</b> Explorer, <b>Ctrl+3</b> Screen, <b>Ctrl+4</b> Camera), stop screen mirror, toggle dark theme.</li>
+<li><b>View</b> — Jump tabs (<b>Ctrl+1</b> Terminal, <b>Ctrl+2</b> Explorer, <b>Ctrl+3</b> Screen), stop screen mirror, toggle dark theme.</li>
 </ul>
 
 <h3 style="margin-bottom:6px;">Tips</h3>
@@ -1284,16 +1206,6 @@ open SSH using Explorer’s SFTP host or a new session.</li>
         except OSError:
             pass
         return raw
-
-    def get_camera_output_dir(self) -> str:
-        return str(getattr(self.config, "camera_output_dir", "") or "").strip()
-
-    def set_camera_output_dir(self, path: str) -> None:
-        self.config.camera_output_dir = (path or "").strip()
-        try:
-            self.config.save()
-        except Exception:
-            pass
 
     def get_scrcpy_path(self) -> str:
         raw = (self.config.scrcpy_path or "").strip()

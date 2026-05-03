@@ -6,7 +6,7 @@ Keep these strings in one place so the UI and future docs stay aligned.
 # GitHub Pages site (landing + static guide under /guide/)
 WEBSITE_HOME = "https://nvnkennedy.github.io/adbnik/"
 
-# User guide index (Terminal, File Explorer, Screen Control, Camera, plus tool paths)
+# User guide index (Terminal, File Explorer, Screen Control, plus tool paths)
 USER_GUIDE = "https://nvnkennedy.github.io/adbnik/guide/"
 
 # Source and package pages

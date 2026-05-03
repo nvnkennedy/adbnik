@@ -8,7 +8,7 @@
   <strong>One desktop workspace for Android debugging, remote shells, and file operations.</strong>
 </p>
 
-**Adbnik** is a PyQt5 application that brings **ADB** workflows, **SSH** and **serial** terminals, **local ↔ remote file management** (Android device, SFTP, FTP), **screen mirroring** launchers (e.g. scrcpy), and an integrated **Camera** tab (webcam preview, JPEG capture, MP4 recording, rotate/switch device) into a single window. External tools—**adb**, **ssh**, **scrcpy**—are used from your system: install them separately and, if needed, set paths under **File → Preferences**.
+**Adbnik** is a PyQt5 application that brings **ADB** workflows, **SSH** and **serial** terminals, **local ↔ remote file management** (Android device, SFTP, FTP), and **screen mirroring** launchers (e.g. scrcpy) into a single tabbed window. External tools—**adb**, **ssh**, **scrcpy**—are used from your system: install them separately and, if needed, set paths under **File → Preferences**.
 
 ### About the name
 
@@ -25,13 +25,12 @@
 | **Serial** | COM port and baud configuration in the UI |
 | **Files** | Dual-pane explorer: local disk ↔ Android / SFTP / FTP |
 | **Screen** | Start and manage mirroring using your chosen executable |
-| **Camera** | OpenCV-driven preview (fast startup), overlay controls, photo/video modes, switch camera, save folder |
 
 ---
 
 ## User guide
 
-Step-by-step documentation for the **Terminal**, **File Explorer**, **Screen Control**, and **Camera** tabs (menus, overlay controls, mirroring options), plus where to put **adb** / **scrcpy** on disk:
+Step-by-step documentation for the **Terminal**, **File Explorer**, and **Screen Control** tabs (menus, shortcuts, mirroring options), plus where to put **adb** / **scrcpy** on disk:
 
 **https://nvnkennedy.github.io/adbnik/guide/**
 
@@ -90,7 +89,7 @@ adbnik-setup --folder "%USERPROFILE%\Desktop"
 
 1. Start the app: `python -m adbnik` from the environment where the package is installed.
 2. Under **File → Preferences**, set paths for **ADB** and **scrcpy** if they are not on `PATH`.
-3. Use the main tabs for **Terminal**, **Files**, **Screen**, and **Camera** as needed.
+3. Use the main tabs for **Terminal**, **Files**, and **Screen** as needed.
 
 Preferences are stored in **`.adbnik.json`** under your user profile. Legacy **`.devicedeck.json`** settings are migrated when you save preferences.
 
@@ -125,7 +124,7 @@ On Windows, list interpreters with `py -0p`.
 | | |
 |--|--|
 | **Product site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) — overview and links |
-| **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/) — Terminal, File Explorer, Screen Control, Camera |
+| **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/) — Terminal, File Explorer, Screen Control |
 | **Source code** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
 | **Releases** | [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases) |
 

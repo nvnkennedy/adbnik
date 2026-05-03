@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QMessageBox,
+    QProxyStyle,
     QPushButton,
     QShortcut,
     QSplitter,
@@ -75,6 +76,15 @@ _SERIAL_MINITERM_BANNER_RE = re.compile(
     r"^---[^\n]*Menu:\s*Ctrl[^\n]*\r?\n|"
     r"^---[^\n]*Help:\s*Ctrl[^\n]*\r?\n"
 )
+
+
+class _BookmarkSidebarStyle(QProxyStyle):
+    """Disable platform single-click row activation; bookmark sessions open on double-click only."""
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.SH_ItemView_ActivateItemOnSingleClick:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
 
 
 def _filter_serial_miniterm_banner(text: str) -> str:
@@ -1119,15 +1129,19 @@ class ShellPlainTextEdit(QTextEdit):
         ):
             self._reset_history_browse()
 
-        if k in (Qt.Key_Up, Qt.Key_Down) and pos >= self._anchor and not (mods & Qt.ControlModifier) and not (
-            mods & Qt.AltModifier
-        ):
-            if k == Qt.Key_Up:
-                self._history_prev()
-            else:
-                self._history_next()
-            ev.accept()
-            return
+        if k in (Qt.Key_Up, Qt.Key_Down) and not (mods & Qt.ControlModifier) and not (mods & Qt.AltModifier):
+            # Cursor in scrollback used to skip this block and let QTextEdit move/select lines instead.
+            if pos < self._anchor:
+                self.moveCursor(QTextCursor.End)
+                cur = self.textCursor()
+                pos = cur.position()
+            if pos >= self._anchor:
+                if k == Qt.Key_Up:
+                    self._history_prev()
+                else:
+                    self._history_next()
+                ev.accept()
+                return
 
         if mods & Qt.ControlModifier:
             if k == Qt.Key_A:
@@ -2874,6 +2888,8 @@ class TerminalTab(QWidget):
         self.bookmark_list.setObjectName("MobaBookmarkList")
         self.bookmark_list.setIconSize(QSize(20, 20))
         self.bookmark_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        base_style = self.bookmark_list.style() or QApplication.instance().style()
+        self.bookmark_list.setStyle(_BookmarkSidebarStyle(base_style))
         self.bookmark_list.itemDoubleClicked.connect(self._on_bookmark_double_clicked)
         self.bookmark_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.bookmark_list.customContextMenuRequested.connect(self._on_bookmark_context_menu)

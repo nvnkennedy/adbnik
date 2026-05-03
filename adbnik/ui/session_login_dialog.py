@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QProxyStyle,
     QPushButton,
     QProgressDialog,
     QScrollArea,
@@ -32,6 +33,16 @@ from PyQt5.QtWidgets import (
     QStyle,
     QFrame,
 )
+
+
+class _BookmarkListNoSingleActivateStyle(QProxyStyle):
+    """Windows/macOS may treat one click as item activation; we only connect double-click to connect."""
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.SH_ItemView_ActivateItemOnSingleClick:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
+
 
 # Self-contained so the Login window stays readable regardless of the main window theme.
 _LOGIN_DIALOG_STYLESHEET = """
@@ -713,6 +724,8 @@ class SessionLoginDialog(QDialog):
             self._bookmark_list.setObjectName("SessionBookmarkList")
             self._bookmark_list.setIconSize(QSize(20, 20))
             self._bookmark_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            _bs = self._bookmark_list.style() or QApplication.instance().style()
+            self._bookmark_list.setStyle(_BookmarkListNoSingleActivateStyle(_bs))
             self._refresh_bookmark_list()
             self._bookmark_list.clearSelection()
             self._bookmark_list.itemDoubleClicked.connect(self._on_bookmark_double_clicked)
