@@ -32,7 +32,7 @@
 
 Step-by-step documentation for the **Terminal**, **File Explorer**, and **Screen Control** tabs (menus, shortcuts, mirroring options), plus where to put **adb** / **scrcpy** on disk:
 
-**https://nvnkennedy.github.io/adbnik/guide/**
+**https://github.com/nvnkennedy/adbnik/blob/main/docs/guide/index.html**
 
 In the app: **Help → User guide** (F1) opens the same URL; **Help** also lists the website, GitHub, and PyPI.
 
@@ -124,7 +124,7 @@ On Windows, list interpreters with `py -0p`.
 | | |
 |--|--|
 | **Product site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) — overview and links |
-| **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/) — Terminal, File Explorer, Screen Control |
+| **User guide** | [docs/guide on `main`](https://github.com/nvnkennedy/adbnik/blob/main/docs/guide/index.html) — Terminal, File Explorer, Screen Control |
 | **Source code** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
 | **Releases** | [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases) |
 

@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [4.0.1] - 2026-05-03
+
+### Changed
+
+- **Help → User guide** (F1), **About**, and PyPI **Documentation** URL now open the user guide at **`main/docs/guide/index.html` on GitHub** (`https://github.com/nvnkennedy/adbnik/blob/main/docs/guide/index.html`) instead of the GitHub Pages `/guide/` path, so the guide always matches the repository default branch.
+
 ## [4.0.0] - 2026-05-03
 
 ### Changed
