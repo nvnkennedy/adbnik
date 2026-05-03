@@ -10,6 +10,8 @@
 
 **Adbnik** is a PyQt5 application that brings **ADB** workflows, **SSH** and **serial** terminals, **local ↔ remote file management** (Android device, SFTP, FTP), and **screen mirroring** launchers (e.g. scrcpy) into a single tabbed window. External tools—**adb**, **ssh**, **scrcpy**—are used from your system: install them separately and, if needed, set paths under **File → Preferences**.
 
+**Platforms:** The same **PyPI** package installs on **Windows**, **Linux**, and **macOS** where PyQt5 runs. **Windows** is the primary, tested target: optional **Inno** installer from GitHub Releases, **`adbnik-setup`** for a desktop shortcut, optional **embedded scrcpy** in a tab, and local **CMD/PowerShell** terminal tabs. On **Linux** and **macOS**, use your system shells in the terminal area and run mirroring in a **separate** window—those Windows-only conveniences are not available there.
+
 Development and releases are maintained in **`adbnik-dev`** (private). Published wheels, changelogs, documentation, and Windows installers live in the public **`adbnik`** repository: [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik).
 
 ### About the name

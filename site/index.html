@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Adbnik — ADB device workspace (shell, APK, SSH, serial, files, screen)</title>
-  <meta name="description" content="Adbnik (adbnik): an ADB explorer–style workflow and ADB device workspace — tabbed ADB shell, APK install, SSH, serial, device files, USB screen. Install with pip." />
+  <meta name="keywords" content="Adbnik, adbnik, Python, Python 3, PyQt5, PyQt, ADB, Android, Android Debug Bridge, SSH, serial, scrcpy, SFTP, FTP, desktop, pip, PyPI" />
+  <title>Adbnik — Python PyQt5 ADB workspace (shell, APK, SSH, serial, files, screen)</title>
+  <meta name="description" content="Adbnik (adbnik): Python PyQt5 desktop app — ADB explorer–style workflow: tabbed ADB shell, APK install, SSH, serial, device files, USB screen. pip install adbnik." />
   <link rel="canonical" href="https://nvnkennedy.github.io/adbnik/" />
   <link rel="icon" href="https://nvnkennedy.github.io/adbnik/branding/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="256x256" href="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
@@ -12,14 +13,17 @@
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Adbnik" />
   <meta property="og:title" content="Adbnik — v6.0.0 · ADB device workspace" />
-  <meta property="og:description" content="ADB shell, APK install, SSH, serial, dual-pane files, USB screen — PyQt5 workspace. Latest stable v6.0.0 on PyPI." />
+  <meta property="og:description" content="Python PyQt5 desktop app: ADB shell, APK install, SSH, serial, dual-pane files, USB screen. v6.0.0 on PyPI." />
   <meta property="og:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
   <meta property="og:url" content="https://nvnkennedy.github.io/adbnik/" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Adbnik — ADB device workspace" />
-  <meta name="twitter:description" content="ADB explorer–style workflow: ADB shell, APK install, SSH, serial, files, USB screen. pip install adbnik" />
+  <meta name="twitter:description" content="Python PyQt5 app — ADB, SSH, serial, files, USB screen. pip install adbnik" />
   <meta name="twitter:image" content="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" />
   <link rel="stylesheet" href="assets/style.css" />
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Adbnik","alternateName":"adbnik","applicationCategory":"DeveloperApplication","operatingSystem":"Windows, Linux, macOS","programmingLanguage":"Python","runtimePlatform":"PyQt5","description":"Python PyQt5 desktop workspace for Android ADB, SSH, serial, files, and USB screen mirroring.","downloadUrl":"https://pypi.org/project/adbnik/"}
+  </script>
 </head>
 <body>
   <div class="topbar">
@@ -43,12 +47,17 @@
   <main class="wrap">
     <section class="hero">
       <p class="version-pill hero-version" title="Current stable on PyPI"><span class="pill-dot" aria-hidden="true"></span> Latest stable · v6.0.0</p>
+      <p class="hero-platform-label">Desktop · Windows (primary) · Linux &amp; macOS via pip</p>
       <h1>One workspace for ADB, SSH, serial, files, and screen</h1>
       <p class="lead">
         Adbnik is a single desktop app that keeps <strong>Android debugging</strong>,
         <strong>SSH</strong>, <strong>serial/COM</strong>, and <strong>local shells</strong> in one tabbed terminal,
         next to on-device file browsing and USB screen forwarding — so you spend less time switching windows
         and retyping connection details.
+      </p>
+      <p class="hero-platform-note small">
+        The same <a href="https://pypi.org/project/adbnik/">PyPI</a> package runs on Windows, Linux, and macOS where PyQt5 is available.
+        The native installer, <code>adbnik-setup</code>, optional embedded scrcpy tab, and local CMD/PowerShell tabs are <strong>Windows-only</strong>; elsewhere use your system shell and a separate mirror window.
       </p>
       <div class="actions">
         <a class="btn btn-lg" href="install.html">Install with pip</a>
@@ -67,7 +76,7 @@
       </p>
       <ul class="why-list">
         <li>
-          <strong>Unified workspace:</strong> ADB shell tabs, SSH tabs, serial tabs, and local CMD/PowerShell sessions live side by side; file access and screen forwarding stay in the same app instead of scattered tools.
+          <strong>Unified workspace:</strong> ADB shell tabs, SSH tabs, and serial tabs live side by side; on <strong>Windows</strong>, local CMD/PowerShell sessions join them in the same layout. File access and screen forwarding stay in the same app instead of scattered tools.
         </li>
         <li>
           <strong>Flows that match real work:</strong> Open SSH using the same host details you already entered for remote file access; keep bookmarks for devices and sessions you use every day.
