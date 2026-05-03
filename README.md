@@ -1,5 +1,7 @@
 # Adbnik
 
+> **Branches:** **[`BRANCHES.md`](BRANCHES.md)** describes **`main`** (this repo’s default **docs + website** view), **`naveen`** (**full source**, tests, Windows installer CI), and **`pypi`** (PyPI publish).
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="128" height="128" alt="Adbnik" />
 </p>

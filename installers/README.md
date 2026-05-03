@@ -1,5 +1,7 @@
 # `installers/` — Windows build output (repo root)
 
+**Branch:** use **`naveen`** for local builds and for **`v*`** tags so CI can run ([`BRANCHES.md`](../BRANCHES.md)).
+
 After a successful local or CI build, this folder contains:
 
 | File | Description |
@@ -25,7 +27,7 @@ Requires **Python** + **PyInstaller**; the `.exe` also needs **Inno Setup 6** (`
 
 ## CI / GitHub Releases
 
-Pushing tag **`v6.0.0`** (or any **`v*`** tag) runs [`.github/workflows/windows-installer.yml`](../.github/workflows/windows-installer.yml): it fills **`installers/`** the same way, uploads **artifacts**, and attaches **`*.exe`** / **`*.zip`** to the matching **GitHub Release**.
+Pushing tag **`v6.0.0`** (or any **`v*`** tag) on **`naveen`** runs [`.github/workflows/windows-installer.yml`](../.github/workflows/windows-installer.yml): it fills **`installers/`** the same way, uploads **artifacts**, and attaches **`*.exe`** / **`*.zip`** to the matching **GitHub Release**.
 
 ## Unsigned installer — SmartScreen
 

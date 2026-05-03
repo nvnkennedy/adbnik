@@ -1,10 +1,10 @@
-﻿# GitHub Pages: merge marketing site (`site/`) + user guide (`docs/guide/`) + styles (`docs/css/`).
-# See site/DEPLOY.md
+﻿# GitHub Pages: marketing site (`site/`) + user guide (`docs/guide/`) + styles (`docs/css/`).
+# Deploys only from **main** (distribution / website branch). See `site/DEPLOY.md`.
 name: pages
 
 on:
   push:
-    branches: [main, naveen]
+    branches: [main]
     paths:
       - "site/**"
       - "docs/guide/**"
