@@ -18,7 +18,17 @@ from ...services.commands import run_adb
 from ..session_login_dialog import SessionLoginDialog, SessionLoginOutcome
 
 from PyQt5.QtCore import QProcessEnvironment, QSize, Qt, QProcess, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QTextCharFormat, QTextCursor, QTextOption
+from PyQt5.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QIcon,
+    QKeySequence,
+    QMouseEvent,
+    QTextCharFormat,
+    QTextCursor,
+    QTextOption,
+)
 from PyQt5.QtWidgets import (
     QAction,
     QAbstractItemView,
@@ -85,6 +95,17 @@ class _BookmarkSidebarStyle(QProxyStyle):
         if hint == QStyle.SH_ItemView_ActivateItemOnSingleClick:
             return 0
         return super().styleHint(hint, option, widget, returnData)
+
+
+class _DoubleClickShellButton(QPushButton):
+    """Local CMD / PowerShell open only on double-click (single click does nothing)."""
+
+    shellDoubleClicked = pyqtSignal()
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton:
+            self.shellDoubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
 
 
 def _filter_serial_miniterm_banner(text: str) -> str:
@@ -2889,7 +2910,10 @@ class TerminalTab(QWidget):
         self.bookmark_list.setIconSize(QSize(20, 20))
         self.bookmark_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         base_style = self.bookmark_list.style() or QApplication.instance().style()
-        self.bookmark_list.setStyle(_BookmarkSidebarStyle(base_style))
+        bm_style = _BookmarkSidebarStyle(base_style)
+        self.bookmark_list.setStyle(bm_style)
+        # Viewport may otherwise query the application style and still single-click-activate rows on Windows.
+        self.bookmark_list.viewport().setStyle(bm_style)
         self.bookmark_list.itemDoubleClicked.connect(self._on_bookmark_double_clicked)
         self.bookmark_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.bookmark_list.customContextMenuRequested.connect(self._on_bookmark_context_menu)
@@ -2901,10 +2925,11 @@ class TerminalTab(QWidget):
             ("CMD", self._open_local_cmd, icon_windows_cmd_console()),
             ("PowerShell", self._open_local_powershell, icon_windows_powershell()),
         ]:
-            b = QPushButton(txt)
+            b = _DoubleClickShellButton(txt)
             b.setObjectName("MobaToolBtn")
             b.setIcon(ic)
-            b.clicked.connect(fn)
+            b.setToolTip(f"Double-click to open {txt}")
+            b.shellDoubleClicked.connect(fn)
             local_row.addWidget(b)
         left_layout.addLayout(local_row)
 

@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [5.0.0] - 2026-05-03
+
+### Changed
+
+- **Terminal (Windows):** **CMD** and **PowerShell** sidebar buttons open a local session only on **double-click** (single click does nothing), avoiding accidental new shells.
+- **Bookmarks:** The Terminal sidebar **bookmark list** and **Login… → Saved sessions** list apply the “no single-click activation” style to the list **viewport** as well as the widget, so Windows no longer opens a session on one click when the platform style queries the **application** style for the scroll viewport.
+
 ## [4.1.3] - 2026-05-03
 
 ### Fixed
