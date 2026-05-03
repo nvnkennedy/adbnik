@@ -2,6 +2,7 @@ include README.md
 include LICENSE
 include pyproject.toml
 include docs/index.html
+include docs/release-notes-v4.0.0.md
 include docs/.nojekyll
 recursive-include docs/css *.css
 recursive-include docs/guide *.html
