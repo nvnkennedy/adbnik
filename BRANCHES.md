@@ -19,4 +19,8 @@ Run **`packaging\windows\build.ps1`** only from **`naveen`** (or **`pypi`**), no
 - **Automated:** push branch **`pypi`**, or publish a **GitHub Release** (workflow on **`naveen`**).
 - **Manual:** on **`naveen`**, `python -m build` then `twine upload dist/adbnik-<version>-*.whl dist/adbnik-<version>.tar.gz`.
 
-Do **not** merge **`main`** into **`naveen`** — that would delete source on **`naveen`**. To refresh **`main`**, cherry-pick or copy **docs / site / changelog / installers** only from **`naveen`**.
+## README alignment
+
+**`naveen`/`README.md`** is the PyPI long description (`readme` in `pyproject.toml`). **`main`/`README.md`** should stay **word-aligned** on every end-user section (capabilities, guide links, pip, SmartScreen, screenshots, troubleshooting, license). Only the **top callout**, the **PyPI metadata** paragraph on **`main`** (absolute link to `pyproject.toml` on `naveen`), and **Building from source** differ.
+
+Do **not** merge **`main`** into **`naveen`** — that would delete source on **`naveen`**. To refresh **`main`**, cherry-pick or copy **docs / site / changelog / README / installers** only from **`naveen`**.
