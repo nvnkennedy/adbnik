@@ -7,7 +7,7 @@ The marketing/install pages live in **`site/`** (HTML + `assets/`). The **`pages
 1. Open **`https://github.com/nvnkennedy/adbnik`** → **Settings**.
 2. In the left sidebar, open **Pages** (under “Code and automation”).
 3. Under **Build and deployment** → **Source**, choose **GitHub Actions** (not “Deploy from a branch” unless you intentionally use `gh-pages`).
-4. Save. The workflow **pages** runs when you push changes under **`site/`**, **`docs/guide/`**, or **`docs/css/`** on **`main`** or **`naveen`**, or when you run it manually (**Actions** → **pages** → **Run workflow**).
+4. Save. The workflow **pages** runs when you push changes under **`site/`**, **`docs/guide/`**, or **`docs/css/`** on **`main`** (distribution branch), or when you run it manually (**Actions** → **pages** → **Run workflow**). See **[`BRANCHES.md`](../BRANCHES.md)**.
 
 **Important:** The workflow file **`.github/workflows/pages.yml` must exist on the default branch (`main`)**. If it lived only on another branch, GitHub Pages may never deploy the current `site/` (you would see **404** on paths like `/branding/favicon.ico` even though files exist in git).
 
