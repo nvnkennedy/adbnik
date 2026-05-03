@@ -4,7 +4,6 @@ include NOTICE
 include pyproject.toml
 include CHANGELOG.md
 include CHANGELOG-legacy.md
-include BRANCHES.md
 include installers/README.md
 include docs/index.html
 include docs/release-notes-v1.0.0.md

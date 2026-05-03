@@ -1,7 +1,5 @@
 # Adbnik
 
-> **You are on `naveen` — the full codebase (personal / maintainer development).** This tree has **`adbnik/`**, **`pyproject.toml`**, tests, and Windows packaging. The PyPI package uses this **`README.md`** as its long description. The public **release branch** is **`main`**: same end-user story, but **no Python source** there — only license, changelog, docs, site, branding, and **release installers under [`installers/` on `main`](https://github.com/nvnkennedy/adbnik/tree/main/installers)**. See **[`BRANCHES.md`](BRANCHES.md)** for **`pypi`** and merge rules.
-
 <p align="center">
   <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="128" height="128" alt="Adbnik" />
 </p>
@@ -11,6 +9,8 @@
 </p>
 
 **Adbnik** is a PyQt5 application that brings **ADB** workflows, **SSH** and **serial** terminals, **local ↔ remote file management** (Android device, SFTP, FTP), and **screen mirroring** launchers (e.g. scrcpy) into a single tabbed window. External tools—**adb**, **ssh**, **scrcpy**—are used from your system: install them separately and, if needed, set paths under **File → Preferences**.
+
+Development and releases are maintained in **`adbnik-dev`** (private). Published wheels, changelogs, documentation, and Windows installers live in the public **`adbnik`** repository: [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik).
 
 ### About the name
 
@@ -71,15 +71,13 @@ Pinned interpreter example:
 
 **Package index:** [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) · **Files:** [pypi.org/project/adbnik/#files](https://pypi.org/project/adbnik/#files)
 
-The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.0.0`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier **1.0.x** and dev-era lines are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md).
+The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.0.0`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier releases are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md)).
 
-On the PyPI project page, **Project links** come from **`[project.urls]`** in [`pyproject.toml`](pyproject.toml), including **Windows installer (unsigned)** → GitHub Releases. PyPI’s file list is for **Python packages** only; the **Setup `.exe`** is large and Windows-specific, so it is **built from this branch in CI**, attached to **[GitHub Releases](https://github.com/nvnkennedy/adbnik/releases)**, and mirrored under **`installers/`** on **`main`** when a release is published—not bundled inside the universal wheel.
+[`pyproject.toml`](pyproject.toml) on this repository defines package metadata and PyPI project links. Windows installers are built here (CI on version tags or local `packaging/windows/build.ps1`), published to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), and copied into **`installers/`** on the public **`adbnik`** repository for each release.
 
-### Windows installer from GitHub Releases (optional, unsigned)
+### Windows installer (optional, unsigned)
 
-When we attach a **`Adbnik-*-Setup-unsigned.exe`** build to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), it is a convenience installer produced with **PyInstaller** + **Inno Setup**. It is **not** digitally signed with an Authenticode certificate yet.
-
-**Where files land when you build locally (this branch):** the repo-root **`installers/`** folder (`Adbnik-<version>-Setup-unsigned.exe` and portable `.zip`). Binaries are **gitignored here** until you build — see [`installers/README.md`](installers/README.md). For the **public repo**, copies of those same files are **committed on `main`** under **`installers/`** when a release is finalized.
+Unsigned **PyInstaller** + **Inno Setup** builds are attached to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases). The same files are stored under **`installers/`** on [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik/tree/main/installers). See [`installers/README.md`](installers/README.md).
 
 **Why Windows warns (“SmartScreen”, “Unknown publisher”, “Windows protected your PC”):** Microsoft flags **unknown / unsigned** executables by policy. That does **not** mean the installer was flagged as malware—it means there is **no publisher certificate** on the file.
 
@@ -143,22 +141,21 @@ On Windows, list interpreters with `py -0p`.
 
 | | |
 |--|--|
-| **Product site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) — overview and links |
-| **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/index.html) — Terminal, File Explorer, Screen Control |
-| **Changelog** | [CHANGELOG.md](CHANGELOG.md) — **v6.0.0** and earlier public releases; [CHANGELOG-legacy.md](CHANGELOG-legacy.md) — dev-era **2.x–5.x** |
-| **Public release branch (`main`, no source)** | [github.com/nvnkennedy/adbnik/tree/main](https://github.com/nvnkennedy/adbnik/tree/main) |
-| **Application source (`naveen`)** | [github.com/nvnkennedy/adbnik/tree/naveen](https://github.com/nvnkennedy/adbnik/tree/naveen) |
-| **Releases (installer `.exe`, portable zip)** | [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases) |
-| **Yanking old PyPI versions** | [docs/pypi-yank-legacy-versions.md](docs/pypi-yank-legacy-versions.md) |
+| **Product site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) |
+| **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/index.html) |
+| **Changelog** | [CHANGELOG.md](CHANGELOG.md) · [CHANGELOG-legacy.md](CHANGELOG-legacy.md) |
+| **Public repository** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
+| **PyPI** | [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) |
+| **Releases** | [github.com/nvnkennedy/adbnik/releases](https://github.com/nvnkennedy/adbnik/releases) |
 
 ---
 
 ## Building from source
 
-Clone **`naveen`** (this branch) — not **`main`**, which does not contain the package tree:
+Clone this repository (access required):
 
 ```bat
-git clone -b naveen --single-branch https://github.com/nvnkennedy/adbnik.git adbnik-dev
+git clone git@github.com:nvnkennedy/adbnik-dev.git
 cd adbnik-dev
 py -m venv .venv
 .venv\Scripts\activate
@@ -167,8 +164,10 @@ py -m pytest tests -q
 py -m adbnik
 ```
 
+Use HTTPS with a [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) if you do not use SSH keys.
+
 ---
 
 ## License
 
-**Apache License 2.0** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Large enterprises often prefer Apache 2.0 for its clarity, patent provisions, and predictable redistribution rules (SPDX: `Apache-2.0`).
+**Apache License 2.0** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). SPDX: `Apache-2.0`.

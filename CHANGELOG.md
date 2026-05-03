@@ -15,7 +15,7 @@ The format follows Keep a Changelog and Semantic Versioning.
 ### Released
 
 - **`adbnik==6.0.0`** uploaded to **PyPI** (wheel + sdist).
-- **Windows:** `Adbnik-6.0.0-Setup-unsigned.exe` and `Adbnik-6.0.0-Windows-portable-unsigned.zip` built with **`packaging/windows/build.ps1`**; the same files are committed under **`installers/`** on branch **`main`**.
+- **Windows:** `Adbnik-6.0.0-Setup-unsigned.exe` and `Adbnik-6.0.0-Windows-portable-unsigned.zip` built with **`packaging/windows/build.ps1`**; the same files are committed under **`installers/`** on the public **`adbnik`** `main` branch.
 
 ### Distribution
 
