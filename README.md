@@ -69,7 +69,7 @@ Pinned interpreter example:
 
 **Package index:** [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) · **Files:** [pypi.org/project/adbnik/#files](https://pypi.org/project/adbnik/#files)
 
-The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Public versioning starts at `1.0.0`.**
+The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.0.0`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier **1.0.x** and dev-era lines are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md).
 
 On the PyPI project page, **Project links** (from `[project.urls]` in [`pyproject.toml`](pyproject.toml)) include **Windows installer (unsigned)** → GitHub Releases. PyPI’s file list is for **Python packages** only; the **Setup `.exe`** is large and Windows-specific, so it is **built in CI**, attached to **[GitHub Releases](https://github.com/nvnkennedy/adbnik/releases)**, and linked from PyPI—not bundled inside the universal wheel.
 
@@ -143,7 +143,7 @@ On Windows, list interpreters with `py -0p`.
 |--|--|
 | **Product site** | [nvnkennedy.github.io/adbnik](https://nvnkennedy.github.io/adbnik/) — overview and links |
 | **User guide** | [nvnkennedy.github.io/adbnik/guide/](https://nvnkennedy.github.io/adbnik/guide/index.html) — Terminal, File Explorer, Screen Control |
-| **Changelog** | [CHANGELOG.md](CHANGELOG.md) — releases from **v1.0.0**; [CHANGELOG-legacy.md](CHANGELOG-legacy.md) — older dev-era entries |
+| **Changelog** | [CHANGELOG.md](CHANGELOG.md) — **v6.0.0** and earlier public releases; [CHANGELOG-legacy.md](CHANGELOG-legacy.md) — dev-era **2.x–5.x** |
 | **Source code** | [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik) |
 | **Releases (installer `.exe`, portable zip)** | [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases) |
 | **Yanking old PyPI versions** | [docs/pypi-yank-legacy-versions.md](docs/pypi-yank-legacy-versions.md) |

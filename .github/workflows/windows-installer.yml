@@ -38,10 +38,28 @@ jobs:
           $root = Get-Location
           $ver = (python packaging/windows/read_project_version.py).Trim()
           New-Item -ItemType Directory -Force -Path installers | Out-Null
+          Start-Sleep -Seconds 3
           $zipName = "Adbnik-$ver-Windows-portable-unsigned.zip"
           $zipPath = Join-Path $root "installers\$zipName"
           if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-          Compress-Archive -Path (Join-Path $root "dist\Adbnik\*") -DestinationPath $zipPath
+          $stage = Join-Path $root "installers\_zip_stage"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $root "dist\Adbnik\*") -Destination $stage -Recurse -Force
+          $zipOk = $false
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+              if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+              Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPath -Force -ErrorAction Stop
+              $zipOk = $true
+              break
+            } catch {
+              Write-Warning "Portable zip attempt $attempt failed: $_"
+              Start-Sleep -Seconds ($attempt + 2)
+            }
+          }
+          Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+          if (-not $zipOk) { throw "Could not create portable zip after retries." }
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" "packaging\windows\adbnik.iss"
 
       - uses: actions/upload-artifact@v4

@@ -7,7 +7,7 @@ After a successful local or CI build, this folder contains:
 | **`Adbnik-<version>-Setup-unsigned.exe`** | Inno Setup installer (unsigned) |
 | **`Adbnik-<version>-Windows-portable-unsigned.zip`** | PyInstaller **onedir** folder, zipped |
 
-**`<version>`** comes from `pyproject.toml` (currently **1.0.0**).
+**`<version>`** comes from `pyproject.toml` (currently **6.0.0**).
 
 ## Why you might not see files here
 
@@ -25,7 +25,7 @@ Requires **Python** + **PyInstaller**; the `.exe` also needs **Inno Setup 6** (`
 
 ## CI / GitHub Releases
 
-Pushing tag **`v1.0.0`** (or any **`v*`** tag) runs [`.github/workflows/windows-installer.yml`](../.github/workflows/windows-installer.yml): it fills **`installers/`** the same way, uploads **artifacts**, and attaches **`*.exe`** / **`*.zip`** to the matching **GitHub Release**.
+Pushing tag **`v6.0.0`** (or any **`v*`** tag) runs [`.github/workflows/windows-installer.yml`](../.github/workflows/windows-installer.yml): it fills **`installers/`** the same way, uploads **artifacts**, and attaches **`*.exe`** / **`*.zip`** to the matching **GitHub Release**.
 
 ## Unsigned installer — SmartScreen
 

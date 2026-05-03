@@ -1,8 +1,8 @@
 ; Inno Setup — compile after PyInstaller: ..\\..\\dist\\Adbnik\\
-; Example: ISCC.exe /DMyAppVersion=1.0.0 packaging\\windows\\adbnik.iss
+; Example: ISCC.exe /DMyAppVersion=6.0.0 packaging\\windows\\adbnik.iss
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "6.0.0"
 #endif
 
 #define MyAppName "Adbnik"

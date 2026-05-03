@@ -1,6 +1,6 @@
-﻿# Legacy changelog (pre–public **1.0.0** numbering)
+﻿# Legacy changelog (development-era **2.x–5.x** on PyPI)
 
-Development-era releases used versions **2.x–5.x** on PyPI. The project now publishes under **`1.0.0`** as the first **public** semantic baseline (see root [`CHANGELOG.md`](CHANGELOG.md)). This file is **history only**.
+Root [`CHANGELOG.md`](CHANGELOG.md) documents the **public** releases (**1.0.x** baseline and current **`6.x`** line). This file keeps the **pre-reset** changelog body for versions **2.x–5.x** only — **history**, not current release notes.
 
 ---
 

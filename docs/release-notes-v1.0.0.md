@@ -1,5 +1,7 @@
 # Adbnik 1.0.0
 
+> **Current release:** see **[release-notes-v6.0.0.md](release-notes-v6.0.0.md)** (**v6.0.0**).
+
 **Release date:** 2026-05-03
 
 First **public** release under **v1.0.0** versioning (Apache-2.0).
