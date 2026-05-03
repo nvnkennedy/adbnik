@@ -12,7 +12,7 @@
 
 **Platforms:** The same **PyPI** package installs on **Windows**, **Linux**, and **macOS** where PyQt5 runs. **Windows** is the primary, tested target: optional **Inno** installer from GitHub Releases, **`adbnik-setup`** for a desktop shortcut, optional **embedded scrcpy** in a tab, and local **CMD/PowerShell** terminal tabs. On **Linux** and **macOS**, use your system shells in the terminal area and run mirroring in a **separate** window—those Windows-only conveniences are not available there.
 
-Development and releases are maintained in **`adbnik-dev`** (private): default work happens on **`naveen`** (full tree); **`pypi`** is for PyPI packaging CI; **`main`** is the snapshot mirrored to public **`adbnik`** **`main`** (installers, site, docs, changelog). See [`BRANCHING.md`](BRANCHING.md). Published wheels and the public site/installers live under [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik).
+Development and releases use this **public** repository **[github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik)** with three branches: **`naveen`** (full application tree), **`pypi`** (PyPI packaging CI), and **`main`** (optional trimmed snapshot for installers, site, and changelog—see [`BRANCHING.md`](BRANCHING.md)). Published wheels are on **PyPI**; installers and Pages deploy from this repo.
 
 ### About the name
 
@@ -73,9 +73,9 @@ Pinned interpreter example:
 
 **Package index:** [pypi.org/project/adbnik](https://pypi.org/project/adbnik/) · **Files:** [pypi.org/project/adbnik/#files](https://pypi.org/project/adbnik/#files)
 
-The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.1.1`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier releases are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md)).
+The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.1.2`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier releases are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md)).
 
-[`pyproject.toml`](pyproject.toml) on this repository defines package metadata and PyPI project links. Windows installers are built here (CI on version tags or local `packaging/windows/build.ps1`), published to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), and copied into **`installers/`** on the public **`adbnik`** repository for each release.
+[`pyproject.toml`](pyproject.toml) defines package metadata and PyPI project links. Windows installers are built here (CI on version tags or local `packaging/windows/build.ps1`), published to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), and copied into **`installers/`** on branch **`main`** when you ship that snapshot.
 
 ### Windows installer (optional, unsigned)
 
@@ -154,11 +154,12 @@ On Windows, list interpreters with `py -0p`.
 
 ## Building from source
 
-Clone this repository (access required):
+Clone this repository:
 
 ```bat
-git clone git@github.com:nvnkennedy/adbnik-dev.git
-cd adbnik-dev
+git clone https://github.com/nvnkennedy/adbnik.git
+cd adbnik
+git checkout naveen
 py -m venv .venv
 .venv\Scripts\activate
 py -m pip install -e ".[dev]"

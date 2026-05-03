@@ -6,6 +6,19 @@ All notable changes are documented here.
 
 The format follows Keep a Changelog and Semantic Versioning.
 
+## [6.1.2] - 2026-05-03
+
+### Summary
+
+**6.1.2** is the stable line on **PyPI** (wheel + sdist) and the version label in this repository. Source, packaging, and docs now live in the public **`nvnkennedy/adbnik`** repository with branches **`naveen`** (full tree), **`pypi`** (PyPI CI), and **`main`** (distribution snapshot when pruned). See [`BRANCHING.md`](BRANCHING.md).
+
+### Distribution
+
+- **PyPI:** **`adbnik==6.1.2`**. See [`docs/release-notes-v6.1.2.md`](docs/release-notes-v6.1.2.md).
+- **Windows:** **`Adbnik-6.1.2-Setup-unsigned.exe`** and **`Adbnik-6.1.2-Windows-portable-unsigned.zip`** when tag **`v6.1.2`** is built from **`naveen`** and attached to **GitHub Releases**.
+
+---
+
 ## [6.1.1] - 2026-05-03
 
 ### Summary
