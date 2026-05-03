@@ -1,7 +1,7 @@
 # Adbnik
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/branding/adbnik-256.png" width="128" height="128" alt="Adbnik" />
+  <img src="https://nvnkennedy.github.io/adbnik/branding/adbnik-256.png" width="128" height="128" alt="Adbnik" />
 </p>
 
 <p align="center">
@@ -12,7 +12,7 @@
 
 **Platforms:** The same **PyPI** package installs on **Windows**, **Linux**, and **macOS** where PyQt5 runs. **Windows** is the primary, tested target: optional **Inno** installer from GitHub Releases, **`adbnik-setup`** for a desktop shortcut, optional **embedded scrcpy** in a tab, and local **CMD/PowerShell** terminal tabs. On **Linux** and **macOS**, use your system shells in the terminal area and run mirroring in a **separate** window—those Windows-only conveniences are not available there.
 
-Development and releases are maintained in **`adbnik-dev`** (private). Published wheels, changelogs, documentation, and Windows installers live in the public **`adbnik`** repository: [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik).
+Development and releases are maintained in **`adbnik-dev`** (private): default work happens on **`naveen`** (full tree); **`pypi`** is for PyPI packaging CI; **`main`** is the snapshot mirrored to public **`adbnik`** **`main`** (installers, site, docs, changelog). See [`BRANCHING.md`](BRANCHING.md). Published wheels and the public site/installers live under [github.com/nvnkennedy/adbnik](https://github.com/nvnkennedy/adbnik).
 
 ### About the name
 
@@ -118,10 +118,10 @@ Preferences are stored in **`.adbnik.json`** under your user profile. Legacy **`
 ## Screenshots
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/01-main-window.png" width="720" alt="Main window" /><br /><br />
-  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/02-terminal.png" width="720" alt="Terminal" /><br /><br />
-  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/03-file-explorer.png" width="720" alt="File explorer" /><br /><br />
-  <img src="https://raw.githubusercontent.com/nvnkennedy/adbnik/main/docs/screenshots/04-screen-control.png" width="720" alt="Screen control" />
+  <img src="https://nvnkennedy.github.io/adbnik/screenshots/01-main-window.png" width="720" alt="Main window" /><br /><br />
+  <img src="https://nvnkennedy.github.io/adbnik/screenshots/02-terminal.png" width="720" alt="Terminal" /><br /><br />
+  <img src="https://nvnkennedy.github.io/adbnik/screenshots/03-file-explorer.png" width="720" alt="File explorer" /><br /><br />
+  <img src="https://nvnkennedy.github.io/adbnik/screenshots/04-screen-control.png" width="720" alt="Screen control" />
 </p>
 
 ---

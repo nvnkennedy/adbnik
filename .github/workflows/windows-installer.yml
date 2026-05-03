@@ -1,5 +1,7 @@
 # Builds unsigned PyInstaller onedir + Inno Setup installer + portable zip (Windows),
 # uploads artifacts, and attaches files to the GitHub Release for the tag.
+# Requires a tree with adbnik/ and packaging/windows/ — tag commits from branch naveen
+# (distribution-only main does not contain the app sources).
 name: windows-installer
 
 on:

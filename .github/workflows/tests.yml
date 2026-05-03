@@ -2,9 +2,9 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    branches: [naveen, pypi]
   pull_request:
-    branches: [main]
+    branches: [naveen, pypi]
 
 jobs:
   pytest:

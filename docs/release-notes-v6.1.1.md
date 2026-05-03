@@ -36,6 +36,7 @@ From **[GitHub Releases](https://github.com/nvnkennedy/adbnik/releases/latest)**
 ## Changes
 
 - Version **6.1.1** aligned across `pyproject.toml`, **`adbnik.__version__`**, Windows artifact names, **`README.md`**, **`site/`**, **`docs/index.html`**, and changelog.
+- **PyPI project page:** README images point at the **GitHub Pages** site so screenshots load even before raw **`main`** paths exist on the public repo; Pages ships **`docs/screenshots/`** as **`/screenshots/`**.
 
 ## Links
 

@@ -9,6 +9,7 @@ on:
       - "site/**"
       - "docs/guide/**"
       - "docs/css/**"
+      - "docs/screenshots/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -33,9 +34,10 @@ jobs:
           set -e
           mkdir -p publish
           cp -a site/. publish/
-          mkdir -p publish/guide publish/css
+          mkdir -p publish/guide publish/css publish/screenshots
           cp docs/guide/*.html publish/guide/
           cp docs/css/site.css publish/css/
+          cp docs/screenshots/*.png publish/screenshots/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: publish

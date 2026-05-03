@@ -10,7 +10,11 @@ The format follows Keep a Changelog and Semantic Versioning.
 
 ### Summary
 
-**6.1.1** bumps the public version line across **PyPI**, **Windows installers** (`build.ps1` / GitHub Releases), marketing **`site/`** and **`docs/`** copy, **`README.md`**, and **`adbnik.__version__`** (status bar and **Help → About**).
+**6.1.1** is the stable public line across **PyPI**, **Windows installers** (`build.ps1` / GitHub Releases), marketing **`site/`** and **`docs/`** copy, **`README.md`**, and **`adbnik.__version__`** (status bar and **Help → About**).
+
+### Fixed
+
+- **PyPI / README images:** README screenshots and logo use **`https://nvnkennedy.github.io/adbnik/...`** so the listing does not depend on **`raw.githubusercontent.com/.../main/...`** being populated. **GitHub Pages** publishes **`docs/screenshots/`** under **`/screenshots/`**; **`site/index.html`** uses same-origin **`screenshots/...`** links.
 
 ### Distribution
 
