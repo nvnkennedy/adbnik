@@ -75,7 +75,7 @@ Pinned interpreter example:
 
 The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.1.3`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier releases are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md)).
 
-[`pyproject.toml`](https://github.com/nvnkennedy/adbnik/blob/naveen/pyproject.toml) on **`naveen`** defines package metadata and PyPI project links. Windows installers are built from **`naveen`** (CI on version tags or local `packaging/windows/build.ps1`), published to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), and the same **`Adbnik-*`** files are copied into **`installers/`** on branch **`main`** when you ship that snapshot.
+[`pyproject.toml`](https://github.com/nvnkennedy/adbnik/blob/naveen/pyproject.toml) on **`naveen`** defines package metadata and PyPI project links. Windows installers are built from **`naveen`** (CI on **`v*`** tags, or run `packaging/windows/build.ps1` in a clone checked out to **`naveen`**), published to [GitHub Releases](https://github.com/nvnkennedy/adbnik/releases), and the same **`Adbnik-*`** files are copied into **`installers/`** on branch **`main`** when you ship that snapshot.
 
 ### Windows installer (optional, unsigned)
 
