@@ -12,6 +12,11 @@ The format follows Keep a Changelog and Semantic Versioning.
 
 **6.0.0** is the single version label across **PyPI** (wheel + sdist), **GitHub Releases** (Windows installer + portable zip), **Inno Setup** / **`build.ps1`** artifact names, marketing pages, and **`adbnik.__version__`**.
 
+### Released
+
+- **`adbnik==6.0.0`** uploaded to **PyPI** (wheel + sdist).
+- **Windows:** `Adbnik-6.0.0-Setup-unsigned.exe` and `Adbnik-6.0.0-Windows-portable-unsigned.zip` built with **`packaging/windows/build.ps1`**; the same files are committed under **`installers/`** on branch **`main`**.
+
 ### Distribution
 
 - **PyPI:** publish **`adbnik==6.0.0`** (artifacts `adbnik-6.0.0-py3-none-any.whl`, `adbnik-6.0.0.tar.gz`). See [`docs/release-notes-v6.0.0.md`](docs/release-notes-v6.0.0.md).
