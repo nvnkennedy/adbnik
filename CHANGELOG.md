@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [4.1.2] - 2026-05-03
+
+### Fixed
+
+- **Docs / user guide HTML:** All navigation links under **`docs/guide/`** (including **Home**, **User guide**, **Terminal**, **File Explorer**, **Screen Control**, footer, and in-page “next/prev”) now use **absolute GitHub `blob/main/docs/...` URLs**. Relative links previously resolved to **`nvnkennedy.github.io/adbnik/guide/...`** when the docs folder was served by GitHub Pages; they now stay on **`github.com/nvnkennedy/adbnik/blob/main/docs/...`** like **Help → User guide** (F1). The **`docs/`** landing brand link uses the same **`blob`** URL for consistency.
+
 ## [4.1.1] - 2026-05-03
 
 ### Fixed
