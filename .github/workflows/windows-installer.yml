@@ -36,7 +36,7 @@ jobs:
         shell: pwsh
         run: |
           $root = Get-Location
-          $ver = (python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")
+          $ver = (python packaging/windows/read_project_version.py).Trim()
           New-Item -ItemType Directory -Force -Path installers | Out-Null
           $zipName = "Adbnik-$ver-Windows-portable-unsigned.zip"
           $zipPath = Join-Path $root "installers\$zipName"

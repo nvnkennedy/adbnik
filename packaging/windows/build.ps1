@@ -17,13 +17,42 @@ if (-not (Test-Path (Join-Path $Root "dist\Adbnik\Adbnik.exe"))) {
     throw "PyInstaller did not produce dist\Adbnik\Adbnik.exe"
 }
 
-# Portable zip (unsigned) for users who do not want an installer
-$ver = (py -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")
+# PyInstaller/AV may still hold DLLs briefly; wait before reading dist for zip.
+Start-Sleep -Seconds 3
+
+$ver = (py (Join-Path $Root "packaging\windows\read_project_version.py")).Trim()
+if (-not $ver) { throw "Could not read version from pyproject.toml" }
+
 $zipName = "Adbnik-$ver-Windows-portable-unsigned.zip"
 $zipPath = Join-Path $Root "installers\$zipName"
 New-Item -ItemType Directory -Force -Path (Join-Path $Root "installers") | Out-Null
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-Compress-Archive -Path (Join-Path $Root "dist\Adbnik\*") -DestinationPath $zipPath
+
+# Zip a staging copy so Compress-Archive does not race scanners locking files under dist\Adbnik.
+$stage = Join-Path $Root "installers\_zip_stage"
+if (Test-Path $stage) {
+    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+}
+New-Item -ItemType Directory -Path $stage | Out-Null
+Copy-Item -Path (Join-Path $Root "dist\Adbnik\*") -Destination $stage -Recurse -Force
+
+$zipOk = $false
+for ($attempt = 1; $attempt -le 5; $attempt++) {
+    try {
+        if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+        Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPath -Force -ErrorAction Stop
+        $zipOk = $true
+        break
+    } catch {
+        Write-Warning "Portable zip attempt $attempt failed: $_"
+        Start-Sleep -Seconds ($attempt + 2)
+    }
+}
+Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+
+if (-not $zipOk) {
+    throw "Could not create portable zip after retries. Close Adbnik/explorer windows touching dist\Adbnik or retry."
+}
 Write-Host "Wrote portable: $zipPath"
 
 $iscc = @(
