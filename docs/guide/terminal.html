@@ -67,8 +67,8 @@
             <tr><th>Control</th><th>Meaning</th></tr>
           </thead>
           <tbody>
-            <tr><td><strong>CMD</strong></td><td>Opens a local <strong>Command Prompt</strong> session (Windows). Useful for general shell work with the same PATH conventions as your environment.</td></tr>
-            <tr><td><strong>PowerShell</strong></td><td>Opens a local <strong>Windows PowerShell</strong> session.</td></tr>
+            <tr><td><strong>CMD</strong></td><td><strong>Double-click</strong> to open a local <strong>Command Prompt</strong> session (Windows). Single click does nothing—this avoids accidental new tabs.</td></tr>
+            <tr><td><strong>PowerShell</strong></td><td><strong>Double-click</strong> to open a local <strong>Windows PowerShell</strong> session (same as CMD).</td></tr>
             <tr><td><strong>Pin CMD</strong> / <strong>Pin PS</strong></td><td>Saves the current local shell type as a <strong>bookmark</strong> in the list below (stored in your config).</td></tr>
             <tr><td><strong>Login…</strong></td><td>Opens the <strong>session login</strong> dialog: connect <strong>ADB shell</strong> (pick a device), <strong>SSH</strong>, <strong>Serial</strong> (COM + baud), <strong>FTP</strong> (interactive <code>ftp</code> client), or start an Android/USB session as offered. Saved <strong>bookmarks</strong> appear in the list; double-click to open.</td></tr>
             <tr><td><strong>Bookmark list</strong></td><td><strong>Double-click</strong> a bookmark to open that session. <strong>Right-click</strong>: start new session, open bookmark, or delete selected bookmarks.</td></tr>
@@ -93,7 +93,7 @@
 
         <h2>Typical flows</h2>
         <ol class="steps">
-          <li><strong>Local command</strong>: Click <strong>CMD</strong> or <strong>PowerShell</strong>. A new tab opens with that shell. Run what you need. If you use the same setup often, click <strong>Pin CMD</strong> or <strong>Pin PS</strong> so it appears in the bookmark list.</li>
+          <li><strong>Local command</strong>: <strong>Double-click</strong> <strong>CMD</strong> or <strong>PowerShell</strong>. A new tab opens with that shell. Run what you need. If you use the same setup often, <strong>single-click</strong> <strong>Pin CMD</strong> or <strong>Pin PS</strong> so it appears in the bookmark list.</li>
           <li><strong>ADB shell</strong>: Plug the phone in, enable USB debugging, accept the PC fingerprint if asked. Pick the device in the <strong>top bar</strong> (use <strong>Session → Refresh</strong> or F5 if the list is stale). Then <strong>Session → Open ADB shell</strong>, or <strong>Login…</strong> → ADB shell, or double-click an ADB bookmark.</li>
           <li><strong>SSH</strong>: <strong>Login…</strong> → choose SSH, enter host, user, port, and key or password. After connecting, lines you add under <strong>File → Preferences → SSH quick commands</strong> show up under <strong>Commands → SSH</strong>; picking one sends that line to the active SSH tab.</li>
           <li><strong>Serial</strong>: <strong>Login…</strong> → serial. Choose the COM port and baud. Defaults for port and speed can be set in Preferences if you always use the same hardware.</li>
