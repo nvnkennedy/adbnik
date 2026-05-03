@@ -2,17 +2,21 @@
 
 | Branch | Contents |
 |--------|----------|
-| **`main`** | **Distribution & website only:** `LICENSE`, `NOTICE`, `README.md`, `CHANGELOG.md`, `CHANGELOG-legacy.md`, `docs/` (including release notes), `site/` (GitHub Pages marketing), `branding/` (icons referenced by URLs), `installers/README.md`. **No** `adbnik/` package, **no** `pyproject.toml`, **no** `packaging/`. Pushing here updates **GitHub Pages** when `site/` or `docs/guide/` / `docs/css/` change. |
-| **`naveen`** | **Full application source:** Python package, tests, `pyproject.toml`, `packaging/windows/`, PyInstaller + Inno workflows, pytest CI. **Create `v*` version tags from this branch** so Windows installer artifacts attach to the correct GitHub Release. |
-| **`pypi`** | Same **complete** tree as **`naveen`** at release points. A **push** to `pypi` runs [`.github/workflows/publish-pypi.yml`](.github/workflows/publish-pypi.yml) and publishes the current `pyproject.toml` version to PyPI (requires `PYPI_API_TOKEN` in repo secrets). |
+| **`main`** | **Public release branch:** what visitors see by default. **No application source** in the tree (no `adbnik/`, no `pyproject.toml`, no `packaging/`). Includes **`LICENSE`**, **`NOTICE`**, full **[`README.md`](README.md)** (same story as PyPI), **`CHANGELOG*.md`**, **`docs/`**, **`site/`**, **`branding/`**, and **`installers/`** — **release `.exe` / `.zip` binaries are committed here** after each version ships (see [`installers/README.md`](installers/README.md)). **GitHub Pages** deploys from pushes to **`main`**. |
+| **`naveen`** | **Personal / maintainer branch — full codebase:** Python package, tests, `pyproject.toml`, `packaging/windows/`, PyInstaller + Inno CI, pytest. **`README.md` here is what PyPI shows** (`readme` in `pyproject.toml`). **Create `v*` tags from here** so the Windows workflow runs. |
+| **`pypi`** | Same complete tree as **`naveen`**. Pushing **`pypi`** runs [`.github/workflows/publish-pypi.yml`](.github/workflows/publish-pypi.yml) (needs `PYPI_API_TOKEN`). |
 
-## Local Windows installer
+## Installers on `main`
 
-Run **`packaging\windows\build.ps1`** only from a checkout of **`naveen`** (or **`pypi`**), not from **`main`**.
+Builds are produced on **`naveen`** (CI or `packaging\windows\build.ps1`). For the **public release repo**, copy the resulting **`Adbnik-*-Setup-unsigned.exe`** and **`Adbnik-*-Windows-portable-unsigned.zip`** into **`installers/`** on **`main`** and commit (this branch’s `.gitignore` allows those files).
+
+## Local Windows build
+
+Run **`packaging\windows\build.ps1`** only from **`naveen`** (or **`pypi`**), not from **`main`**.
 
 ## PyPI
 
-- **Automated:** push to branch **`pypi`** (after aligning `pyproject.toml` version), or publish a **GitHub Release** (existing workflow).
-- **Manual:** from **`naveen`**, `python -m build` then `twine upload dist/adbnik-<version>-*.whl dist/adbnik-<version>.tar.gz`.
+- **Automated:** push branch **`pypi`**, or publish a **GitHub Release** (workflow on **`naveen`**).
+- **Manual:** on **`naveen`**, `python -m build` then `twine upload dist/adbnik-<version>-*.whl dist/adbnik-<version>.tar.gz`.
 
-Do **not** merge **`main`** into **`naveen`** after `main` was trimmed to docs-only — that would delete application code on `naveen`. Port changes with cherry-picks or file-by-file PRs from `naveen` → `main` for docs/site only.
+Do **not** merge **`main`** into **`naveen`** — that would delete source on **`naveen`**. To refresh **`main`**, cherry-pick or copy **docs / site / changelog / installers** only from **`naveen`**.
