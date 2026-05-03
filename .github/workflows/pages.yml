@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Fails with "Get Pages site failed" / Not Found until Settings → Pages → Source is GitHub Actions.
       - uses: actions/configure-pages@v5
       - name: Assemble published site (marketing + guide + CSS)
         run: |

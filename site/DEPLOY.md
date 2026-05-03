@@ -14,9 +14,19 @@ The workflow file **`.github/workflows/pages.yml` must exist on the default bran
 
 **https://nvnkennedy.github.io/adbnik/**
 
-## Private repository note
+## Private repository (`adbnik-dev`)
 
-Site sources are edited in **`adbnik-dev`** when applicable; the published site is built from the public **`adbnik`** `main` branch after changes are pushed there.
+If the **pages** workflow fails at **`actions/configure-pages`** with **Get Pages site failed** / **Not Found**, GitHub has no Pages site record for that repository yet.
+
+1. Open **`https://github.com/<owner>/<repo>`** (for example your private dev repo) → **Settings** → **Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions** (not “Deploy from a branch”) and save.
+3. Re-run the failed workflow (**Actions** → **pages** → **Re-run all jobs**).
+
+Until that one-time step is done, the Pages API returns 404 and `configure-pages@v5` cannot proceed. The optional `enablement: true` input on that action requires a **personal access token** with repo/Pages scope, not the default `GITHUB_TOKEN`, so enabling Pages in the UI is the usual fix.
+
+When you also publish from the public **`adbnik`** repo, repeat **Settings → Pages → GitHub Actions** there if you deploy Pages from that repository.
+
+Site sources are often edited in **`adbnik-dev`**; you can publish from either repo depending on which remote’s **main** runs the workflow.
 
 ## Manual check
 
