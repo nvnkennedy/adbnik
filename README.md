@@ -73,7 +73,7 @@ Pinned interpreter example:
 
 The **[PyPI project](https://pypi.org/project/adbnik/)** ships **wheels and an sdist** for `pip install` under the **Apache License 2.0** ([`LICENSE`](LICENSE), SPDX **`Apache-2.0`**). **Current stable** is **`6.0.0`** (see [`CHANGELOG.md`](CHANGELOG.md)); earlier **1.0.x** and dev-era lines are documented there and in [`CHANGELOG-legacy.md`](CHANGELOG-legacy.md).
 
-On the PyPI project page, **Project links** come from **`[project.urls]`** in [`pyproject.toml`](pyproject.toml) (this branch), including **Windows installer (unsigned)** → GitHub Releases. PyPI’s file list is for **Python packages** only; the **Setup `.exe`** is large and Windows-specific, so it is **built from this branch in CI**, attached to **[GitHub Releases](https://github.com/nvnkennedy/adbnik/releases)**, and mirrored under **`installers/`** on **`main`** when a release is published—not bundled inside the universal wheel.
+On the PyPI project page, **Project links** come from **`[project.urls]`** in [`pyproject.toml`](pyproject.toml), including **Windows installer (unsigned)** → GitHub Releases. PyPI’s file list is for **Python packages** only; the **Setup `.exe`** is large and Windows-specific, so it is **built from this branch in CI**, attached to **[GitHub Releases](https://github.com/nvnkennedy/adbnik/releases)**, and mirrored under **`installers/`** on **`main`** when a release is published—not bundled inside the universal wheel.
 
 ### Windows installer from GitHub Releases (optional, unsigned)
 
