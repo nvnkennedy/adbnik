@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format loosely follows Keep a Changelog and Semantic Versioning.
 
+## [4.1.1] - 2026-05-03
+
+### Fixed
+
+- **Marketing site (`site/`):** **Install** and other pages now include the same **User guide** nav link as the home page—always **`main/docs/guide/index.html` on GitHub**, not a missing nav item or an on-site `/guide/` path.
+
 ## [4.0.1] - 2026-05-03
 
 ### Changed

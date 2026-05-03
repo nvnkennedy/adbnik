@@ -5869,7 +5869,7 @@ class FileExplorerTab(QWidget):
         self.session_tabs.tabCloseRequested.connect(self._on_tab_close_requested)
         self._empty_state = QLabel(
             "No explorer session is open.\n\n"
-            "Use New session… to connect (ADB, SFTP, or FTP). The user guide on the website has full steps."
+            "Use New session… to connect (ADB, SFTP, or FTP). See Help → User guide (full steps on GitHub)."
         )
         self._empty_state.setAlignment(Qt.AlignCenter)
         self._empty_state.setObjectName("ExplorerSessionHint")
